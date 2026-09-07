@@ -26,6 +26,9 @@ class CLI(unittest.TestCase):
         self.address = "0x123"
         self.active = self.address
         self.locked = False
+        self.hold_locked = threading.Event()
+        self.locked_requested = threading.Event()
+        self.query_delay = 0
         self.provider = "hyprlang"
         self.outline_plugin = False
         self.xwayland = False
@@ -75,6 +78,8 @@ else:
                 request = conn.recv(8192).decode()
                 self.commands.append(request)
                 command = request.split("/", 1)[1]
+                if self.query_delay:
+                    time.sleep(self.query_delay)
                 if command == "monitors":
                     result = [{"id": 0, "name": "DP-test", "width": 1920, "height": 1080,
                                "x": self.x, "y": 100, "scale": 1.5, "transform": 0,
@@ -87,6 +92,9 @@ else:
                 elif command == "layers":
                     result = self.layers
                 elif command == "locked":
+                    self.locked_requested.set()
+                    while self.hold_locked.is_set() and self.running:
+                        time.sleep(0.005)
                     result = {"locked": self.locked}
                 elif command == "status":
                     result = {"configProvider": self.provider}
@@ -100,7 +108,10 @@ else:
                     continue
                 else:
                     result = []
-                conn.sendall(json.dumps(result).encode())
+                try:
+                    conn.sendall(json.dumps(result).encode())
+                except BrokenPipeError:
+                    pass
 
     def cli(self, *args, ok=True, env=None):
         if args[0] in ("type", "key") and "--backend" not in args:
@@ -239,6 +250,32 @@ else:
         Path(f["image_path"]).with_suffix(".json").write_text(json.dumps(f))
         self.error("StaleObservation", "move", "--frame", f["frame_id"],
                    "--x", "0", "--y", "0", "--session", "host", "--dry-run")
+
+    def test_stop_invalidates_inflight_enable(self):
+        self.hold_locked.set()
+        process = subprocess.Popen([str(BIN), "enable", "--session", "host"],
+                                   env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.assertTrue(self.locked_requested.wait(2))
+            self.cli("stop", "--session", "host")
+            self.hold_locked.clear()
+            out, _ = process.communicate(timeout=2)
+            self.assertEqual(json.loads(out)["err"]["code"], "ControlStopped")
+            self.assertFalse(list(self.root.glob("deskctl-*/enabled")))
+            self.cli("enable", "--session", "host")
+            self.assertTrue(list(self.root.glob("deskctl-*/enabled")))
+        finally:
+            self.hold_locked.clear()
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=2)
+
+    def test_wait_budget_spans_multiple_queries(self):
+        self.query_delay = 0.08
+        started = time.monotonic()
+        self.error("WaitTimeout", "wait", "focus", "--window", self.address,
+                   "--timeout-ms", "100")
+        self.assertLess(time.monotonic() - started, 0.35)
 
     def test_coordinate_bounds(self):
         f = self.frame()

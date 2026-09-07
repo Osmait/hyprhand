@@ -10,8 +10,8 @@ src/
   cli/                   argumentos estrictos y ayuda
   core/                  geometría y contrato de frame, sin dependencias nativas
   platform/              FFI Linux/Wayland, señales, reloj, IPC y limpieza de hijos
-  runtime/               sesión, control, guardas, auditoría, eventos y GC
-  input/                 teclado, puntero, movimiento, scroll y aura
+  runtime/               sesión, control, guardas, esperas, auditoría, eventos y GC
+  input/                 coordinación de acciones, teclado, puntero, movimiento, scroll y aura
   capture/               observación, revisión de layout y captura de cursor
   accessibility/         recorrido AT-SPI y puente C
   preview/               controlador, protocolo, visor GTK, CSS y ABI C
@@ -22,18 +22,33 @@ experimental/            puentes de compositor opt-in, nunca autocargados
 docs/                    contratos, compatibilidad, decisiones y evidencias
 ```
 
-La extracción de observación y ayuda reduce `main.zig` de 848 a 620 líneas.
+La extracción de observación, ayuda, acciones y esperas reduce `main.zig`
+de 848 a unas 220 líneas.
 El build raíz pasa de 111 a 48 líneas; generación Wayland y variantes opcionales
 viven en módulos específicos. No se han alterado nombres de comandos, rutas
 instaladas, formato JSON, frame v2 ni protocolo DCP1.
 
 ## Límites entre componentes
 
-`main` coordina la CLI, runtime, captura y entrada. Los algoritmos de movimiento
+`main` selecciona comandos y presupuestos; `input/actions.zig` coordina entrada
+y `runtime/wait.zig` implementa las condiciones de espera. Los algoritmos de movimiento
 y scroll reciben un driver, lo que permite pruebas sin compositor. La geometría
 y el protocolo del PiP son datos/validación; no crean ventanas ni dispositivos.
 `runtime` gestiona autoridad y ciclo de vida; `platform` implementa operaciones
 de bajo nivel sin conocer nombres de comandos.
+
+Cada proceso ejecuta un comando. `native.limitCommand` fija su presupuesto
+monotónico compartido: las solicitudes IPC no lo renuevan. Las guardas y los
+helpers consultan ese límite. La limpieza de entrada ya encolada y de hijos
+propios conserva sus presupuestos independientes para no omitir liberaciones.
+`wait --timeout-ms` incluye las consultas de una iteración; los comandos de
+lectura habituales disponen de 10 s, las acciones de 30 s y `type` de 300 s.
+Son límites cooperativos, no una garantía frente a bloqueo del kernel o de una
+biblioteca nativa. Sesiones, eventos, AT-SPI y visor conservan límites específicos.
+
+`stop` y la publicación de `enable` comparten un cerrojo local corto separado
+del cerrojo de acciones. La generación de parada invalida un `enable` anterior
+que aún estuviera esperando al compositor; el cerrojo no se retiene durante IPC.
 
 El visor GTK es otro ejecutable y otra raíz de módulo: no enlaza la entrada ni
 sesiones. Solicita capturas y parada mediante workers de la CLI con la identidad
@@ -53,5 +68,4 @@ superficie propiedad del proceso actual; no elimina overlays ajenos.
 Es una adaptación a una CLI pequeña, no una copia de esas arquitecturas. No se
 importa código, no se promete su nivel de robustez y no se adopta la prohibición
 general de asignación dinámica de TigerBeetle: las arenas acotadas siguen siendo
-apropiadas aquí. Esta distribución tampoco convierte el grafo en capas estrictas;
-la coordinación de entrada sigue en `main` y puede extraerse de forma incremental.
+apropiadas aquí. Esta distribución tampoco convierte el grafo en capas estrictas.

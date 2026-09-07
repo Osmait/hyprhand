@@ -164,12 +164,19 @@ pub const Runtime = struct {
     pub fn enable(self: *Runtime, indicator: []const u8) !void {
         const lock_fd = try self.lock();
         defer _ = c.close(lock_fd);
+        const initial_generation = try self.controlGeneration();
         try self.validateDisplay();
         try self.unlocked();
         const name = try self.id();
         const tmp = try self.path(name);
+        defer _ = c.unlink(tmp);
         try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = tmp, .data = name, .flags = .{ .exclusive = true } });
-        if (c.rename(tmp, try self.path("enabled")) < 0) return error.StateWriteFailed;
+        {
+            const authority = try self.authorityLock();
+            defer _ = c.close(authority);
+            if (!std.mem.eql(u8, initial_generation, try self.generation())) return error.ControlStopped;
+            if (c.rename(tmp, try self.path("enabled")) < 0) return error.StateWriteFailed;
+        }
         errdefer _ = c.unlink(self.path("enabled") catch unreachable);
         _ = c.unlink(try self.path("outline"));
         if (std.mem.eql(u8, indicator, "outline")) {
@@ -181,6 +188,7 @@ pub const Runtime = struct {
             if (!std.mem.eql(u8, std.mem.trim(u8, result, " \r\n"), "ok")) return error.OutlinePluginUnavailable;
             try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = try self.path("outline"), .data = name, .flags = .{ .exclusive = true } });
         }
+        if (!std.mem.eql(u8, name, try self.token())) return error.ControlStopped;
         try self.emit(.{ .ok = true, .session_id = self.session_id, .control = "enabled", .indicator = indicator, .shared_cursor = std.mem.eql(u8, self.session_id, "host") });
     }
 
@@ -194,9 +202,47 @@ pub const Runtime = struct {
 
     pub fn stop(self: *Runtime) !void {
         try self.prepare();
+        const authority = try self.authorityLock();
+        defer _ = c.close(authority);
+        // Invalidate an enable that began before this stop but is still waiting
+        // for the compositor. New, explicitly requested enables may start later.
+        const epoch = try self.id();
+        const temp = try self.path(epoch);
+        defer _ = c.unlink(temp);
+        try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = temp, .data = epoch, .flags = .{ .exclusive = true } });
+        if (c.rename(temp, try self.path("stop-generation")) < 0) return error.StateWriteFailed;
         if (c.unlink(try self.path("enabled")) < 0 and c.__errno_location().* != c.ENOENT) return error.StateWriteFailed;
         if (c.unlink(try self.path("outline")) < 0 and c.__errno_location().* != c.ENOENT) return error.StateWriteFailed;
         try self.emit(.{ .ok = true, .session_id = self.session_id, .control = "stopped" });
+    }
+
+    fn generation(self: *Runtime) ![]const u8 {
+        return self.read(try self.path("stop-generation"), 128) catch |err| switch (err) {
+            error.FileNotFound => "",
+            else => return err,
+        };
+    }
+
+    fn controlGeneration(self: *Runtime) ![]const u8 {
+        const fd = try self.authorityLock();
+        defer _ = c.close(fd);
+        return self.generation();
+    }
+
+    fn authorityLock(self: *Runtime) !c_int {
+        const fd = c.open(try self.path("control.lock"), c.O_CREAT | c.O_RDWR | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c_uint, 0o600));
+        if (fd < 0) return error.ControlLockFailed;
+        errdefer _ = c.close(fd);
+        const deadline = native.nowMs() + 500;
+        // This separate lock protects only local atomic publication, never IPC
+        // or input, so stop remains independent from the long-held action lock.
+        while (c.flock(fd, c.LOCK_EX | c.LOCK_NB) < 0) {
+            const err = c.__errno_location().*;
+            if (err != c.EWOULDBLOCK and err != c.EINTR) return error.ControlLockFailed;
+            if (native.nowMs() >= deadline) return error.ControlBusy;
+            native.sleepMs(5);
+        }
+        return fd;
     }
 
     pub fn executable(self: *Runtime, name: []const u8) !bool {

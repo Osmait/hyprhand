@@ -35,6 +35,7 @@ DOCUMENTS = {relative: relative for relative in (
     "docs/cursor-outline-probe.md", "docs/reliability-040.md",
     "docs/experimental-hardening.md", "docs/preview.md",
     "CONTRIBUTING.md", "docs/architecture.md", "docs/audit-2026-09.md",
+    "docs/audit-followup-2026-09.md",
 )}
 
 

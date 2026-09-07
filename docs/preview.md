@@ -16,9 +16,11 @@ pkg-config for building), and grim. Keep `deskctl-pip` beside the matching
 GTK4. The optional build verifies its narrow FFI declarations against the
 installed GTK headers; application and viewer logic remain Zig.
 
-This first version requires **Hyprlang on the host**; floating/pinned rules were
-tested on Hyprland 0.56.2. It fails explicitly on Lua rather than opening an
-unconfigured window. The source session may use either supported provider.
+Supports **Hyprlang and Lua hosts** on the tested Hyprland 0.56.2 stack. Lua uses
+a named `hl.window_rule` handle and bounded `set_enabled(false)` cleanup;
+unknown providers fail before opening a window. The source may use either provider.
+Only internally generated IDs enter Lua expressions, never session names or titles.
+See the compositor's [window-rule API](https://wiki.hypr.land/configuring/core/rules/window-rules/).
 
 ## Behavior
 
@@ -58,8 +60,10 @@ unconfigured window. The source session may use either supported provider.
 
 The GTK process keeps the host environment. Separate bounded CLI workers route
 to the managed session and validate its original compositor instance. Frames
-use a memfd and pipes, not screenshot/history files. Each grim invocation has
-a 1.5-second deadline and is reaped on cancellation. Headers, PNG dimensions,
+use bounded pipes, not screenshot/history files. Output is drained incrementally
+and rejected at 8 MiB, before a faulty helper can grow an unbounded memory file.
+Each grim invocation has a 1.5-second deadline and is reaped on cancellation.
+The complete capture worker also has a two-second cooperative budget. Headers, PNG dimensions,
 byte size and monotonic timestamps are checked before GTK decodes an image.
 There is no image input handler, virtual keyboard or pointer device in the viewer.
 
@@ -93,6 +97,27 @@ viewer termination leaving source enabled, accessible stop disabling source
 input with its application alive, and source destruction clearing the preview.
 No claim of cross-distro GUI, high-DPI, fullscreen or sustained performance
 coverage is made by these checks.
+
+September follow-up: the same rule expression and viewer were checked in a
+disposable Lua compositor: live source image, floating/pinned 640 × 360 window,
+no initial focus, and explicit rule cleanup. The launcher path and signal cleanup
+also pass a fake-Lua regression. This is not a full live launcher test on a user's
+Lua host. Changing that disposable output to scale 1.5 / rotation 90° exposed an
+unresolved compositor-placement issue: the existing floating window remained at
+its old coordinates and was partially off-screen. Reopening the viewer or moving
+it manually is necessary; automatic monitor-change repositioning is not implemented.
+
+## Reproducible performance sampling
+
+```sh
+python3 scripts/benchmark_preview.py --live --session agent --seconds 120 --fps 5
+```
+
+This opt-in script opens/closes only its own host preview, never enables input,
+and requires an existing managed source. It reports 30 standalone worker latency
+samples, viewer RSS and viewer/reaped-worker CPU. It does **not** measure presented
+FPS, GPU/compositor CPU, or total memory of the process tree. See
+[the measured follow-up](audit-followup-2026-09.md) for results and remaining limits.
 
 Borderless revision: verified over a room-image application at both new sizes,
 with accessible close/stop labels and scoped border/shadow suppression. In a

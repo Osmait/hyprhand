@@ -57,7 +57,7 @@ pub const Pointer = struct {
             c.zwlr_virtual_pointer_v1_button(self.device, timestamp(), button, 0);
             c.zwlr_virtual_pointer_v1_frame(self.device);
             self.held = null;
-            self.sync() catch {};
+            self.syncWithCancellation(false) catch {};
         }
     }
 
@@ -69,6 +69,12 @@ pub const Pointer = struct {
     const callback_listener = c.struct_wl_callback_listener{ .done = done };
 
     pub fn sync(self: *Pointer) !void {
+        return self.syncWithCancellation(true);
+    }
+
+    // Bootstrap waits must honor cancellation even before a Runtime is bound.
+    // Only delivery/release of already queued owned input opts out.
+    pub fn syncWithCancellation(self: *Pointer, cancellable: bool) !void {
         var finished = false;
         const callback = c.wl_display_sync(self.display) orelse return error.WaylandUnavailable;
         // Destroying the callback on errors prevents a later callback into this stack.
@@ -76,6 +82,7 @@ pub const Pointer = struct {
         if (c.wl_callback_add_listener(callback, &callback_listener, &finished) != 0) return error.WaylandUnavailable;
         const deadline = native.nowMs() + 3000;
         while (!finished) {
+            if (cancellable) try native.checkCancelled();
             if (self.runtime) |rt| try rt.guard();
             if (c.wl_display_dispatch_pending(self.display) < 0) return error.WaylandUnavailable;
             if (finished) break;
@@ -112,7 +119,7 @@ pub const Pointer = struct {
         c.zwlr_virtual_pointer_v1_frame(self.device);
         c.zwlr_virtual_pointer_v1_button(self.device, timestamp(), button, 0);
         c.zwlr_virtual_pointer_v1_frame(self.device);
-        try self.sync();
+        try self.syncWithCancellation(false);
     }
 
     pub fn scroll(self: *Pointer, dx: i32, dy: i32) !void {
@@ -152,6 +159,6 @@ pub const Pointer = struct {
         if (dy != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, timestamp(), 0);
         if (dx != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, timestamp(), 1);
         c.zwlr_virtual_pointer_v1_frame(self.device);
-        self.sync() catch {};
+        self.syncWithCancellation(false) catch {};
     }
 };

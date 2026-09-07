@@ -28,6 +28,7 @@ class Preview(unittest.TestCase):
         self.metadata.update(compositor=self.sleeper(), bus=self.sleeper())
         self.save()
         self.requests = []
+        self.provider = "hyprlang"
         ipc_dir = self.runtime / "hypr/test"
         ipc_dir.mkdir(parents=True)
         (ipc_dir / "hyprland.lock").write_text(f"{self.metadata['compositor']['pid']}\nwayland-test\n")
@@ -53,11 +54,11 @@ class Preview(unittest.TestCase):
                                  "scale": 1, "x": 0, "y": 0, "transform": 0,
                                  "activeWorkspace": {"id": 1}, "focused": True}]
                     elif request == "j/status":
-                        data = {"configProvider": "hyprlang"}
+                        data = {"configProvider": self.provider}
                     else:
                         data = {}
                     try:
-                        conn.sendall(b"ok" if request.startswith("/keyword ") else json.dumps(data).encode())
+                        conn.sendall(b"ok" if request.startswith(("/keyword ", "/eval ")) else json.dumps(data).encode())
                     except BrokenPipeError:
                         pass
 
@@ -72,6 +73,8 @@ if (root / 'ignore-term').exists(): signal.signal(signal.SIGTERM, signal.SIG_IGN
 (root / 'capture.json').write_text(json.dumps({'argv': sys.argv, 'pid': os.getpid(),
     'runtime': os.environ['XDG_RUNTIME_DIR'], 'instance': os.environ['HYPRLAND_INSTANCE_SIGNATURE']}))
 if (root / 'slow').exists(): time.sleep(30)
+if (root / 'flood').exists():
+    while True: os.write(1, b'x' * 65536)
 if (root / 'lock-after').exists(): (root / 'locked').touch()
 width = 9999 if (root / 'oversize').exists() else 960
 sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' + struct.pack('>II', width, 540))
@@ -139,6 +142,15 @@ sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' +
         (self.root / "oversize").touch()
         self.error("InvalidScreenshot")
 
+    def test_live_output_limit_stops_a_flooding_helper(self):
+        (self.root / "flood").touch()
+        (self.root / "ignore-term").touch()
+        started = time.monotonic()
+        self.error("InvalidScreenshot")
+        self.assertLess(time.monotonic() - started, 2)
+        pid = json.loads((self.root / "capture.json").read_text())["pid"]
+        self.assertFalse(Path(f"/proc/{pid}").exists())
+
     def test_capture_timeout_reaps_helper(self):
         (self.root / "slow").touch()
         started = time.monotonic()
@@ -170,6 +182,16 @@ sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' +
                 process.communicate()
 
     def test_viewer_ignoring_term_is_reaped_and_rules_are_disabled(self):
+        self.viewer_cleanup()
+
+    def test_lua_viewer_uses_scoped_rules_and_cleans_after_signal(self):
+        self.provider = "lua"
+        self.viewer_cleanup()
+        self.assertTrue(any("hl.window_rule(" in request and "no_initial_focus=true" in request
+                            and "match={class='^deskctl-pip-" in request for request in self.requests))
+        self.assertFalse(any(request.startswith("/keyword ") for request in self.requests))
+
+    def viewer_cleanup(self):
         # A private fake host serves only read queries and temporary rule acks.
         # The fake viewer opens no GUI and deliberately ignores graceful stop.
         host = self.root / "hypr/unused-host"
@@ -205,7 +227,8 @@ sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' +
             self.assertEqual(process.returncode, 0, (stdout, stderr))
             self.assertLess(time.monotonic() - started, 3)
             self.assertFalse(Path(f"/proc/{viewer_pid}").exists())
-            self.assertTrue(any(":enable 0" in request for request in self.requests))
+            cleanup = ":set_enabled(false)" if self.provider == "lua" else ":enable 0"
+            self.assertTrue(any(cleanup in request for request in self.requests))
             self.assertTrue(live(self.metadata["compositor"]))
         finally:
             if viewer_fd is not None:

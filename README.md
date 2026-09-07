@@ -92,7 +92,7 @@ teclado al agente y no solicita el foco al abrirse. **Cerrar el visor no detiene
 al agente**; **Detener agente** deshabilita la entrada de deskctl, sin cerrar apps
 ni cancelar procesos externos. Una sesión bloqueada o perdida borra la imagen.
 
-Primera versión: host Hyprlang (probado en 0.56.2), capturas de hasta 960×540 a
+Host Hyprlang o Lua (reglas probadas en 0.56.2), capturas de hasta 960×540 a
 1–15 fps, 5 por defecto. Añade reglas temporales solo para su ventana, sin editar
 tu configuración. GTK no se añade como dependencia de la CLI principal.
 [Uso, arquitectura, pruebas y límites](docs/preview.md).

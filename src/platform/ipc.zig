@@ -57,7 +57,7 @@ pub fn request(a: std.mem.Allocator, path: []const u8, command: []const u8) ![]c
 pub fn requestWithOptions(a: std.mem.Allocator, path: []const u8, command: []const u8, options: Options) ![]const u8 {
     // One monotonic budget for connect, send and the entire reply. A peer
     // trickling bytes must not keep refreshing a per-read timeout forever.
-    const deadline = native.nowMs() + options.timeout_ms;
+    const deadline = native.nowMs() + if (options.cancellable) try native.remainingMs(options.timeout_ms) else options.timeout_ms;
     const fd = try connectUntil(path, deadline, options.cancellable);
     defer _ = c.close(fd);
     var sent: usize = 0;

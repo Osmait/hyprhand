@@ -14,9 +14,13 @@ https://xkbcommon.org/doc/current/group__state.html
 import array
 import ctypes
 import os
+import json
+import signal
 import socket
 import struct
+import subprocess
 import threading
+import time
 import unittest
 
 import integration
@@ -43,6 +47,7 @@ class FakeWayland:
         self.maps = []
         self.errors = []
         self.running = True
+        self.sync_requested = threading.Event()
         self.server = socket.socket(socket.AF_UNIX)
         self.server.bind(str(fixture.root / "wayland-test"))
         self.server.listen()
@@ -110,6 +115,9 @@ class FakeWayland:
                             connection.sendall(message(registry, 0, uints(11) + string("wl_seat") + uints(7)))
                         else:
                             assert opcode == 0
+                            self.sync_requested.set()
+                            if self.mode == "stall_bootstrap":
+                                continue
                             connection.sendall(message(new_id, 0, uints(1)) +
                                                message(1, 1, uints(new_id)))
                     elif interface == "wl_registry":
@@ -261,6 +269,25 @@ class KeyboardProtocol(unittest.TestCase):
         expected.append(("destroy",))
         self.assertEqual(server.events, expected)
         self.assert_balanced(server.events)
+
+    def test_cancel_during_bootstrap_does_not_wait_for_wayland_timeout(self):
+        server = self.start("stall_bootstrap")
+        process = subprocess.Popen([str(integration.BIN), "key", "ctrl+a", "--window",
+                                    self.fixture.address, "--session", "host", "--backend", "native"],
+                                   env=self.fixture.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertTrue(server.sync_requested.wait(2), "bootstrap sync not reached")
+            started = time.monotonic()
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=1)
+            self.assertNotEqual(process.returncode, 0, stderr)
+            self.assertEqual(json.loads(stdout)["err"]["code"], "Cancelled")
+            self.assertLess(time.monotonic() - started, 1)
+            self.assertEqual(server.events, [])
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
 
     def test_unicode_text_survives_multiple_keymap_uploads(self):
         server = self.start()

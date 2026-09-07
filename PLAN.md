@@ -78,14 +78,21 @@ Scope: CLI only, no MCP. Preserve host configuration and user applications.
   native/optional build configuration, contribution guide and audit evidence.
 - [x] Single offline `zig build check` path used by CI; package tests include
   the new IPC and preview regressions. Public command/JSON contracts preserved.
+- [x] Extract action/wait coordination; share cooperative command deadlines;
+  invalidate in-flight enables on stop; cancel initial Wayland synchronization.
+- [x] Incrementally bound PiP capture output; scoped Lua PiP rules and cleanup;
+  repeat real Wayland input/stop and Lua lifecycle tests in disposable sessions.
+- [x] Add opt-in PiP CPU/RSS/worker-latency benchmark; measure 120 s at 5 and
+  15 requested fps. Results are not presentation-fps or long-running leak proofs.
 
 See [audit scope and follow-ups](docs/audit-2026-09.md). This is not a claim
 that all bugs or live platform incompatibilities are eliminated.
 
 ## Remaining platform limitations
 
-- [ ] PiP follow-ups: host Lua window-rule support, PipeWire/zero-copy higher-fps
-  streaming, high-DPI/fullscreen stacking and sustained performance coverage.
+- [ ] PiP follow-ups: PipeWire/zero-copy higher-fps streaming, automatic placement
+  after monitor rotation/resizing, fullscreen/multimonitor and hours-long coverage.
+  Lua rules/viewer verified in isolation; live integrated Lua host launcher pending.
 
 - [ ] Outline production hardening: long-running/animated cursor coverage,
   all scales/rotations and Lua activation; host loading is deliberately manual.
@@ -103,8 +110,12 @@ that all bugs or live platform incompatibilities are eliminated.
 - Native capture remains deferred after measurement: grim observation median
   25.23 ms including CLI overhead. Native keyboard was worthwhile (40.36 ms
   versus helper 750.24 ms for the same 180-codepoint input in ReleaseSafe).
-- Private repository created; initial 0.3 CI passed (run 34063137675).
-  The new 0.4 matrix and packaging workflow are not remotely verified yet.
+- Private repository created; 0.4 maintenance matrix passed on Ubuntu 22.04/24.04
+  (run 34074547410, commit 4f230f3). Follow-up commits require their own CI result;
+  manual packaging verification is tracked separately.
+- New live XWayland test requires a managed opt-in startup/display route; current
+  managed sessions disable XWayland. Nested managed runtime paths can exceed
+  Hyprland's Unix socket limit and currently fail with a generic startup timeout.
 - Isolation is input/session isolation, not a filesystem or credential sandbox.
   Portals/systemd user services are not activated from the private bus.
 - Reparented unrecorded processes cannot safely be attributed after their
@@ -112,5 +123,7 @@ that all bugs or live platform incompatibilities are eliminated.
 - AT-SPI remains read-only in the CLI; the experimental semantic background
   probe is not a general-purpose automation backend.
 - No project license is selected; the repository owner must choose it.
+
+Detailed follow-up evidence: [September follow-up](docs/audit-followup-2026-09.md).
 - Native owned-input cleanup cannot promise recovery from SIGKILL or compositor
   failure. X11 helpers remain external and lack the same cleanup guarantee.

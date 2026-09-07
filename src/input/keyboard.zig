@@ -275,7 +275,7 @@ pub const Keyboard = struct {
         connection.runtime = rt;
         // Never retain a caller's runtime (in particular a stack-local scratch).
         defer connection.runtime = null;
-        try connection.sync();
+        try connection.syncWithCancellation(rt != null);
         if (rt != null) try self.available();
     }
 

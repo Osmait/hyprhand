@@ -24,10 +24,13 @@ fn rule(rt: *Runtime, id: []const u8, key: []const u8, value: []const u8) !void 
     if (!std.mem.eql(u8, std.mem.trim(u8, response, " \r\n"), "ok")) return error.PreviewWindowRuleFailed;
 }
 
-fn disableRule(rt: *Runtime, id: []const u8) void {
+fn disableRule(rt: *Runtime, id: []const u8, lua: bool) void {
     // SIGTERM cancels normal IPC, but must not skip our own rule teardown.
     // Give cleanup a separate, short budget even if the compositor is stuck.
-    const command = std.fmt.allocPrint(rt.a, "/keyword windowrule[{s}]:enable 0", .{id}) catch return;
+    const command = (if (lua)
+        std.fmt.allocPrint(rt.a, "/eval if _G['{s}'] then _G['{s}']:set_enabled(false); _G['{s}']=nil end", .{ id, id, id })
+    else
+        std.fmt.allocPrint(rt.a, "/keyword windowrule[{s}]:enable 0", .{id})) catch return;
     _ = ipc.requestWithOptions(rt.a, rt.socket, command, .{ .timeout_ms = 250, .cancellable = false }) catch {};
 }
 
@@ -60,7 +63,8 @@ pub fn launch(host: *Runtime, opt: Args) !void {
     try host.validateDisplay();
     try host.unlocked();
     const status = try host.json(struct { configProvider: []const u8 }, try host.query("status"));
-    if (!std.mem.eql(u8, status.configProvider, "hyprlang")) return error.PreviewRequiresHyprlang;
+    const lua = std.mem.eql(u8, status.configProvider, "lua");
+    if (!lua and !std.mem.eql(u8, status.configProvider, "hyprlang")) return error.UnsupportedConfigProvider;
 
     var executable: [4096]u8 = undefined;
     const count = c.readlink("/proc/self/exe", &executable, executable.len);
@@ -71,18 +75,26 @@ pub fn launch(host: *Runtime, opt: Args) !void {
     const id = try std.fmt.allocPrint(host.a, "deskctl-pip-{d}", .{c.getpid()});
     // Set the match before any effects. Disable on exit, including partial
     // setup failure. No configuration files, reload, or unrelated rules touched.
-    try rule(host, id, "match:class", try std.fmt.allocPrint(host.a, "^{s}$", .{id}));
-    defer disableRule(host, id);
-    try rule(host, id, "float", "on");
-    try rule(host, id, "pin", "on");
-    try rule(host, id, "no_initial_focus", "on");
-    try rule(host, id, "no_follow_mouse", "on");
-    try rule(host, id, "border_size", "0");
-    try rule(host, id, "rounding", "0");
-    try rule(host, id, "no_shadow", "on");
-    try rule(host, id, "opacity", "1 override 1 override");
-    try rule(host, id, "size", "640 360");
-    try rule(host, id, "enable", "1");
+    defer disableRule(host, id, lua);
+    if (lua) {
+        // Only the internally generated decimal PID is interpolated. Session
+        // names, window titles and all other external text are never Lua code.
+        const command = try std.fmt.allocPrint(host.a, "/eval _G['{s}']=hl.window_rule({{name='{s}',match={{class='^{s}$'}},float=true,pin=true,no_initial_focus=true,no_follow_mouse=true,border_size=0,rounding=0,no_shadow=true,opacity='1 override 1 override',size='640 360'}})", .{ id, id, id });
+        const reply = try ipc.request(host.a, host.socket, command);
+        if (!std.mem.eql(u8, std.mem.trim(u8, reply, " \r\n"), "ok")) return error.PreviewWindowRuleFailed;
+    } else {
+        try rule(host, id, "match:class", try std.fmt.allocPrint(host.a, "^{s}$", .{id}));
+        try rule(host, id, "float", "on");
+        try rule(host, id, "pin", "on");
+        try rule(host, id, "no_initial_focus", "on");
+        try rule(host, id, "no_follow_mouse", "on");
+        try rule(host, id, "border_size", "0");
+        try rule(host, id, "rounding", "0");
+        try rule(host, id, "no_shadow", "on");
+        try rule(host, id, "opacity", "1 override 1 override");
+        try rule(host, id, "size", "640 360");
+        try rule(host, id, "enable", "1");
+    }
 
     var env = try host.env.clone(host.a);
     try env.put("GDK_BACKEND", "wayland");
@@ -114,19 +126,49 @@ pub fn launch(host: *Runtime, opt: Args) !void {
     if (term != .exited or term.exited != 0) return error.PreviewViewerFailed;
 }
 
-fn capture(rt: *Runtime, argv: []const []const u8, fd: c_int) !void {
+fn capture(rt: *Runtime, argv: []const []const u8) ![]const u8 {
+    var pipe: [2]c_int = undefined;
+    if (c.pipe2(&pipe, c.O_CLOEXEC) < 0) return error.PreviewBufferFailed;
+    defer _ = c.close(pipe[0]);
+    defer if (pipe[1] >= 0) {
+        _ = c.close(pipe[1]);
+    };
+    if (c.fcntl(pipe[0], c.F_SETFL, @as(c_int, c.O_NONBLOCK)) < 0) return error.PreviewBufferFailed;
     var child = try std.process.spawn(rt.io, .{
         .argv = argv,
         .environ_map = rt.env,
         .stdin = .ignore,
-        .stdout = .{ .file = .{ .handle = fd, .flags = .{ .nonblocking = false } } },
+        .stdout = .{ .file = .{ .handle = pipe[1], .flags = .{ .nonblocking = false } } },
         .stderr = .ignore,
     });
     defer @import("../platform/child_process.zig").terminate(&child, rt.io);
+    _ = c.close(pipe[1]);
+    pipe[1] = -1;
     const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));
     if (pidfd < 0) return error.ProcessMonitorFailed;
     defer _ = c.close(pidfd);
     const deadline = native.nowMs() + 1500;
+    var bytes: std.ArrayList(u8) = .empty;
+    errdefer bytes.deinit(rt.a);
+    // Drain incrementally with a hard cap, instead of allowing a helper to
+    // grow a memfd arbitrarily before validating its final size.
+    while (true) {
+        try native.checkCancelled();
+        if (native.nowMs() >= deadline) return error.HelperTimeout;
+        var chunk: [8192]u8 = undefined;
+        const count = c.read(pipe[0], &chunk, chunk.len);
+        if (count == 0) break;
+        if (count > 0) {
+            const size: usize = @intCast(count);
+            if (size > protocol.max_bytes - bytes.items.len) return error.InvalidScreenshot;
+            try bytes.appendSlice(rt.a, chunk[0..size]);
+            continue;
+        }
+        if (c.__errno_location().* == c.EINTR) continue;
+        if (c.__errno_location().* != c.EAGAIN) return error.PreviewBufferFailed;
+        var readable = c.struct_pollfd{ .fd = pipe[0], .events = c.POLLIN, .revents = 0 };
+        if (c.poll(&readable, 1, 25) < 0 and c.__errno_location().* != c.EINTR) return error.PreviewBufferFailed;
+    }
     while (true) {
         try native.checkCancelled();
         if (native.nowMs() >= deadline) return error.HelperTimeout;
@@ -137,6 +179,7 @@ fn capture(rt: *Runtime, argv: []const []const u8, fd: c_int) !void {
     }
     const term = try child.wait(rt.io);
     if (term != .exited or term.exited != 0) return error.HelperFailed;
+    return bytes.toOwnedSlice(rt.a);
 }
 
 pub fn worker(rt: *Runtime, opt: Args) !void {
@@ -149,22 +192,9 @@ pub fn worker(rt: *Runtime, opt: Args) !void {
     const output = try monitor(rt, opt.monitor);
     const rect = try output.rect();
     const scale = @min(1.0, @min(960.0 / rect.width, 540.0 / rect.height));
-    const fd = c.memfd_create("deskctl-preview", c.MFD_CLOEXEC);
-    if (fd < 0) return error.PreviewBufferFailed;
-    defer _ = c.close(fd);
     const started = native.nowMs();
-    try capture(rt, &.{ "grim", "-c", "-t", "png", "-l", "1", "-s", try std.fmt.allocPrint(rt.a, "{d}", .{scale}), "-o", output.name, "-" }, fd);
+    const png = try capture(rt, &.{ "grim", "-c", "-t", "png", "-l", "1", "-s", try std.fmt.allocPrint(rt.a, "{d}", .{scale}), "-o", output.name, "-" });
     try rt.unlocked();
-    const size = c.lseek(fd, 0, c.SEEK_END);
-    if (size < 24 or size > protocol.max_bytes) return error.InvalidScreenshot;
-    if (c.lseek(fd, 0, c.SEEK_SET) < 0) return error.PreviewBufferFailed;
-    const png = try rt.a.alloc(u8, @intCast(size));
-    var offset: usize = 0;
-    while (offset < png.len) {
-        const n = c.read(fd, png.ptr + offset, png.len - offset);
-        if (n <= 0) return error.PreviewBufferFailed;
-        offset += @intCast(n);
-    }
     try protocol.validatePng(png);
     const enabled = if (rt.token()) |_| true else |err| switch (err) {
         error.ControlStopped => false,

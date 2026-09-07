@@ -33,6 +33,21 @@ pub const c = @cImport({
 });
 
 var cancelled = @import("std").atomic.Value(bool).init(false);
+// One CLI command runs per process. Child cleanup deliberately does not consult
+// this budget, so deadline expiry cannot suppress release/reaping.
+var command_deadline: ?i64 = null;
+var deadline_error: anyerror = error.CommandTimeout;
+
+pub fn limitCommand(ms: u32, err: anyerror) void {
+    command_deadline = nowMs() + ms;
+    deadline_error = err;
+}
+
+pub fn remainingMs(cap: u32) !u32 {
+    try checkCancelled();
+    const end = command_deadline orelse return cap;
+    return @intCast(@max(1, @min(cap, end - nowMs())));
+}
 fn onSignal(_: c_int) callconv(.c) void {
     cancelled.store(true, .monotonic);
 }
@@ -42,6 +57,7 @@ pub fn signals() void {
 }
 pub fn checkCancelled() !void {
     if (cancelled.load(.monotonic)) return error.Cancelled;
+    if (command_deadline) |end| if (nowMs() >= end) return deadline_error;
 }
 
 pub fn nowMs() i64 {
