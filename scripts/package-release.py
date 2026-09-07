@@ -50,6 +50,8 @@ DOCUMENTS = {relative: relative for relative in (
     "examples/spreadsheet/README.md", "examples/spreadsheet/prompt.txt",
     "examples/spreadsheet/data.csv", "examples/spreadsheet/commands.json",
     "examples/spreadsheet/edit.json", "examples/spreadsheet/recording.json",
+    "examples/spreadsheet/edit-original.json", "examples/spreadsheet/recording-original.json",
+    "examples/spreadsheet/prompt-original.txt",
     "examples/spreadsheet/launch-dashboard.ods",
     "docs/video/spreadsheet-agent-demo.mp4", "docs/video/spreadsheet-agent-demo.srt",
     "docs/video/spreadsheet-preview.gif", "docs/video/spreadsheet-poster.jpg",

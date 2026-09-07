@@ -52,10 +52,11 @@ The local checkout directory can keep its existing name.
 
 ## Recordings and screenshots
 
-The published demos were recorded before the rename. Original screenshots,
-videos, subtitles, submitted prompts, transcripts, recording metadata, and saved
-artifacts remain unchanged to preserve the evidence of what actually ran.
-They may show `deskctl` or refer to the former application ID
+The original desktop demonstrations were recorded before the rename. The
+spreadsheet demo now has a newly recorded Hyprhand prompt introduction joined to
+the original Calc footage; its [recording guide](../examples/spreadsheet/README.md)
+documents the edit and preserves the original prompt, transcript and metadata.
+The older note video and screenshots still show `deskctl` and may refer to
 `org.deskctl.NoteDemo`. New GTK demo runs use `org.hyprhand.NoteDemo`.
 
 When reproducing a historical prompt, replace command references to `deskctl`

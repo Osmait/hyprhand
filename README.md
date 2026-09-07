@@ -22,33 +22,25 @@ Previously named **deskctl**. The CLI is now `hyprhand`; see the
 
 ![Animated recording: the real prompt is submitted to Codex, then the agent builds a spreadsheet in Calc](docs/video/spreadsheet-preview.gif)
 
-These recordings predate the rename and show **deskctl**, the former name of
-Hyprhand. Their original prompts, transcripts, subtitles, and media are preserved.
-
 The preview animates directly in this README. It shows the **actual prompt being
 submitted in Codex**, then a real LibreOffice Calc spreadsheet taking shape:
 data, achievement formulas, styled headers, totals, and a native column chart.
 The prompt plays at normal speed; the condensed desktop preview runs at 6× with
-waiting intervals cut. The final result is held for inspection.
-
-**Full recording — play here without downloading:**
-
-https://github.com/user-attachments/assets/6bec3e5d-d27e-45eb-9249-4bcdfbf353c4
-
+waiting intervals cut. The final result is held for inspection. The introduction
+was re-recorded with **Hyprhand** and joined to the original Calc workflow;
+[editing details](examples/spreadsheet/README.md#refreshed-hyprhand-introduction) describe the two takes.
 
 [Task prompt](examples/spreadsheet/prompt.txt) ·
 [Saved spreadsheet](examples/spreadsheet/launch-dashboard.ods) ·
 [Input data](examples/spreadsheet/data.csv) ·
-[Command transcript](examples/spreadsheet/commands.json) ·
-[MP4 file](docs/video/spreadsheet-agent-demo.mp4) ·
-[English subtitles](docs/video/spreadsheet-agent-demo.srt)
+[Command transcript](examples/spreadsheet/commands.json)
 
 The agent entered fictional data, calculated **1,980 signups / 1,700 target =
 116.47% achievement**, created the chart, saved the document, and stopped input.
 This demo uses Calc and needs no Google account. It uses real mouse and keyboard
 input; no spreadsheet API or generated workbook replaces the recorded actions.
-The full MP4 retains desktop segments at 2×. See the
-[recording guide](examples/spreadsheet/README.md) for the setup, verification and edit timeline.
+See the [recording guide](examples/spreadsheet/README.md) for the setup,
+verification, full recording, and edit timeline.
 
 [Try the simpler note demo](#example-fill-and-apply-a-note) ·
 [Watch the earlier note recording](examples/video/README.md) ·

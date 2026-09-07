@@ -113,22 +113,39 @@ verification is not a rebuild of this final media payload.
 ## Spreadsheet and inline-playback follow-up
 
 The subsequent spreadsheet demonstration records actual prompt entry and submission
-in Codex CLI 0.153.4, followed by a Calc dashboard built through hyprhand. The saved
+in Codex CLI 0.153.4, followed by a Calc dashboard built through deskctl
+(the former Hyprhand name). The saved
 ODS contains six monthly achievement formulas, SUM totals and a native two-series
 column chart. Independent inspection confirmed 1,980 signups, a target of 1,700
 and 116.47% overall achievement. The agent stopped input and the coordinator
 ended capture and destroyed its session.
 
 The 987.2-second source capture contains 9,872 frames and 184 forwarded commands,
-including failed probes/focus guards and recoveries. The published MP4 is 88.9
+including failed probes/focus guards and recoveries. The original published MP4 was 88.9
 seconds at 1080p, with retained desktop intervals at 2x. A 44.01-second GIF provides
 an automatic inline preview with desktop intervals at 6x. Both include the real
 prompt submission and the final chart; editorial crops and speed changes are
 explained in the [recording guide](../examples/spreadsheet/README.md).
 
-The README also embeds a GitHub-uploaded MP4 attachment. GitHub's own Markdown
+The README initially embedded a GitHub-uploaded MP4 attachment. GitHub's own Markdown
 renderer returned a native video element, and the uploaded bytes matched the
 local MP4. The final video decoded completely, the GIF's animation/loop metadata
 was checked, and prompt/action/result frames passed visual inspection. Documentation
 validation covered 37 Markdown files and the expanded payload; all eight packaging
 regressions passed. This follow-up changes documentation and example media only.
+
+## Hyprhand introduction refresh
+
+The owner requested a newly recorded introduction joined to the existing Calc
+execution, with only the GIF embedded in the README. The refreshed introduction
+shows actual native typing and Return in Codex using Hyprhand. It comes from a
+separate introduction-only session; no second spreadsheet task was executed.
+The edit is disclosed in the GIF, MP4, README and recording guide.
+
+The refreshed MP4 is 82.23 seconds and the GIF is 37.38 seconds. All 2,198 encoded
+video packets following the introduction match the original execution segments.
+The original ODS is unchanged. Both media files decoded fully, the GIF loop was
+verified, and the prompt, submission and Calc transition passed visual inspection.
+Current hashes and original source metadata are included. Documentation links
+and all eight packaging regressions passed. The dedicated intro session was
+stopped and destroyed after recording.

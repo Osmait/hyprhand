@@ -1,167 +1,171 @@
 1
-00:00:00,000 --> 00:00:15,633
-REAL PROMPT / NATIVE SUBMISSION.
+00:00:00,000 --> 00:00:04,967
+Hyprhand prompt submission. Introduction re-recorded for the rename.
 
 2
-00:00:15,633 --> 00:00:16,933
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:04,967 --> 00:00:08,967
+Hyprhand prompt submission. Introduction re-recorded for the rename.
 
 3
-00:00:16,933 --> 00:00:18,600
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:08,967 --> 00:00:10,267
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 4
-00:00:18,600 --> 00:00:20,567
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:10,267 --> 00:00:11,933
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 5
-00:00:20,567 --> 00:00:21,833
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:11,933 --> 00:00:13,900
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 6
-00:00:21,833 --> 00:00:23,100
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:13,900 --> 00:00:15,167
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 7
-00:00:23,100 --> 00:00:25,200
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:15,167 --> 00:00:16,433
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 8
-00:00:25,200 --> 00:00:27,567
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:16,433 --> 00:00:18,533
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 9
-00:00:27,567 --> 00:00:29,400
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:18,533 --> 00:00:20,900
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 10
-00:00:29,400 --> 00:00:30,633
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:20,900 --> 00:00:22,733
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 11
-00:00:30,633 --> 00:00:32,067
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:22,733 --> 00:00:23,967
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 12
-00:00:32,067 --> 00:00:33,867
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:23,967 --> 00:00:25,400
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 13
-00:00:33,867 --> 00:00:35,633
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:25,400 --> 00:00:27,200
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 14
-00:00:35,633 --> 00:00:37,867
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:27,200 --> 00:00:28,967
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 15
-00:00:37,867 --> 00:00:39,300
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:28,967 --> 00:00:31,200
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 16
-00:00:39,300 --> 00:00:41,433
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:31,200 --> 00:00:32,633
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 17
-00:00:41,433 --> 00:00:42,700
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:32,633 --> 00:00:34,767
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 18
-00:00:42,700 --> 00:00:44,067
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:34,767 --> 00:00:36,033
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 19
-00:00:44,067 --> 00:00:45,467
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:36,033 --> 00:00:37,400
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 20
-00:00:45,467 --> 00:00:47,100
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:37,400 --> 00:00:38,800
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 21
-00:00:47,100 --> 00:00:48,700
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:38,800 --> 00:00:40,433
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 22
-00:00:48,700 --> 00:00:50,333
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:40,433 --> 00:00:42,033
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 23
-00:00:50,333 --> 00:00:52,300
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:42,033 --> 00:00:43,667
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 24
-00:00:52,300 --> 00:00:53,700
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:43,667 --> 00:00:45,633
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 25
-00:00:53,700 --> 00:00:54,967
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:45,633 --> 00:00:47,033
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 26
-00:00:54,967 --> 00:00:57,033
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:47,033 --> 00:00:48,300
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 27
-00:00:57,033 --> 00:00:58,767
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:48,300 --> 00:00:50,367
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 28
-00:00:58,767 --> 00:01:00,167
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:50,367 --> 00:00:52,100
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 29
-00:01:00,167 --> 00:01:01,567
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:52,100 --> 00:00:53,500
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 30
-00:01:01,567 --> 00:01:03,600
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:53,500 --> 00:00:54,900
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 31
-00:01:03,600 --> 00:01:06,167
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:54,900 --> 00:00:56,933
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 32
-00:01:06,167 --> 00:01:07,900
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:56,933 --> 00:00:59,500
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 33
-00:01:07,900 --> 00:01:09,867
-REAL DESKTOP / 2x / WAITING CUTS.
+00:00:59,500 --> 00:01:01,233
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 34
-00:01:09,867 --> 00:01:11,300
-REAL DESKTOP / 2x / WAITING CUTS.
+00:01:01,233 --> 00:01:03,200
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 35
-00:01:11,300 --> 00:01:12,733
-REAL DESKTOP / 2x / WAITING CUTS.
+00:01:03,200 --> 00:01:04,633
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 36
-00:01:12,733 --> 00:01:14,300
-REAL DESKTOP / 2x / WAITING CUTS.
+00:01:04,633 --> 00:01:06,067
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 37
-00:01:14,300 --> 00:01:16,533
-REAL DESKTOP / 2x / WAITING CUTS.
+00:01:06,067 --> 00:01:07,633
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 38
-00:01:16,533 --> 00:01:18,967
-REAL DESKTOP / 2x / WAITING CUTS.
+00:01:07,633 --> 00:01:09,867
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 39
-00:01:18,967 --> 00:01:20,333
-REAL DESKTOP / 2x / WAITING CUTS.
+00:01:09,867 --> 00:01:12,300
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 40
-00:01:20,333 --> 00:01:22,000
-REAL DESKTOP / 2x / WAITING CUTS.
+00:01:12,300 --> 00:01:13,667
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 41
-00:01:22,000 --> 00:01:22,933
-REAL DESKTOP / 2x / WAITING CUTS.
+00:01:13,667 --> 00:01:15,333
+Original Calc recording. Real desktop input at 2x; waiting cuts.
 
 42
-00:01:22,933 --> 00:01:28,900
-VERIFIED RESULT / INPUT STOPPED.
+00:01:15,333 --> 00:01:16,267
+Original Calc recording. Real desktop input at 2x; waiting cuts.
+
+43
+00:01:16,267 --> 00:01:22,233
+Original Calc recording. Verified result; input stopped.

@@ -1,28 +1,33 @@
 {
-  "recorded_on": "2026-09-07",
-  "actor": {
-    "application": "Codex CLI",
-    "version": "0.153.4",
-    "model_displayed": "gpt-6-astra high",
-    "prompt_submission": "Actual native text input followed by Return in the recorded CLI"
-  },
-  "environment": {
-    "deskctl": "0.4.0",
-    "Hyprland": "0.56.2",
-    "Aquamarine": "0.15.0",
-    "application": "LibreOffice Calc 26.8.0.3",
-    "session": "sheet-demo",
-    "headless_bridge": "Explicit local build"
-  },
-  "source": {
-    "width": 1920,
-    "height": 1080,
-    "target_capture_fps": 10,
-    "frames": 9872,
-    "duration": 987.2001551549993,
-    "prompt_submitted_at_seconds": 11.618870115999925,
-    "command_count": 184,
-    "failed_command_count": 17
+  "edited_on": "2026-09-07",
+  "description": "Refreshed Hyprhand prompt introduction spliced onto the original Calc execution. Two takes; no second spreadsheet run.",
+  "sources": {
+    "introduction": {
+      "application": "Codex CLI 0.153.4",
+      "tool": "hyprhand 0.4.0",
+      "model_displayed": "gpt-6-astra low",
+      "session": "hyprhand-intro",
+      "capture": {
+        "frames": 561,
+        "duration": 56.10013864599932
+      },
+      "width": 1920,
+      "height": 1080,
+      "target_fps": 10,
+      "submission_source_seconds": 39.2591794559994,
+      "input": "Actual native type and Return via Hyprhand",
+      "agent_scope": "Introduction-only acknowledgement; no spreadsheet execution",
+      "input_stopped": true,
+      "session_destroyed": true
+    },
+    "execution": {
+      "metadata": "examples/spreadsheet/recording-original.json",
+      "timeline": "examples/spreadsheet/edit-original.json",
+      "prompt": "examples/spreadsheet/prompt-original.txt",
+      "source_commit": "72b61dd83153fe5d21671d88bed20fe905270b03",
+      "encoded_packets_unchanged": true,
+      "matching_packet_count": 2198
+    }
   },
   "verification": {
     "method": "Agent viewed fresh screenshots; coordinator visually inspected the final sheet and independently checked saved ODS formulas, values and chart ranges",
@@ -38,51 +43,50 @@
     "session_destroyed_after_capture": true,
     "saved_ods_bytes_unchanged": true
   },
-  "scope": {
-    "agent_used_host_input": false,
-    "coordinator_used_host_browser_for_github_preflight": true,
-    "host_footage_included": false,
-    "preliminary_cli_and_runtime_setup_attempts_included": false
-  },
   "video": {
     "file": "docs/video/spreadsheet-agent-demo.mp4",
-    "duration_seconds": 88.9,
+    "duration_seconds": 82.233333,
+    "bytes": 4952060,
+    "codec_name": "h264",
     "width": 1920,
     "height": 1080,
-    "fps": "30/1",
-    "codec": "h264",
-    "pixel_format": "yuv420p",
+    "pix_fmt": "yuv420p",
+    "r_frame_rate": "30/1",
+    "nb_read_frames": "2467",
     "audio": false,
-    "fast_start": true,
-    "bytes": 4927662
+    "fast_start": true
   },
   "preview": {
     "file": "docs/video/spreadsheet-preview.gif",
-    "duration_seconds": 44.01,
+    "duration_seconds": 37.38,
+    "bytes": 5022579,
+    "codec_name": "gif",
     "width": 960,
     "height": 800,
+    "pix_fmt": "bgra",
+    "r_frame_rate": "8/1",
+    "nb_read_frames": "299",
     "target_fps": 8,
     "loop": true,
-    "desktop_speed_relative_to_source": 6,
-    "bytes": 5244050,
-    "decoded_frame_count": 352
+    "desktop_speed_relative_to_source": 6
   },
-  "editing": "Actual CLI prompt and submission at 1x. Desktop input intervals at 2x in the MP4 and 6x in the GIF. Waiting cuts. Editorial sidebar covers terminal output during desktop segments. Save dialog omitted to exclude personal paths. Final real app state held for inspection.",
+  "editing": "Two recording takes: a new native Hyprhand prompt submission followed by the unchanged original Calc execution segments. Intro at 1x with one waiting cut; original desktop at 2x; final result at 1x. No new spreadsheet run was performed.",
   "github": {
-    "attachment_url": "https://github.com/user-attachments/assets/6bec3e5d-d27e-45eb-9249-4bcdfbf353c4",
-    "uploaded_file": "docs/video/spreadsheet-agent-demo.mp4",
-    "native_video_element_verified_in_github_markdown_renderer": true,
-    "uploaded_bytes_match_local_sha256": true
+    "readme_media": "GIF only",
+    "historical_attachment_used_in_readme": false
   },
   "sha256": {
-    "docs/video/spreadsheet-agent-demo.mp4": "7d0b2ff24bb33b31c55266895ba67a6765eae61f1059a0dd5550eecf7b27ccd9",
-    "docs/video/spreadsheet-preview.gif": "436463d095a895ddd4c96e27d895a2c2987ce9cab69e092088dd4628c3f5171a",
+    "docs/video/spreadsheet-agent-demo.mp4": "c39d6712aaa18c94c921c9c18fc3f3b5395c98cf879c6e65316205a3136d332e",
+    "docs/video/spreadsheet-preview.gif": "8ede4b3385b1555ec1605b6b33c3adbcc8861709db739431324fe1a896564cda",
+    "docs/video/spreadsheet-agent-demo.srt": "c5c8df66eaf3efd2c3b22428694e9453f21a541a6ee43c7fa81a9fb125f0e1ac",
     "docs/video/spreadsheet-poster.jpg": "d9799dd6ea23d9578d18ede7a853eaf23e0315e18e55564bcc617c5e95b18575",
-    "docs/video/spreadsheet-agent-demo.srt": "f212282c3e802591ed40783d5cf26ff95d0f21564e70801c0e2871b919155d4b",
-    "examples/spreadsheet/launch-dashboard.ods": "e30eb0742fb1944ad91485b4b85fa32c90ad7f989a91e3fe9afbe0eca02da35c",
-    "examples/spreadsheet/prompt.txt": "0ba70bcf563d5f9296b75589fb93212cee366c4d4f419d0b17325e14594fb7e1",
-    "examples/spreadsheet/data.csv": "7aa07c2cf22156340d4b50dc8a74c6671da69224b9d2bc39cc3c662283c2bf2b",
+    "examples/spreadsheet/prompt.txt": "02d76bc3bb856273af137f4f1f2f68e281f870d75d5ac00def48a5b24c596efa",
+    "examples/spreadsheet/prompt-original.txt": "0ba70bcf563d5f9296b75589fb93212cee366c4d4f419d0b17325e14594fb7e1",
     "examples/spreadsheet/commands.json": "e19a8e947d06ef9cc6abcda0ec8e55e0296ef58ce64e754aa354b3499b69a460",
-    "examples/spreadsheet/edit.json": "b3b337b33c3a44f78c094b410ecc0aaa517d3fd2e39f350398e8f71b6e2577e1"
+    "examples/spreadsheet/edit.json": "0c6a9d76f578f608d9b756f7daf1a76164e44ae28deaae1a28ebfec3c504c33c",
+    "examples/spreadsheet/edit-original.json": "b3b337b33c3a44f78c094b410ecc0aaa517d3fd2e39f350398e8f71b6e2577e1",
+    "examples/spreadsheet/recording-original.json": "1e55f24b32623f0a183f0e79573c8626e61d1936d66346320ee6a431d4aadb3b",
+    "examples/spreadsheet/launch-dashboard.ods": "e30eb0742fb1944ad91485b4b85fa32c90ad7f989a91e3fe9afbe0eca02da35c",
+    "examples/spreadsheet/data.csv": "7aa07c2cf22156340d4b50dc8a74c6671da69224b9d2bc39cc3c662283c2bf2b"
   }
 }

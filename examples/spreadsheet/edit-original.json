@@ -1,393 +1,341 @@
 {
-  "description": "Two recording takes: a new native Hyprhand prompt submission followed by the unchanged original Calc execution segments. Intro at 1x with one waiting cut; original desktop at 2x; final result at 1x. No new spreadsheet run was performed.",
-  "intro_duration": 8.966667000000001,
+  "description": "Real terminal prompt zoom; waiting cuts; desktop segments at 2x; result at 1x. The terminal is covered by editorial captions during desktop shots. The save dialog is omitted to keep local paths out. No generated application states.",
   "shots": [
     {
-      "source": "hyprhand-introduction",
       "in": 0,
-      "out": 5,
+      "out": 15.618870115999925,
       "speed": 1,
       "kind": "prompt",
       "output_in": 0,
-      "output_duration": 4.966667
-    },
-    {
-      "source": "hyprhand-introduction",
-      "in": 37.2591794559994,
-      "out": 41.2591794559994,
-      "speed": 1,
-      "kind": "prompt",
-      "output_in": 4.966667,
-      "output_duration": 4.0
+      "output_duration": 15.633333
     },
     {
       "in": 78.8975448509993,
       "out": 81.43282218199984,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 8.966667,
-      "output_duration": 1.3,
-      "source": "original-calc-recording"
+      "output_in": 15.633,
+      "output_duration": 1.3
     },
     {
       "in": 122.82697700899935,
       "out": 126.15706620199963,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 10.266667,
-      "output_duration": 1.666667,
-      "source": "original-calc-recording"
+      "output_in": 16.933,
+      "output_duration": 1.666667
     },
     {
       "in": 146.43310430199944,
       "out": 150.3430724439997,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 11.933334,
-      "output_duration": 1.966667,
-      "source": "original-calc-recording"
+      "output_in": 18.6,
+      "output_duration": 1.966667
     },
     {
       "in": 163.38031737099953,
       "out": 165.9110379329997,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 13.900001,
-      "output_duration": 1.266667,
-      "source": "original-calc-recording"
+      "output_in": 20.567,
+      "output_duration": 1.266667
     },
     {
       "in": 178.79520386799976,
       "out": 181.30180924799987,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 15.166668,
-      "output_duration": 1.266667,
-      "source": "original-calc-recording"
+      "output_in": 21.833,
+      "output_duration": 1.266667
     },
     {
       "in": 193.58735364999956,
       "out": 197.76067137099943,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 16.433335,
-      "output_duration": 2.1,
-      "source": "original-calc-recording"
+      "output_in": 23.1,
+      "output_duration": 2.1
     },
     {
       "in": 210.4441466659993,
       "out": 215.15068395999987,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 18.533335,
-      "output_duration": 2.366667,
-      "source": "original-calc-recording"
+      "output_in": 25.2,
+      "output_duration": 2.366667
     },
     {
       "in": 239.6070746319994,
       "out": 243.21557943199986,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 20.900002,
-      "output_duration": 1.833333,
-      "source": "original-calc-recording"
+      "output_in": 27.567,
+      "output_duration": 1.833333
     },
     {
       "in": 247.37246410000006,
       "out": 249.87962248799994,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 22.733335,
-      "output_duration": 1.233333,
-      "source": "original-calc-recording"
+      "output_in": 29.4,
+      "output_duration": 1.233333
     },
     {
       "in": 281.5592162189998,
       "out": 284.4009780899998,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 23.966668,
-      "output_duration": 1.433333,
-      "source": "original-calc-recording"
+      "output_in": 30.633,
+      "output_duration": 1.433333
     },
     {
       "in": 298.30155535099965,
       "out": 301.85030498599934,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 25.400001,
-      "output_duration": 1.8,
-      "source": "original-calc-recording"
+      "output_in": 32.067,
+      "output_duration": 1.8
     },
     {
       "in": 316.36326449999996,
       "out": 319.9436625829996,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 27.200001,
-      "output_duration": 1.766667,
-      "source": "original-calc-recording"
+      "output_in": 33.867,
+      "output_duration": 1.766667
     },
     {
       "in": 342.47914367099946,
       "out": 346.9949723519996,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 28.966668,
-      "output_duration": 2.233333,
-      "source": "original-calc-recording"
+      "output_in": 35.633,
+      "output_duration": 2.233333
     },
     {
       "in": 366.8096963639993,
       "out": 369.6709948469999,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 31.200001,
-      "output_duration": 1.433333,
-      "source": "original-calc-recording"
+      "output_in": 37.867,
+      "output_duration": 1.433333
     },
     {
       "in": 387.59182934699965,
       "out": 391.8276171039999,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 32.633334,
-      "output_duration": 2.133333,
-      "source": "original-calc-recording"
+      "output_in": 39.3,
+      "output_duration": 2.133333
     },
     {
       "in": 405.1180844529992,
       "out": 407.62461352699955,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 34.766667,
-      "output_duration": 1.266667,
-      "source": "original-calc-recording"
+      "output_in": 41.433,
+      "output_duration": 1.266667
     },
     {
       "in": 422.54949184499964,
       "out": 425.2837259009995,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 36.033334,
-      "output_duration": 1.366667,
-      "source": "original-calc-recording"
+      "output_in": 42.7,
+      "output_duration": 1.366667
     },
     {
       "in": 437.95125023599957,
       "out": 440.7173705749994,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 37.400001,
-      "output_duration": 1.4,
-      "source": "original-calc-recording"
+      "output_in": 44.067,
+      "output_duration": 1.4
     },
     {
       "in": 454.7789438439997,
       "out": 458.0496214299994,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 38.800001,
-      "output_duration": 1.633333,
-      "source": "original-calc-recording"
+      "output_in": 45.467,
+      "output_duration": 1.633333
     },
     {
       "in": 474.9565495889994,
       "out": 478.1812774969996,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 40.433334,
-      "output_duration": 1.6,
-      "source": "original-calc-recording"
+      "output_in": 47.1,
+      "output_duration": 1.6
     },
     {
       "in": 488.2287680129995,
       "out": 491.4837043719992,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 42.033334,
-      "output_duration": 1.633333,
-      "source": "original-calc-recording"
+      "output_in": 48.7,
+      "output_duration": 1.633333
     },
     {
       "in": 524.8464351799996,
       "out": 528.7360983009996,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 43.666667,
-      "output_duration": 1.966667,
-      "source": "original-calc-recording"
+      "output_in": 50.333,
+      "output_duration": 1.966667
     },
     {
       "in": 544.285201076,
       "out": 547.0835948299994,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 45.633334,
-      "output_duration": 1.4,
-      "source": "original-calc-recording"
+      "output_in": 52.3,
+      "output_duration": 1.4
     },
     {
       "in": 561.6181804739992,
       "out": 564.1246228550001,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 47.033334,
-      "output_duration": 1.266667,
-      "source": "original-calc-recording"
+      "output_in": 53.7,
+      "output_duration": 1.266667
     },
     {
       "in": 580.7684243319993,
       "out": 584.9562253119996,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 48.300001,
-      "output_duration": 2.066667,
-      "source": "original-calc-recording"
+      "output_in": 54.967,
+      "output_duration": 2.066667
     },
     {
       "in": 598.5748665039994,
       "out": 602.0622972099993,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 50.366668,
-      "output_duration": 1.733333,
-      "source": "original-calc-recording"
+      "output_in": 57.033,
+      "output_duration": 1.733333
     },
     {
       "in": 614.0862732769995,
       "out": 616.8880585419995,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 52.100001,
-      "output_duration": 1.4,
-      "source": "original-calc-recording"
+      "output_in": 58.767,
+      "output_duration": 1.4
     },
     {
       "in": 623.583580918,
       "out": 626.396758266,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 53.500001,
-      "output_duration": 1.4,
-      "source": "original-calc-recording"
+      "output_in": 60.167,
+      "output_duration": 1.4
     },
     {
       "in": 645.6210342649995,
       "out": 649.6430471599999,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 54.900001,
-      "output_duration": 2.033333,
-      "source": "original-calc-recording"
+      "output_in": 61.567,
+      "output_duration": 2.033333
     },
     {
       "in": 667.4195000779994,
       "out": 672.5882438949996,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 56.933334,
-      "output_duration": 2.566667,
-      "source": "original-calc-recording"
+      "output_in": 63.6,
+      "output_duration": 2.566667
     },
     {
       "in": 686.4673762119994,
       "out": 689.9157005809996,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 59.500001,
-      "output_duration": 1.733333,
-      "source": "original-calc-recording"
+      "output_in": 66.167,
+      "output_duration": 1.733333
     },
     {
       "in": 704.0458061889997,
       "out": 707.9826533309999,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 61.233334,
-      "output_duration": 1.966667,
-      "source": "original-calc-recording"
+      "output_in": 67.9,
+      "output_duration": 1.966667
     },
     {
       "in": 714.57589966,
       "out": 717.4951820069994,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 63.200001,
-      "output_duration": 1.433333,
-      "source": "original-calc-recording"
+      "output_in": 69.867,
+      "output_duration": 1.433333
     },
     {
       "in": 740.6787299869995,
       "out": 743.5052543289996,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 64.633334,
-      "output_duration": 1.433333,
-      "source": "original-calc-recording"
+      "output_in": 71.3,
+      "output_duration": 1.433333
     },
     {
       "in": 760.3249322309996,
       "out": 763.4965829019995,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 66.066667,
-      "output_duration": 1.566667,
-      "source": "original-calc-recording"
+      "output_in": 72.733,
+      "output_duration": 1.566667
     },
     {
       "in": 781.9150688080001,
       "out": 786.3413602739995,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 67.633334,
-      "output_duration": 2.233333,
-      "source": "original-calc-recording"
+      "output_in": 74.3,
+      "output_duration": 2.233333
     },
     {
       "in": 803.1313009369999,
       "out": 808.0169166759999,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 69.866667,
-      "output_duration": 2.433333,
-      "source": "original-calc-recording"
+      "output_in": 76.533,
+      "output_duration": 2.433333
     },
     {
       "in": 821.0068020299998,
       "out": 823.8001608239995,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 72.3,
-      "output_duration": 1.366667,
-      "source": "original-calc-recording"
+      "output_in": 78.967,
+      "output_duration": 1.366667
     },
     {
       "in": 837.12486156,
       "out": 840.4912262089995,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 73.666667,
-      "output_duration": 1.666667,
-      "source": "original-calc-recording"
+      "output_in": 80.333,
+      "output_duration": 1.666667
     },
     {
       "in": 858.1302557389993,
       "out": 859.9655992149994,
       "speed": 2,
       "kind": "desktop",
-      "output_in": 75.333334,
-      "output_duration": 0.933333,
-      "source": "original-calc-recording"
+      "output_in": 82.0,
+      "output_duration": 0.933333
     },
     {
       "in": 981.100069649,
       "out": 987.100069649,
       "speed": 1,
       "kind": "result",
-      "output_in": 76.266667,
-      "output_duration": 5.966667,
-      "source": "original-calc-recording"
+      "output_in": 82.933,
+      "output_duration": 5.966667
     }
   ]
 }
