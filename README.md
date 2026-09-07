@@ -15,9 +15,6 @@ Picture-in-Picture viewer lets you watch a managed session from your desktop.
 limited [compatibility matrix](docs/compatibility.md). Managed sessions isolate
 input; they share your user account's files, credentials, network, and permissions.
 
-Previously named **deskctl**. The CLI is now `hyprhand`; see the
-[rename and upgrade notes](docs/renaming.md) for installation and session changes.
-
 ## Watch an agent build a spreadsheet
 
 ![Animated recording: the real prompt is submitted to Codex, then the agent builds a spreadsheet in Calc](docs/video/spreadsheet-preview.gif)

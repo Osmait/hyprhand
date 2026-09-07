@@ -37,7 +37,7 @@ DOCUMENTS = {relative: relative for relative in (
     "CONTRIBUTING.md", "docs/architecture.md", "docs/archive/audit-2026-09.md",
     "docs/archive/audit-followup-2026-09.md", "docs/archive/performance-2026-09.md",
     "docs/README.md", "docs/archive/README.md", "docs/cli.md", "docs/sessions.md", "docs/testing.md",
-    "docs/troubleshooting.md", "docs/renaming.md", "docs/releasing.md",
+    "docs/troubleshooting.md", "docs/releasing.md",
     "SECURITY.md", "THIRD_PARTY_NOTICES.md",
     "examples/blender/README.md", "tests/fixtures/README.md",
     "skills/hyprhand/SKILL.md", "examples/gtk/README.md", "docs/images/README.md",

@@ -1,8 +1,8 @@
 # Recorded agent demo
 
 This recording predates the **Hyprhand** rename and uses the former name
-**deskctl**. Original media and command evidence retain that name. See the
-[rename notes](../../docs/renaming.md).
+**deskctl**. Original media and command evidence retain that name. Use `hyprhand`
+when following the current walkthrough.
 
 This is a real, silent, captioned recording of a Codex subagent operating the
 included GTK note app through deskctl. The coordinator prepared an empty demo

@@ -1,8 +1,7 @@
 # README image provenance
 
-This recording predates the **Hyprhand** rename and uses the former name
-**deskctl**. Original media and command evidence retain that name. See the
-[rename notes](../../docs/renaming.md).
+These screenshots predate the **Hyprhand** rename and show the former name
+**deskctl**. Current walkthroughs use `hyprhand`.
 
 All images referenced here are actual project screenshots or the existing Blender
 render. No application screenshot is an AI-generated mockup.
