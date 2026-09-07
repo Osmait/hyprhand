@@ -95,3 +95,11 @@ La CI remota de `4f230f3` pasó en Ubuntu 22.04 y 24.04
 ([ejecución](https://github.com/Osmait/computer-use-hyperland/actions/runs/34074547410)).
 Los resultados remotos del seguimiento deben asociarse al commit correspondiente,
 no inferirse de esa ejecución anterior.
+
+El código del seguimiento `261fe93` pasó la
+[CI completa](https://github.com/Osmait/computer-use-hyperland/actions/runs/34075926551)
+y el [empaquetado privado](https://github.com/Osmait/computer-use-hyperland/actions/runs/34075926414)
+en ambos Ubuntu. No se creó tag ni GitHub Release. Esas ejecuciones detectaron
+avisos por acciones Node 20: se actualizaron checkout/setup-python/upload-artifact
+a las versiones publicadas v7, fijando sus SHA exactos en los workflows.
+La modificación de workflows requiere otra ejecución para verificar sus nuevos pins.

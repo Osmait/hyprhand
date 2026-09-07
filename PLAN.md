@@ -84,6 +84,8 @@ Scope: CLI only, no MCP. Preserve host configuration and user applications.
   repeat real Wayland input/stop and Lua lifecycle tests in disposable sessions.
 - [x] Add opt-in PiP CPU/RSS/worker-latency benchmark; measure 120 s at 5 and
   15 requested fps. Results are not presentation-fps or long-running leak proofs.
+- [x] Verify follow-up CI and manual private packaging on Ubuntu 22.04/24.04
+  (261fe93: runs 34075926551 / 34075926414); update deprecated Actions to SHA pins.
 
 See [audit scope and follow-ups](docs/audit-2026-09.md). This is not a claim
 that all bugs or live platform incompatibilities are eliminated.
