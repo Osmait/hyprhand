@@ -5,11 +5,22 @@
     "native": {
       "platform": "Linux / Hyprland",
       "toolkit": "GTK4",
-      "sources": ["src/pip.zig", "src/pip.css", "src/pip_gtk.h", "src/preview.zig"],
+      "sources": [
+        "src/preview/viewer.zig",
+        "src/preview/pip.css",
+        "src/preview/pip_gtk.h",
+        "src/preview/controller.zig"
+      ],
       "surfaceContract": ".impeccable/surfaces/src-pip-zig.md",
       "geometry": {
-        "defaultSize": [640, 360],
-        "minimumSizeRequest": [360, 203],
+        "defaultSize": [
+          640,
+          360
+        ],
+        "minimumSizeRequest": [
+          360,
+          203
+        ],
         "unit": "GTK logical pixel",
         "image": "Full-window contain-fit, no allocation reserved for controls",
         "top": "Session identity and close over a contrast-protecting scrim",
@@ -27,8 +38,7 @@
       "typography": "Native font family, 12px labels; bounded text with full tooltips",
       "freshness": "Unchanged protocol age checks and stale-image clearing",
       "evidence": [
-        ".impeccable/review/borderless-wide.png",
-        ".impeccable/review/borderless-small.png"
+        "docs/preview.md"
       ]
     }
   }

@@ -22,7 +22,7 @@ import threading
 import time
 
 BIN = Path(__file__).resolve().parents[1] / "zig-out/bin/deskctl"
-TEXT = "deskctl background prueba ñ 123"
+TEXT = "deskctl background test ñ 123"
 INSTANCE = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
 SOCKET = Path(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent")) / "hypr" / INSTANCE / ".socket.sock"
 
@@ -60,7 +60,7 @@ def fixture(tag):
         for prop in ("margin-top", "margin-bottom", "margin-start", "margin-end"): box.set_property(prop, 24)
         box.append(Gtk.Label(label="Prueba temporal: " + tag))
         entry = Gtk.Entry()
-        entry.set_placeholder_text("Campo de prueba")
+        entry.set_placeholder_text("Test field")
         box.append(entry)
         entry.connect("changed", lambda e: emit("text", chars=len(e.get_text()), matches_probe=e.get_text() == TEXT))
         focus = Gtk.EventControllerFocus()
@@ -71,7 +71,7 @@ def fixture(tag):
         key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key.connect("key-pressed", lambda _, keyval, keycode, state: (emit("key", code=keycode), False)[1])
         win.add_controller(key)
-        button = Gtk.Button(label="Acción de prueba")
+        button = Gtk.Button(label="Test action")
         button.connect("clicked", lambda _: emit("button-activated"))
         box.append(button)
         # Custom canvas resembles the class of controls that needs coordinates
@@ -117,7 +117,7 @@ def a11y_worker(pid, operation):
             editable = next((n.get_editable_text_iface() for n in nodes if n.get_editable_text_iface()), None)
             result = {"supported": editable is not None, "accepted": bool(editable and editable.set_text_contents(TEXT))}
         elif operation == "button":
-            target = next((n for n in nodes if n.get_name() == "Acción de prueba" and n.get_role() == Atspi.Role.PUSH_BUTTON), None)
+            target = next((n for n in nodes if n.get_name() == "Test action" and n.get_role() == Atspi.Role.PUSH_BUTTON), None)
             action = target.get_action_iface() if target else None
             result = {"supported": bool(action and action.get_n_actions()), "accepted": bool(action and action.get_n_actions() and action.do_action(0))}
         else:

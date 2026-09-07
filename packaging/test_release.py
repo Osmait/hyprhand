@@ -94,6 +94,15 @@ class Packaging(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "regular files"):
                 release.make_archive(payload, root / "output.tar.gz", 0)
 
+    def test_documentation_payload_is_complete(self):
+        docs = load_script("check_docs")
+        self.assertIn("THIRD_PARTY_NOTICES.md", release.DOCUMENTS)
+        self.assertEqual(docs.validate_package_links(release.DOCUMENTS), [])
+        incomplete = dict(release.DOCUMENTS)
+        incomplete.pop("docs/cli.md")
+        self.assertTrue(any("docs/cli.md" in error or "cli.md" in error
+                            for error in docs.validate_package_links(incomplete)))
+
     def test_dependency_manifest_and_pin(self):
         manifest = json.loads((ROOT / "packaging/dependencies.json").read_text())
         self.assertEqual(manifest["build"]["zig"], (ROOT / ".zigversion").read_text().strip())
@@ -136,7 +145,7 @@ class BlenderPaths(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "already exist"):
                 self.resolve("", {"DESKCTL_BLENDER_OUTPUT_DIR": str(Path(temp) / "missing")})
             with self.assertRaisesRegex(RuntimeError, "preserve"):
-                self.resolve(str(Path(temp) / "habitacion-realista.blend"), {})
+                self.resolve(str(Path(temp) / "room-styled.blend"), {})
 
 
 if __name__ == "__main__":

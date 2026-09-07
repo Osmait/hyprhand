@@ -66,7 +66,7 @@ def main():
             return result + list(extra)
 
         timings = {}
-        text = "Hola ñ ✓ " * 20  # >128 codepoints exercises native keymap chunking
+        text = "Hello ñ ✓ " * 20  # >128 codepoints exercises native keymap chunking
         for backend in ("helper", "native"):
             durations = []
             for _ in range(3):
@@ -103,7 +103,7 @@ def main():
         call(*pointer_args("drag", "drag", "--duration-ms", "100"))
         event("drag-begin"); event("drag-end")
         tree = call("accessibility", "--window", address, "--limit", "100", "--depth", "6")["accessibility"]
-        assert any(n["role"] == "button" and n["name"] == "Verificar clic" for n in tree["nodes"]), tree
+        assert any(n["role"] == "button" and n["name"] == "Verify click" for n in tree["nodes"]), tree
         limited = call("accessibility", "--window", address, "--limit", "2")["accessibility"]
         assert len(limited["nodes"]) <= 2 and limited["truncated"]
         host_after = call("state", host=True)

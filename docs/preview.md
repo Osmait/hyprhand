@@ -44,17 +44,17 @@ See the compositor's [window-rule API](https://wiki.hypr.land/configuring/core/r
   The configured rate is a maximum: repeated identical images progressively
   back off to one capture per second. Changed pixels restore the target rate;
   detecting activity after an idle period can therefore take up to one second.
-- **Detener agente** disables deskctl input in that source. It cancels guarded
+- **Stop input** disables deskctl input in that source. It cancels guarded
   deskctl actions, not the model, shell jobs, rendering, or other automation
   that bypasses deskctl. Applications remain open. There is no resume button.
 - Closing the PiP or interrupting its foreground CLI closes **only the viewer**.
   Source applications and the input token remain unchanged. A stop already
   requested is allowed to complete during normal close.
-- `Control habilitado` describes permission, not proof that an agent is busy.
+- `Input enabled` describes permission, not proof that an agent is busy.
   Stop is acknowledged only after its worker succeeds. External authorized
   re-enabling is reflected by subsequent fresh frames; the viewer never enables.
 - Disconnection, a locked source, invalid frames, or capture failure clear the
-  image and show `Sin señal`. A two-second freshness limit prevents a frozen
+  image and show `No signal`. A two-second freshness limit prevents a frozen
   screenshot being labeled live. Retries are serialized, at most one per second
   after failure. A viewer never attaches to a recreated session of the same name:
   close it and explicitly open a new preview.

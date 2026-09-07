@@ -1,0 +1,51 @@
+{
+  "recorded_fps": 10,
+  "export_fps": 30,
+  "intro_seconds": 11,
+  "outro_seconds": 7,
+  "cuts": [
+    {
+      "source_in": 50.921,
+      "source_out": 55.243,
+      "output_in": 11,
+      "output_duration": 4.333333,
+      "speed": 1
+    },
+    {
+      "source_in": 69.844,
+      "source_out": 74.499,
+      "output_in": 15.333,
+      "output_duration": 4.633333,
+      "speed": 1
+    },
+    {
+      "source_in": 87.424,
+      "source_out": 91.997,
+      "output_in": 19.967,
+      "output_duration": 4.566667,
+      "speed": 1
+    },
+    {
+      "source_in": 112.06,
+      "source_out": 116.762,
+      "output_in": 24.533,
+      "output_duration": 4.733333,
+      "speed": 1
+    },
+    {
+      "source_in": 129.519,
+      "source_out": 134.099,
+      "output_in": 29.267,
+      "output_duration": 4.566667,
+      "speed": 1
+    },
+    {
+      "source_in": 143.279,
+      "source_out": 148.644,
+      "output_in": 33.833,
+      "output_duration": 5.366667,
+      "speed": 1
+    }
+  ],
+  "editing": "Only waiting intervals are removed. Retained screen segments play at 1x. Title cards and command labels are editorial additions."
+}

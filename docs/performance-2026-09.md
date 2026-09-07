@@ -1,79 +1,68 @@
-# Rendimiento y fiabilidad: seguimiento de septiembre de 2026
+# Performance and reliability — September 2026 follow-up
 
-Base analizada: `cd500ce` (`main`). Zig 0.16.0, Linux, ReleaseSafe.
-Las pruebas de este seguimiento no usan el escritorio ni los sockets del host.
-Los tiempos sintéticos incluyen los servidores/helpers Python del fixture y no
-equivalen a latencia de Hyprland, una GPU o una aplicación real.
+Historical base: `cd500ce` (`main`), Zig 0.16.0, Linux, ReleaseSafe.
+This follow-up used no desktop or host sockets. Synthetic timings include Python
+fixture servers/helpers and do not measure Hyprland, GPU, or real application latency.
 
-## Correcciones
+## Reliability fixes
 
-- **Parada sin escrituras nuevas.** `enable` publica una generación antes de
-  consultar al compositor. `stop` elimina generación, token e indicador bajo
-  el cerrojo de autoridad, intentando todas las revocaciones aunque alguna
-  falle. Así no depende de escribir un journal para quitar la autorización.
-  La regresión usa `RLIMIT_FSIZE=0`, comprueba que la entrada posterior queda
-  bloqueada y que un `enable` concurrente anterior no puede volver a publicarse.
-  Permisos de directorio, fallos del kernel o un filesystem incapaz de eliminar
-  archivos siguen pudiendo impedir una revocación; no se promete lo contrario.
-- **Wayland no bloqueante entre eventos.** La sincronización usa
-  `prepare_read`/`read_events`/`cancel_read`, mantiene el deadline y comprueba
-  cancelación durante las esperas. Se cubren mensajes incompletos, timeout,
-  SIGTERM y un `EAGAIN` real inyectado en `wl_display_flush`. Las teclas ya
-  encoladas conservan su limpieza independiente.
-- **Auditoría recuperable.** La escritura completa se reintenta, una escritura
-  fallida revierte la cola parcial cuando el filesystem lo permite, y el
-  siguiente append recupera la última línea no confirmada. `logs` informa
-  `incomplete_tail` sin perder acceso a registros completos y parsea solo los
-  últimos registros solicitados. No se registran texto escrito ni títulos.
+- **Stop without new writes.** Enable publishes a generation before querying the
+  compositor. Stop removes generation, token and indicator under the authority
+  lock, attempting every revocation even if one fails. A regression using
+  `RLIMIT_FSIZE=0` verifies later input rejection and invalidation of an earlier
+  concurrent enable. Directory permissions, kernel failure or inability to unlink
+  can still prevent revocation.
+- **Nonblocking Wayland event waits.** Synchronization uses prepare/read/cancel,
+  preserves its deadline and checks cancellation. Regressions cover incomplete
+  messages, timeout, SIGTERM and injected real flush `EAGAIN`. Already queued input
+  keeps its independent cleanup path.
+- **Recoverable audit log.** Full writes are retried, failed writes roll back a
+  partial tail where possible, and subsequent appends recover an uncommitted line.
+  `logs` reports `incomplete_tail` and parses only the requested recent records.
+  Typed text and titles are excluded.
 
-## Optimizaciones
+## Optimizations
 
-- Una comprobación completa antes de cada carácter. La sincronización reutiliza
-  solo esa comprobación inmediatamente precedente; al tener que esperar otra
-  iteración vuelve a validar. No hay caché de autorización entre caracteres.
-- Arenas de guardas reutilizables con retención máxima de 256 KiB; memoria de
-  movimiento delimitada por muestra. Se mantienen foco, bloqueo, geometría,
-  exclusión exclusiva del aura propia y verificación de posición del cursor.
-- JSON de salida serializado con un buffer fijo de 4 KiB. No se acumulan
-  cadenas de eventos en la arena del proceso. Hay una regresión que transmite
-  4096 eventos de 60 KB con un límite de espacio virtual de 128 MiB.
-  El máximo de 64 KiB se aplica por registro, no al bloque recibido: varios
-  eventos grandes adyacentes ya no se rechazan por compartir una lectura.
-- Limpieza automática de capturas amortizada cada 30 s. `gc` explícito siempre
-  recorre el directorio; ninguna variante elimina capturas todavía utilizables.
-- PiP con worker persistente y una solicitud pendiente como máximo. Mantiene
-  `grim` por captura, pero elimina un arranque de CLI por frame. Revalida sesión
-  e identidad antes/después de capturar y libera memoria entre solicitudes.
-- E/S cancelable y decodificación de textura fuera del hilo GTK, tamaño acotado
-  antes de reservar, slices PNG sin copia y reutilización exacta de texturas.
-  Imágenes idénticas reducen gradualmente la captura hasta 1 fps; cambios de
-  contenido restauran la frecuencia solicitada. No cambia el diseño del visor.
-- Telemetría opt-in distingue capturas, cambios de textura, pinturas GTK y
-  timestamps de presentación proporcionados por GDK. El benchmark live incluye
-  ahora CPU de workers persistentes vivos, además de los ya recolectados.
+- One full guard per character; only the immediately following synchronization
+  can reuse it. Waiting for another iteration triggers validation again. There
+  is no cross-character authorization cache.
+- Reusable guard arenas retain at most 256 KiB; motion memory is bounded per
+  sample. Focus, lock, layout, PID-owned aura exclusion and cursor checks remain.
+- A fixed 4 KiB JSON output buffer prevents retained event strings. A regression
+  streams 4096 records of 60 KB under a 128 MiB virtual-memory cap. The 64 KiB
+  event limit applies per record, permitting adjacent large records in one read.
+- Automatic screenshot cleanup scans at most once every 30 s. Explicit GC always
+  scans, and neither removes still-usable frames.
+- A persistent preview worker allows at most one outstanding request. `grim`
+  still starts per capture, but the CLI no longer starts per frame. Session and
+  identity are checked before/after capture; memory is freed between requests.
+- Cancelable I/O and texture decoding run off the GTK thread. Lengths are bounded
+  before allocation, PNG slices share storage, and identical textures are reused.
+  Unchanged images back off to 1 fps; changes restore the requested rate.
+- Opt-in telemetry distinguishes captures, new textures, GTK paints and confirmed
+  GDK presentation timestamps. Live benchmarks include active persistent workers
+  as well as reaped children.
 
-## Comparación offline
+## Offline comparison
 
-Medianas antes: auditoría previa, 4 muestras por longitud. Después: script
-reproducible, 5 muestras. Las cifras temporales son orientativas; los recuentos
-IPC son la comparación más estable. No se ejecutaron ambos binarios en una
-campaña alternada bajo cargas idénticas.
+Before medians came from the prior audit with four samples per text length;
+after medians came from the reproducible script with five. IPC counts are the
+more stable comparison. The binaries were not alternated under identical load.
 
-| Escritura | IPC antes → después | Mediana antes → después |
+| Typed text | IPC before → after | Median before → after |
 | --- | --- | --- |
-| 16 caracteres | 74 → 42 | 6,60 → 5,33 ms |
-| 128 caracteres | 522 → 266 | 27,54 → 16,80 ms |
-| 1024 caracteres | 4134 → 2086 | 195,80 → 100,23 ms |
+| 16 characters | 74 → 42 | 6.60 → 5.33 ms |
+| 128 characters | 522 → 266 | 27.54 → 16.80 ms |
+| 1024 characters | 4134 → 2086 | 195.80 → 100.23 ms |
 
-Con 1 ms de demora artificial por consulta, 128 caracteres pasaron de
-568,14 ms (3 muestras) a 291,48 ms (5 muestras).
+With 1 ms artificial query delay, 128 characters changed from 568.14 ms
+(three samples) to 291.48 ms (five).
 
-Eventos de 60 KB: antes, el RSS máximo pasó de 18 664 KiB (10 eventos) a
-65 792 KiB (1000 eventos). Después, ambas longitudes registraron 23 636 KiB.
-`wait4.ru_maxrss` puede incluir el máximo heredado antes de exec; interesa la
-ausencia del crecimiento proporcional, no comparar el suelo absoluto entre
-ejecuciones de Python. La regresión de memoria acotada es independiente de
-estos valores de RSS.
+For 60 KB events, prior peak RSS grew from 18,664 KiB at 10 events to 65,792 KiB
+at 1000. Afterward both lengths recorded 23,636 KiB. `wait4.ru_maxrss` can include
+an inherited pre-exec peak; absence of proportional growth matters more than
+comparing absolute floors between Python invocations. The bounded-memory regression
+is independent of those RSS samples.
 
 ```sh
 zig build check pip pip-test -Doptimize=ReleaseSafe
@@ -82,32 +71,28 @@ python3 scripts/benchmark_offline.py --samples 5
 python3 scripts/benchmark_viewer_offline.py --seconds 300
 ```
 
-Las pruebas GTK opcionales usan Broadway sobre sockets Unix privados, con un
-PNG válido sintético: reutilización de textura, pérdida/recuperación de señal y
-cierre durante captura, incluso si `grim` ignora TERM. No requieren navegador,
-no abren una ventana en el host y no acreditan presentación física en Wayland.
-La primera ejecución larga se descartó porque los procesos de la fuente falsa
-expiraban a los 60 s; el fixture ahora dura más que el ensayo y perder señal
-invalida sus resultados.
+Optional GTK tests use private Broadway Unix sockets and a valid synthetic PNG.
+They check texture reuse, signal loss/recovery, and closure during capture even
+when grim ignores TERM. They require no browser or host window and do not verify
+physical Wayland presentation. An initial long run was discarded because fake
+source processes expired after 60 s; the fixture was extended beyond the benchmark,
+and any signal loss now invalidates results.
 
-Ensayo válido de **300,12 s**, después de 5 s de calentamiento, a un máximo
-solicitado de 15 fps: **2,28 % de un núcleo** (visor y workers), RSS del visor
-**85,41 MiB** tanto inicial como final, sin variación en las muestras cada 5 s.
-Hubo 327 respuestas frescas contando el calentamiento y una sola textura nueva;
-la fuente estática terminó capturándose aproximadamente a 1 fps. Cierre normal,
-sin procesos propios supervivientes. Es una prueba de estabilidad de cinco
-minutos, no una certificación de ausencia de fugas durante horas ni una medida
-de FPS en un monitor físico.
+The valid run lasted **300.12 s** after 5 s warmup, at a maximum requested 15 fps:
+**2.28% of one core** for viewer/workers, viewer RSS **85.41 MiB** initially and
+finally, with no variation in 5 s samples. It received 327 fresh responses including
+warmup and created one texture; the static source settled near 1 capture/s.
+Closure was normal with no surviving owned processes. Five-minute stability is
+not hours-long leak certification or physical monitor fps measurement.
 
-## Alcance pendiente de verificación live
+## Live verification still needed
 
-La comparación con los antiguos 51–77 % de un núcleo del PiP **no es válida**:
-aquellos datos usaron Hyprland/NVIDIA y este seguimiento usa Broadway/helpers
-sintéticos. Se necesita repetir el benchmark opt-in sobre la misma GPU, con
-video en movimiento y durante horas. El script admite hasta una hora y no
-habilita control, pero abre su propio PiP en el host al usar `--live`.
+Direct comparison with the earlier 51–77% single-core PiP figures is **invalid**:
+those runs used Hyprland/NVIDIA; these used Broadway and synthetic helpers.
+Repeat the opt-in benchmark on the same GPU with moving video and hours-long runs.
+The script accepts up to one hour, never enables control, and opens its own host
+PiP when `--live` is selected.
 
-PipeWire/zero-copy y eliminar el proceso `grim` requieren un backend distinto;
-no están implementados ni se presentan como consecuencia de este cambio.
-Las limitaciones de posicionamiento tras cambios de monitor, XWayland gestionado
-y otras GPU del informe anterior permanecen fuera de este seguimiento.
+PipeWire/zero-copy and eliminating grim need a different backend and remain
+unimplemented. Monitor-change placement, managed XWayland, and other GPU limitations
+from the prior report were outside this follow-up.

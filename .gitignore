@@ -3,7 +3,10 @@ zig-out/
 # Local demonstration renders and editable media exports, not project sources.
 /output/
 *.png
-!/habitacion-realista.png
+!/examples/blender/assets/room-styled.png
+!/docs/images/note-before.png
+!/docs/images/note-after.png
+!/docs/images/session-preview.png
 __pycache__/
 *.py[cod]
 *.blend[0-9]*
@@ -12,3 +15,9 @@ __pycache__/
 !.env.example
 *.pem
 *.key
+
+# Local build and diagnostic artifacts.
+*.so
+*.so.build-metadata
+*.tar.gz
+*.tar.gz.sha256

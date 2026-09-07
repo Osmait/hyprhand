@@ -35,7 +35,18 @@ DOCUMENTS = {relative: relative for relative in (
     "docs/cursor-outline-probe.md", "docs/reliability-040.md",
     "docs/experimental-hardening.md", "docs/preview.md",
     "CONTRIBUTING.md", "docs/architecture.md", "docs/audit-2026-09.md",
-    "docs/audit-followup-2026-09.md",
+    "docs/audit-followup-2026-09.md", "docs/performance-2026-09.md",
+    "docs/README.md", "docs/cli.md", "docs/sessions.md", "docs/testing.md",
+    "docs/troubleshooting.md", "docs/open-source-readiness.md",
+    "SECURITY.md", "THIRD_PARTY_NOTICES.md", "PRODUCT.md", "DESIGN.md",
+    "examples/blender/README.md", "tests/fixtures/README.md",
+    "skills/deskctl/SKILL.md", "examples/gtk/README.md", "docs/images/README.md",
+    "docs/images/note-before.png", "docs/images/note-after.png",
+    "docs/images/session-preview.png", "examples/blender/assets/room-styled.png",
+    "examples/video/README.md", "examples/video/prompt.txt",
+    "examples/video/commands.json", "examples/video/edit.json",
+    "examples/video/recording.json", "docs/video/deskctl-agent-demo.mp4",
+    "docs/video/deskctl-agent-demo.srt", "docs/video/poster.jpg",
 )}
 
 
@@ -133,6 +144,7 @@ def package(version, output):
         source = ROOT / relative
         if source.is_symlink() or not source.is_file():
             raise ValueError(f"required package document is missing or not a regular file: {relative}")
+    subprocess.run([sys.executable, "-B", "scripts/check_docs.py"], cwd=ROOT, check=True)
     requirements = json.loads((ROOT / "packaging/dependencies.json").read_text())
     zig_version = run("zig", "version")
     if zig_version != requirements["build"]["zig"] or zig_version != (ROOT / ".zigversion").read_text().strip():

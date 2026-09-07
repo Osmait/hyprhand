@@ -1,0 +1,56 @@
+{
+  "recorded_on": "2026-09-07",
+  "actor": "A separate Codex subagent operating deskctl through real CLI commands",
+  "application": {
+    "source": "examples/gtk/note.py",
+    "id": "org.deskctl.NoteDemo"
+  },
+  "environment": {
+    "deskctl": "0.4.0",
+    "Hyprland": "0.56.2",
+    "Aquamarine": "0.15.0",
+    "GTK4": "4.22.4",
+    "session": "video-demo",
+    "headless_bridge": "Explicitly selected local build",
+    "host_input_enabled": false
+  },
+  "source": {
+    "capture": "Cursor-inclusive grim PNGs with monotonic timestamps",
+    "width": 1280,
+    "height": 720,
+    "target_fps": 10,
+    "frames": 2443,
+    "duration": 244.3001157130002
+  },
+  "verification": {
+    "method": "The agent viewed fresh screenshots after applying each note",
+    "applied_texts": [
+      "Hello from an AI agent! Unicode: ñ ✓",
+      "Observe. Act. Verify. Stay in control."
+    ],
+    "input_stopped": true,
+    "application_left_open_after_stop": true,
+    "session_destroyed_after_recording": true
+  },
+  "export": {
+    "file": "docs/video/deskctl-agent-demo.mp4",
+    "duration_seconds": 46.2,
+    "width": 1920,
+    "height": 1080,
+    "frame_rate": "30/1",
+    "codec": "h264",
+    "pixel_format": "yuv420p",
+    "audio": false,
+    "fast_start": true,
+    "bytes": 784136
+  },
+  "editing": "English title cards and command labels; cuts remove waits; retained application footage plays at 1x. 30 fps export repeats captured frames.",
+  "sha256": {
+    "docs/video/deskctl-agent-demo.mp4": "824eab5223583b697f7010cab0ae86ad9894f96ece272ad55f710e620a10f841",
+    "docs/video/deskctl-agent-demo.srt": "b0f9acf22f7b63b70df41f266948769b82bbd99713dadf8f6e260f1292db2f35",
+    "docs/video/poster.jpg": "4a8b60269397caeac28317fa846b5b69bc65f329141d8b415d906517b6854f52",
+    "examples/video/prompt.txt": "8c0a107d933ff514714e14b07abac209c2fede0c5ff674e2efcfa2e3eded79fd",
+    "examples/video/commands.json": "d0f747c42375b73be56b86d125bae2508ec1f14924f85527058cf125ac43c2c2",
+    "examples/video/edit.json": "4a0fa2542d174381fa4f88963ca9088da369da1c939420890c65bda5dd307fd6"
+  }
+}

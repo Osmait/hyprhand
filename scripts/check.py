@@ -17,6 +17,7 @@ def main():
                  "AT_SPI_BUS_ADDRESS"):
         env.pop(name, None)
     suites = [
+        ["scripts/check_docs.py"],
         ["tests/integration.py"],
         ["tests/ipc.py"],
         ["tests/keyboard_protocol.py"],

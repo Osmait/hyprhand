@@ -1,63 +1,60 @@
-# Prueba de workspace oculto en el mismo Hyprland
+# Hidden-workspace probe in the same Hyprland compositor
 
-Resultado local: **no cumple el requisito de entrada general sin quitar el
-foco al usuario**. No se ha implementado un backend de entrada en segundo plano.
+Local result: **this does not meet the requirement for general input without
+taking focus from the user**. No general background-input backend was implemented.
 
-Entorno: Hyprland 0.56.2, configuración Hyprlang, aplicaciones de prueba GTK4
-Wayland; ventana testigo en workspace 1 y destino en workspace 4, oculto y
-previamente sin ventanas. Se usó el mismo compositor, no una sesión anidada.
+Historical environment: Hyprland 0.56.2, Hyprlang configuration, GTK4 Wayland test
+apps; witness on workspace 1 and target on previously empty, hidden workspace 4.
+Both belonged to the same compositor, not a nested session.
 
-## Evidencia observada
+## Observed evidence
 
-| Operación sobre el destino oculto | Resultado en destino | Eventos de foco del teclado en la ventana testigo |
+| Action on hidden target | Target result | Witness keyboard focus events |
 | --- | --- | --- |
-| Línea base sin acciones | Sin cambios | Ninguno |
-| AT-SPI `EditableText.set_text_contents` | Texto Unicode exacto confirmado por GTK | Ninguno |
-| AT-SPI `Action.do_action` en botón | Señal `clicked` confirmada | Ninguno |
-| Hyprland `sendshortcut` dirigido, tecla `a` | Tecla recibida y texto modificado | Un `wl_keyboard.leave` y un `wl_keyboard.enter` |
+| Baseline, no action | Unchanged | None |
+| AT-SPI `EditableText.set_text_contents` | Exact Unicode text confirmed by GTK | None |
+| AT-SPI button `Action.do_action` | `clicked` signal confirmed | None |
+| Targeted Hyprland `sendshortcut`, key `a` | Key received and text changed | One `wl_keyboard.leave` and one `wl_keyboard.enter` |
 
-En la última fase GTK también notificó pérdida y recuperación de foco. Mientras
-tanto, tanto las consultas finales como las muestras de `activewindow` indicaron
-la misma ventana activa. El cursor y los workspaces visibles no cambiaron durante
-las cuatro fases. **La ventana activa global no basta para detectar el robo
-transitorio del foco del teclado.** No se mide aquí su duración exacta.
+GTK also reported losing/regaining focus during the last phase. End queries and
+sampled `activewindow` values still identified the same active window. Cursor and
+visible workspaces remained unchanged across all four phases. **Global active
+window identity is insufficient to detect transient keyboard focus theft.**
+This probe did not measure its exact duration.
 
-Esto coincide con el código de
-[Hyprland 0.56.2, `Actions::pass`](https://github.com/hyprwm/Hyprland/blob/v0.56.2/src/config/shared/actions/ConfigActions.cpp):
-redirige el foco del asiento Wayland a la superficie destino, envía la entrada
-y restaura el foco previo. Restaurarlo no equivale a no haberlo cambiado.
+The original investigation linked this to Hyprland 0.56.2's `Actions::pass`, which
+redirects Wayland seat focus to the target, sends input, and restores prior focus.
+Restoring focus is not equivalent to never changing it.
 
-## Alcance y límites
+## Scope and limits
 
-- La escritura y el botón por accesibilidad son éxitos concretos en GTK4,
-  no una garantía para cualquier aplicación, diálogo o control personalizado.
-- No se probaron un editor de video, arrastres de una línea de tiempo ni capturas
-  de ventanas ocultas. Una sola pérdida de foco ya contradice el requisito
-  estricto; no se continuó con inyección de puntero.
-- No se enviaron teclas ni acciones de contenido a Brave ni a otras aplicaciones
-  del usuario. Preparar la prueba sí abre y enfoca ventanas temporales y cambia
-  su distribución. La invariancia medida corresponde a las fases, no al montaje.
-- Al terminar se cerraron ambas ventanas temporales, desapareció el workspace 4
-  vacío, Brave volvió a estar activo y el control `host` quedó deshabilitado.
-  No se restauró la posición inicial del cursor para no sobrescribir movimientos
-  posteriores del usuario.
+- Accessibility text/button success is specific to the GTK4 fixture; it does not
+  guarantee arbitrary apps, dialogs, or custom controls.
+- Video editors, timeline drags, and hidden-window capture were not tested.
+  Observed focus loss already contradicted the requirement, so pointer injection
+  was not pursued.
+- No content actions were sent to the user's browser or other apps. Setup did
+  open/focus temporary windows and alter their arrangement; phase invariance
+  does not describe setup.
+- Cleanup closed the two test windows, removed empty workspace 4, restored the
+  prior foreground browser, and disabled host control. It did not reset the
+  cursor over any subsequent human movement.
 
-Para trabajar en interfaces arbitrarias simultáneamente, el aislamiento de
-entrada requiere algo más que separar workspaces. Las sesiones gestionadas
-separan la entrada, pero queda pendiente resolver el renderizado headless en
-esta GPU y validar el editor concreto. No se promete todavía edición de video
-completamente oculta y sin interferencias.
+Arbitrary concurrent GUI work needs isolation beyond separate workspaces.
+Managed sessions separate input but require their own rendering/application
+validation. The headless limitation recorded at the time of this probe has a
+later, narrowly scoped [experimental bridge](experimental-bridges.md); neither
+report promises unrestricted invisible video editing.
 
-## Repetir voluntariamente
+## Explicitly repeat the probe
 
 ```sh
 python3 tests/background_probe.py --live --workspace 4
 ```
 
-Requiere el binario compilado en `zig-out/bin/deskctl`, Python con GI/GTK4/AT-SPI,
-sesión Hyprlang desbloqueada y un workspace destino sin uso. Durante la prueba
-no se debe escribir. El script verifica identidad de las ventanas y habilitación,
-registra eventos GTK y Wayland sin guardar el contenido del usuario, emite JSON
-y aborta si cambia la ventana activa global. El veredicto se deriva de eventos:
-una ejecución sin pérdidas observadas devuelve `not_established`, no una
-garantía universal.
+Requires the built `zig-out/bin/deskctl`, Python GI/GTK4/AT-SPI, an unlocked
+Hyprlang host, and an unused destination workspace. The operator should not type
+during the run. The script verifies window identity and authorization, records
+GTK/Wayland events without saving user content, emits JSON, and aborts if the
+global active window changes. A run with no observed loss returns
+`not_established`, not a universal guarantee.

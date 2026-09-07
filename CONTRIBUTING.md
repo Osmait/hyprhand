@@ -1,47 +1,91 @@
-# Desarrollo de deskctl
+# Contributing to deskctl
 
-CLI para Linux/Hyprland, Zig 0.16.x. La API pública es el contrato de comandos
-y JSON; los módulos internos pueden reorganizarse sin cambiarlo.
+Thanks for helping improve local desktop automation. Issues, reproducible bug
+reports, documentation fixes, and focused pull requests are welcome. Use English
+for public documentation, comments, help, interface text, and discussion so that
+contributors can work from the same reference.
 
-## Verificación
+## Set up a checkout
+
+Install the [build dependencies](docs/dependencies.md), use Zig 0.16.0 from
+`.zigversion`, and use Python 3.11 or newer. The default checks need no running
+Hyprland desktop.
+
+```sh
+git clone https://github.com/Osmait/computer-use-hyperland.git
+cd computer-use-hyperland
+git switch -c your-change
+zig build -Doptimize=ReleaseSafe
+zig build check -Doptimize=ReleaseSafe
+```
+
+The public API is the command-line and JSON contract. Internal modules can be
+reorganized without changing command names, installed paths, or frame semantics.
+Read the [architecture](docs/architecture.md) and [testing guide](docs/testing.md)
+before changing input or lifecycle behavior.
+
+## Report a bug or propose a feature
+
+For bugs, include the source commit/version, Zig version, distribution, Hyprland
+and Aquamarine versions, configuration provider, session type, steps to reproduce,
+expected behavior, actual behavior, and a minimal redacted JSON error. Say whether
+a failure occurred on Wayland or XWayland and whether an experimental bridge was
+loaded. Remove credentials, application content, personal paths and window titles
+from reports. Use [SECURITY.md](SECURITY.md) for suspected vulnerabilities.
+
+For a feature, describe the workflow it enables, the existing limitation, and
+how the result can be verified. For changes to input, session routing, dependencies,
+or protocol contracts, discuss the approach in an issue before a large rewrite.
+
+## Implement and verify
+
+- Reproduce a behavior bug before fixing it and retain a meaningful regression.
+  Cover errors, cancellation, limits, and resource release when applicable.
+- Validate external data before arithmetic or conversion. Return JSON errors;
+  do not use `assert` or `unreachable` for compositor, file, or CLI input.
+- Use assertions for demonstrable internal invariants, not style quotas.
+- Bound total time, IPC size, buffers, and repeated work. A timeout per read is
+  not an end-to-end deadline.
+- Make descriptor, process, and buffer ownership clear. Use `defer`/`errdefer`
+  and per-iteration arenas for temporary queries in loops.
+- Use `platform/child_process.zig` only for direct, unreaped child processes.
+  `runtime/sessions.zig` separately validates PID/start-time/UID/pidfd identities
+  for process trees. Neither mechanism accepts arbitrary process IDs.
+- Preserve cancellation, focus, token, and frame checks. An error never enables
+  input, switches to the host, or authorizes repeating an action with side effects.
+- Keep functions focused and modules organized by domain. Avoid generic `utils`
+  folders and forwarding-only layers.
+- Run `zig fmt build.zig build src`; preserve existing snake_case file names.
+  Keep mechanical changes separate from behavior changes where possible.
+- Never log typed text, credentials, application content, or window titles.
+  Unicode samples in tests are intentional and should retain Unicode coverage.
+
+Run the offline checks and, for viewer changes, the optional GTK checks:
 
 ```sh
 zig build check -Doptimize=ReleaseSafe
-zig build test                    # repetir unitarias en Debug
-zig build pip -Doptimize=ReleaseSafe  # opcional, requiere GTK4 >= 4.8
-python3 tests/keyboard_unit.py    # suite de teclado aislada
+zig build test
+python3 tests/keyboard_unit.py
+zig build pip pip-test -Doptimize=ReleaseSafe
+python3 tests/viewer_broadway.py
 ```
 
-`check` compila la CLI y ejecuta formato, unitarias Zig, integración con un
-compositor falso, IPC, protocolo de teclado, ciclo de vida de procesos, PiP,
-contratos de fiabilidad y empaquetado. No abre ventanas ni inyecta entrada en
-el escritorio. Las pruebas `live_*.py` y los probes necesitan una sesión de
-prueba y autorización explícita; no forman parte de `check` ni de la CI normal.
+`check` never opens host windows or injects desktop input. Live tests and probes
+need an explicitly chosen disposable session and operator consent; they are not
+part of normal CI. Record what you actually ran and distinguish simulated
+protocol evidence from application-observed results.
 
-## Criterios para cambios
+## Submit a pull request
 
-- Reproducir el bug antes de corregirlo y conservar la regresión. Probar también
-  errores, cancelación, límites y liberación de recursos.
-- Validar datos externos antes de calcular o convertir. Devolver errores JSON,
-  no usar `assert`/`unreachable` para datos del compositor, archivos o CLI.
-- Usar assertions para invariantes internos demostrables, no como cuotas de estilo.
-- Delimitar tiempo total y tamaño de IPC, buffers y trabajo repetido. No confundir
-  timeout de cada lectura con plazo total de una operación.
-- Documentar quién posee cada descriptor/proceso/buffer. Liberar con `defer` o
-  `errdefer`; emplear arenas por iteración para consultas temporales en bucles.
-- Usar `platform/child_process.zig` para limpiar hijos directos aún no recolectados;
-  `runtime/sessions.zig` mantiene su propio protocolo PID/start/uid/pidfd para árboles.
-  Nunca reutilizar estos mecanismos con PIDs arbitrarios.
-- Conservar cancelación, foco, token y validación de frames. Un error no habilita
-  entrada, no cambia a host ni autoriza repetir una acción con efectos.
-- Mantener funciones centradas en una responsabilidad. Extraer por dominio,
-  evitando carpetas genéricas `utils` y capas que solo reenvían llamadas.
-- Usar `zig fmt`; mantener snake_case en nombres de archivos existentes.
-  No mezclar cambios mecánicos de estilo con cambios de comportamiento sin pruebas.
-- No registrar texto escrito, títulos, credenciales ni contenido de las aplicaciones.
+Explain the problem, resulting behavior, relevant tradeoffs, and validation.
+Include a minimal before/after example when useful. Update affected documentation,
+CLI help, completions, and packaging manifests when the public surface changes.
+Do not claim desktop, GPU, or remote CI verification from an offline build alone.
+Keep secrets, local profiles, generated binaries, screenshots of private content,
+and runtime logs out of patches.
 
-Los recursos de demostración existentes no se borran por reorganizar código.
-Los nuevos renders, vídeos y proyectos editables van en `output/` (ignorado).
-No se cambia licencia ni se añaden dependencias sin una necesidad explícita.
-
-Consulta [arquitectura](docs/architecture.md) y [auditoría](docs/audit-2026-09.md).
+Existing demonstration assets are retained. New renders, videos, editable exports,
+and benchmark output belong in ignored `output/`. Avoid adding dependencies or
+changing the license without an explicit project need and maintainer agreement.
+Treat other contributors respectfully; discuss the code and provide actionable
+feedback.

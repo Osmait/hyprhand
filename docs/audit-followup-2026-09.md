@@ -1,105 +1,101 @@
-# Seguimiento de auditoría — 2026-09-06
+# Audit follow-up — 2026-09-06
 
-Parte de `4f230f3`. Alcance: cerrar tareas de mantenimiento verificables en este
-equipo; no equivaler la ejecución de tests con ausencia de bugs o compatibilidad
-universal. Se conservan `frame v2`, `DCP1` y nombres de comandos públicos.
+Historical base: `4f230f3`. Scope: complete locally verifiable maintenance work,
+without equating passing tests with absence of bugs or universal compatibility.
+Frame v2, DCP1 and public command names were preserved.
 
-## Implementado
+## Implementation
 
-- Extraídos `input/actions.zig` y `runtime/wait.zig`: `main` queda en unas
-  220 líneas. Algoritmos y contratos permanecen en sus módulos de dominio.
-- Presupuesto monotónico compartido para esperas, consultas, observación y
-  acciones. Una sucesión de consultas lentas ya no renueva el timeout de `wait`.
-  Limpieza y procesos persistentes conservan presupuestos independientes.
-- `stop-generation` y `control.lock` impiden que un `enable` en curso publique
-  autorización después de una parada que lo invalidó. Ninguna consulta al
-  compositor ocurre mientras se mantiene ese cerrojo de publicación.
-- Captura PiP con pipe no bloqueante y límite incremental de 8 MiB. Un helper
-  que emite sin terminar se rechaza y recolecta aunque ignore SIGTERM.
-- La sincronización inicial de Wayland comprueba cancelación antes de disponer
-  de un runtime. La liberación de entrada ya encolada sigue siendo no cancelable.
-- La comprobación X11 usa el entorno enrutado, igual que el helper de entrada,
-  y el tiempo restante del comando; no hereda inadvertidamente el DISPLAY del host.
-- Reglas PiP para Lua con identificadores internos, validación de respuesta y
-  desactivación acotada tras señales. No se interpolan nombres externos en Lua.
-- Benchmark PiP opt-in de solo lectura: latencia del worker, RAM del visor y CPU
-  del visor con hijos recolectados. No habilita control ni cambia aplicaciones fuente.
+- Extracted `input/actions.zig` and `runtime/wait.zig`, leaving `main` at roughly
+  220 lines. Algorithms and contracts remain in domain modules.
+- Shared monotonic budgets for waits, queries, observation and input. Repeated
+  slow queries no longer renew a wait's deadline. Cleanup and persistent
+  processes keep separate budgets.
+- `stop-generation` and `control.lock` prevent an in-flight enable from publishing
+  authorization after a stop invalidates it. No compositor query holds that lock.
+- Nonblocking PiP capture pipe with an incremental 8 MiB limit. Endless-output
+  helpers are rejected and reaped even if they ignore SIGTERM.
+- Initial Wayland synchronization checks cancellation before a runtime exists;
+  release of already queued input remains noncancelable.
+- X11 checks use the routed environment, like the input helper, and the command's
+  remaining time rather than accidentally inheriting the host DISPLAY.
+- Scoped Lua preview rules use internal identifiers, validate replies, and have
+  bounded signal cleanup. External names are not interpolated into Lua.
+- Added an opt-in read-only preview benchmark for worker latency and viewer
+  CPU/RAM including reaped children. It neither enables input nor changes source apps.
 
-## Pruebas
+## Historical test results
 
-`zig build check -Doptimize=ReleaseSafe` pasó 27 unitarias Zig y 112 pruebas Python
-(139 en total). Además: unitarias Debug, las 9 unitarias aisladas del teclado,
-build GTK4 ReleaseSafe y comprobaciones de sintaxis/formato.
+`zig build check -Doptimize=ReleaseSafe` passed 27 Zig units and 112 Python tests
+(139 total). Debug units, nine overlapping isolated keyboard units, GTK4
+ReleaseSafe build and syntax/format checks also passed.
 
-La carrera stop/enable y la espera compuesta fallaron contra el binario previo
-y pasaron después. Las regresiones incluyen helper de salida ilimitada,
-cancelación durante bootstrap Wayland y cierre de visor con reglas Lua.
+The stop/enable race and composite wait regressions failed on the old binary and
+passed after fixes. Other regressions covered unlimited helper output, cancellation
+during Wayland bootstrap, and viewer termination with Lua rules.
 
-Live, en sesiones desechables, sin habilitar el control del host:
+Live checks used disposable sessions, without enabling host control:
 
-- GTK4 Wayland: Control/Shift y combinaciones, selección de texto y navegación
-  de foco; liberación de modificadores observada por la aplicación.
-- Seis scrolls: auto, rueda y continuo, con/sin ventana explícita. En cada caso
-  se revisó la captura; el receptor confirmó unidades y progresión. La prueba
-  terminal de `stop` rechazó la acción y dejó de producir eventos de eje.
-- Ciclo Lua headless: creación, enrutamiento, espera de píxeles, eventos,
-  workspace, lanzamiento, entorno, cierre y ausencia de procesos propios vivos.
-- PiP Hyprlang: dos mediciones de 120 s; foco del host igual en los extremos,
-  fuente detenida intacta y visor cerrado sin destruir la fuente.
-- PiP Lua: expresión de reglas y visor nativo comprobados en compositor aislado,
-  imagen real, 640 × 360, floating/pinned, sin foco inicial y limpieza. El
-  launcher integrado se valida offline, no se presenta como prueba live completa.
+- GTK4 Wayland: Control/Shift combinations, text selection, focus navigation,
+  and application-observed modifier release.
+- Six scrolls: auto/wheel/continuous with and without explicit window. Fresh
+  screenshots were inspected and receiver events confirmed units/progression.
+  Terminal stop rejected the action and ended new axis events.
+- Lua headless lifecycle: create, route, pixel wait, events, workspace, launch,
+  environment, teardown and absence of surviving attributable processes.
+- Hyprlang PiP: two 120 s samples, unchanged endpoint host focus, stopped source
+  unchanged, and viewer close without source destruction.
+- Lua PiP: rule expression and native viewer in an isolated compositor, real
+  imagery, 640 × 360, floating/pinned, no initial focus and cleanup. The integrated
+  launcher had offline coverage, not a complete live host-launcher test.
 
-Todas las sesiones creadas para esta auditoría se cerraron. Sus perfiles y logs
-temporales se conservan conforme a `session destroy`; no se borraron archivos
-del usuario ni se cambió la configuración del compositor principal.
+Created sessions were destroyed; temporary profiles/logs remained under the
+session-destroy contract. No user files or main compositor configuration were changed.
 
-## Medición PiP
+## Historical PiP measurements
 
-Hyprland 0.56.2, Aquamarine 0.15.0, NVIDIA con puente headless explícito, GTK4
-4.22.4, ReleaseSafe. Fuente GTK estática 1920 × 1080; PNG reducido a 960 × 540,
-mediana 32 525 bytes. No es una carga de video animado.
+Hyprland 0.56.2, Aquamarine 0.15.0, NVIDIA with explicit headless bridge, GTK4
+4.22.4, ReleaseSafe. Static GTK source: 1920 × 1080, reduced to 960 × 540 PNG,
+median 32,525 bytes. This was not animated video.
 
-| FPS configurados | Tiempo | Worker mediana / p95 | CPU visor+hijos¹ | RSS final visor | Rango RSS últimos 30 s |
+| Configured fps | Duration | Worker median / p95 | Viewer + children CPU¹ | Final viewer RSS | Last 30 s RSS range |
 | --- | --- | --- | --- | --- | --- |
-| 5 | 120,02 s | 100,03 / 109,05 ms | 50,61 % | 136,41 MiB | 2,29 MiB |
-| 15 | 120,02 s | 99,55 / 111,26 ms | 76,63 % | 137,98 MiB | 2,17 MiB |
+| 5 | 120.02 s | 100.03 / 109.05 ms | 50.61% | 136.41 MiB | 2.29 MiB |
+| 15 | 120.02 s | 99.55 / 111.26 ms | 76.63% | 137.98 MiB | 2.17 MiB |
 
-¹ Porcentaje de **un núcleo**, incluido tiempo de hijos ya recolectados; excluye
-compositor/GPU. RSS solo del visor. El primer ensayo incluyó el arranque GTK;
-el segundo usó 5 s de calentamiento. Las 30 latencias se midieron por separado
-antes de cada visor. FPS configurados no son FPS presentados: no hay contador
-de presentación. Dos minutos sin crecimiento sostenido aparente no demuestran
-ausencia de fugas a largo plazo. El coste refuerza mantener 5 fps como defecto;
-PipeWire/zero-copy requiere un backend nuevo y medición propia.
+¹ Percentage of one CPU core, including reaped children, excluding compositor/GPU.
+RSS covers only the viewer. The first run included GTK startup; the second used
+5 s warmup. Thirty worker latencies were sampled separately before each viewer.
+Configured fps was not measured presentation fps. Two minutes without apparent
+sustained growth does not prove long-term leak freedom. These results supported
+a 5 fps default; PipeWire/zero-copy would need a new backend and separate measurement.
+See [later offline performance work](performance-2026-09.md) before comparing numbers.
 
-## Límites encontrados / pendientes reales
+## Remaining limitations found
 
-- Rotar/reducir el monitor con PiP abierto puede dejarlo parcialmente fuera de
-  pantalla: reproducido en la salida Lua a escala 1,5 y rotación 90°. Falta
-  reposicionamiento automático y validación de fullscreen/multimonitor.
-- La sesión gestionada deshabilita XWayland al arrancar. Cambiar su opción
-  dinámicamente no inició el servidor en esta versión. Se mantuvo el host fuera
-  de alcance: X11 conserva regresiones offline y evidencia histórica, pero no
-  una nueva prueba live en esta auditoría. Falta una ruta XWayland gestionada opt-in.
-- Crear otra sesión desde un runtime ya gestionado superó el límite Unix de la
-  ruta de socket de Hyprland (`Socket2 path is too long`). Falló por timeout y
-  limpió los procesos. Falta diagnóstico previo para runtimes demasiado largos.
-- Capturas comprimidas siguen siendo el backend; PipeWire/zero-copy, pruebas de
-  horas, cursores animados y otras GPU siguen pendientes. No se instaló ningún driver.
-- Los presupuestos son cooperativos. No acreditan ausencia de bloqueos internos
-  en bibliotecas nativas ni límites de disco para toda salida posible de helpers.
-- Licencia pendiente de elección del propietario; no se concedieron permisos nuevos.
+- Rotating/resizing a monitor can leave PiP partly offscreen; reproduced with
+  Lua output scale 1.5 and 90° rotation. Automatic repositioning and fullscreen/
+  multi-monitor validation remained missing.
+- Managed sessions disable XWayland. Toggling it dynamically did not start a
+  server on this version. Host X11 was outside scope; historical live and offline
+  evidence remained, without a new live X11 run. Managed opt-in startup is pending.
+- Starting a session from an already managed runtime exceeded Hyprland's Unix
+  socket path limit (`Socket2 path is too long`), timed out, and cleaned up.
+  Early diagnosis of overly long runtime paths remains missing.
+- Compressed captures remain the backend; zero-copy, hours-long tests, animated
+  cursors, and additional GPUs remain pending. No drivers were installed.
+- Budgets are cooperative, not proof against native-library blocking or every
+  possible helper disk-output problem.
+- The project license had not been selected at the time of this report.
 
-La CI remota de `4f230f3` pasó en Ubuntu 22.04 y 24.04
-([ejecución](https://github.com/Osmait/computer-use-hyperland/actions/runs/34074547410)).
-Los resultados remotos del seguimiento deben asociarse al commit correspondiente,
-no inferirse de esa ejecución anterior.
+## Remote evidence recorded at the time
 
-El código del seguimiento `261fe93` pasó la
-[CI completa](https://github.com/Osmait/computer-use-hyperland/actions/runs/34075926551)
-y el [empaquetado privado](https://github.com/Osmait/computer-use-hyperland/actions/runs/34075926414)
-en ambos Ubuntu. No se creó tag ni GitHub Release. Esas ejecuciones detectaron
-avisos por acciones Node 20: se actualizaron checkout/setup-python/upload-artifact
-a las versiones publicadas v7, fijando sus SHA exactos en los workflows.
-La modificación de workflows requiere otra ejecución para verificar sus nuevos pins.
+The `4f230f3` CI passed on both Ubuntu versions
+([run](https://github.com/Osmait/computer-use-hyperland/actions/runs/34074547410)).
+Follow-up `261fe93` passed
+[CI](https://github.com/Osmait/computer-use-hyperland/actions/runs/34075926551)
+and [manual packaging](https://github.com/Osmait/computer-use-hyperland/actions/runs/34075926414).
+No tag or GitHub Release was created. Those runs exposed Node 20 action warnings;
+checkout/setup-python/upload-artifact were subsequently updated to SHA-pinned v7
+actions. The workflow update needs its own run; historical results do not verify
+later commits or the current publication-preparation changes.

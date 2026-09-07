@@ -1,0 +1,51 @@
+1
+00:00:00,000 --> 00:00:11,000
+The opening card reproduces the task prompt sent to the agent. The application was prepared before recording.
+
+2
+00:00:12,300 --> 00:00:15,323
+Observe and verify the desktop.
+
+3
+00:00:15,333 --> 00:00:16,633
+Observe and verify the desktop.
+
+4
+00:00:16,978 --> 00:00:19,988
+Type the requested text.
+
+5
+00:00:19,967 --> 00:00:21,267
+Type the requested text.
+
+6
+00:00:21,267 --> 00:00:24,539
+Apply the text and verify the result.
+
+7
+00:00:24,533 --> 00:00:25,833
+Apply the text and verify the result.
+
+8
+00:00:26,226 --> 00:00:29,235
+Type the requested text.
+
+9
+00:00:29,267 --> 00:00:30,567
+Type the requested text.
+
+10
+00:00:30,567 --> 00:00:33,847
+Apply the text and verify the result.
+
+11
+00:00:33,833 --> 00:00:35,133
+Apply the text and verify the result.
+
+12
+00:00:35,133 --> 00:00:39,198
+Stop input; keep the app open.
+
+13
+00:00:39,200 --> 00:00:46,200
+Both applied notes were visually verified. deskctl input was stopped, leaving the application open.

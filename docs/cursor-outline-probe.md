@@ -1,58 +1,56 @@
-# Resplandor del cursor real: sonda y nuevo backend experimental
+# Real-cursor outline: capture probe and experimental backend
 
-Requisito corregido: brillo azul ajustado a la silueta real de la flecha, sin
-aro, durante todo el control del agente (`enable` → `stop`), incluso en pausas.
-La sonda nativa no pudo obtener la silueta, como documenta el registro histórico
-inferior. Ahora existe un plugin opcional probado en un compositor desechable:
-[guía de los puentes experimentales](experimental-bridges.md). El aura circular
-previa no cumple este requisito. No se modificó el tema ni se cargó el plugin
-en el escritorio principal.
+The requested effect is a blue glow following the actual arrow silhouette,
+without a ring, for the entire enabled interval (`enable` → `stop`), including
+pauses. The native probe could not obtain a usable silhouette on the recorded
+stack. A later optional plugin was tested in a disposable compositor; see
+[experimental bridges](experimental-bridges.md). The per-action circular aura
+is a separate feature. The probe did not alter the cursor theme or load a host plugin.
 
-## Investigación y prueba local
+## Historical investigation
 
-Hyprland 0.56.2 anuncia `ext_image_copy_capture_manager_v1` y
-`ext_output_image_capture_source_manager_v1`. Se implementó una sonda de solo
-lectura, `_cursor_probe`, que pide exclusivamente la imagen del cursor, nunca
-una captura del contenido de la pantalla. No registra ni guarda sus píxeles.
+Hyprland 0.56.2 advertises `ext_image_copy_capture_manager_v1` and
+`ext_output_image_capture_source_manager_v1`. The read-only `_cursor_probe`
+requests only the cursor image, not desktop content, and does not save its pixels.
 
-Con el cursor inicialmente oculto, no se recibieron restricciones utilizables
-para iniciar una captura. Luego, dentro de una ventana GTK4 desechable, se movió
-el cursor al botón de prueba, sin hacer clic. El resultado inmediato fue:
+An initially hidden cursor yielded no usable capture constraints. After moving
+within a disposable GTK4 window onto its test button, without clicking, the
+immediate result was:
 
 ```json
 {"ok":true,"width":24,"height":24,"hotspot":{"x":5,"y":1},"transparent":576,"nontransparent":0,"entered":true}
 ```
 
-La petición tuvo éxito, pero **los 576 píxeles eran transparentes**: no existe
-una silueta que pueda usarse para un resplandor fiel. La sonda ahora incluye
-`usable_shape` para no confundir una respuesta correcta del protocolo con una
-imagen utilizable. También rechaza buffers completamente opacos, que podrían
-ser una redacción del compositor.
+The request succeeded, but **all 576 pixels were transparent**. No silhouette
+was available for an accurate glow. The probe now includes `usable_shape` so
+protocol success is not confused with useful imagery. Fully opaque buffers are
+also rejected because they might represent compositor redaction.
 
-El [código de Hyprland 0.56.2, `CCursorshareSession::render`](https://github.com/hyprwm/Hyprland/blob/v0.56.2/src/managers/screenshare/CursorshareSession.cpp)
-produce una imagen transparente cuando falta `cursorImage.surface`, además de
-cuando falta el buffer o su textura. Esto explica el resultado para un cursor
-proporcionado por el compositor, que no necesita una superficie de una app.
-No se atribuye el fallo a una denegación de permisos: se recibió `enter` y el
-buffer estaba transparente, no negro opaco.
+The original investigation traced this to Hyprland 0.56.2's
+`CCursorshareSession::render`: it produces transparency when
+`cursorImage.surface`, its buffer, or texture is absent. A compositor-provided
+cursor need not have an application surface. The result was not attributed to
+permission denial: `enter` was received and the buffer was transparent, not
+opaque black.
 
-No se generaliza esta limitación a todos los compositores ni a todos los
-cursores de aplicaciones. No se intentó modificar permisos, drivers o el
-compositor. Se cerró únicamente la ventana temporal y el control quedó parado.
+This does not establish behavior for every compositor or application cursor.
+No permissions, drivers, or compositor code were changed. Only the temporary
+window was closed and control was left stopped.
 
-## Resultado posterior
+## Later result
 
-`experimental/cursor-outline/plugin.cpp` usa la textura interna del cursor,
-sin hooks de funciones, y supera esta limitación en la sesión de prueba.
-Se verificaron flecha, cursor de texto, clic atravesando el efecto, permanencia
-durante pausas, desaparición al parar y descarga del plugin. Su uso en el host
-sigue siendo una decisión explícita: carga código dentro del compositor.
+`experimental/cursor-outline/plugin.cpp` reads the internal cursor texture
+without function hooks and overcame that limitation in the test session.
+Arrow/I-beam, click-through, persistence during pauses, disappearance on stop,
+and unload were verified. Loading it into any host remains explicit because it
+executes inside the compositor.
 
-La CLI sigue en Zig. Esta sonda y los protocolos vendorizados son diagnóstico,
-no una implementación del indicador continuo por sí mismas. La sonda sigue
-disponible al compilar el árbol de trabajo:
+The CLI remains Zig. This diagnostic and its vendored protocols alone do not
+implement the continuous indicator. To build and run the diagnostic:
 
 ```sh
 zig build
 ./zig-out/bin/deskctl _cursor_probe --session host
 ```
+
+Its output is diagnostic and is not a stable public automation contract.

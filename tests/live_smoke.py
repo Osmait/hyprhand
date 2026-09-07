@@ -39,13 +39,13 @@ def fixture():
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
         for prop in ("margin-top", "margin-bottom", "margin-start", "margin-end"):
             box.set_property(prop, 30)
-        box.append(Gtk.Label(label="Ventana temporal para verificar deskctl"))
+        box.append(Gtk.Label(label="Temporary window for verifying deskctl"))
         entry = Gtk.Entry()
-        entry.set_text("contenido anterior")
+        entry.set_text("previous content")
         box.append(entry)
-        button = Gtk.Button(label="Verificar clic")
+        button = Gtk.Button(label="Verify click")
         box.append(button)
-        label = Gtk.Label(label="Esperando entrada…")
+        label = Gtk.Label(label="Waiting for input…")
         box.append(label)
         drag_area = Gtk.DrawingArea(content_height=60)
         drag_area.set_draw_func(lambda _, ctx, w, h: (ctx.set_source_rgb(.2, .4, .7), ctx.paint()))
@@ -56,13 +56,13 @@ def fixture():
         box.append(drag_area)
 
         def clicked(_):
-            label.set_text("Clic recibido")
+            label.set_text("Click received")
             print(json.dumps({"event": "click", "text": entry.get_text()}), flush=True)
 
         button.connect("clicked", clicked)
         scroll = Gtk.ScrolledWindow(vexpand=True, min_content_height=100)
         content = Gtk.TextView(editable=False)
-        content.get_buffer().set_text("\n".join(f"Línea de prueba {i}" for i in range(100)))
+        content.get_buffer().set_text("\n".join(f"Test line {i}" for i in range(100)))
         scroll.set_child(content)
         box.append(scroll)
 
@@ -156,7 +156,7 @@ def main():
         cli("enable")
         cli("focus", address, "--session", "host")
         cli("key", "ctrl+a", "--window", address, "--session", "host")
-        text = "Hola, ñ y tildes: áéíóú. Zig + Wayland ✓"
+        text = "Hello, ñ and accents: áéíóú. Zig + Wayland ✓"
         cli("type", "--window", address, "--text", text, "--session", "host")
         time.sleep(.15)
         # Local widget coordinates come from our test fixture; the desktop

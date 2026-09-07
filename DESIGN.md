@@ -15,7 +15,7 @@ rounded:
 
 ## Overview
 
-The owner requested no borders and controls integrated into the image. The
+The viewer uses no borders and integrates controls into the image. The
 captured session is the surface, not content inside a decorated GTK window.
 The Operate contract is in `.impeccable/surfaces/src-pip-zig.md`.
 
@@ -69,5 +69,5 @@ grip is two diagonal Cairo strokes, not a text character masquerading as an icon
 
 Sources: `src/preview/viewer.zig`, `src/preview/pip.css`,
 `src/preview/pip_gtk.h`, `src/preview/controller.zig`.
-Evidence: `.impeccable/review/borderless-wide.png` and `borderless-small.png`.
-These are native Linux checks, not a web or theme-matrix certification.
+Historical visual checks are described in [the preview guide](docs/preview.md).
+They cover native Linux behavior, not web or theme-matrix certification.

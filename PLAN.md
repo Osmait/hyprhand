@@ -55,7 +55,7 @@ Scope: CLI only, no MCP. Preserve host configuration and user applications.
   claim that managed headless GPU creation or AT-SPI discovery was tested.
 - [x] PID/start/uid/pidfd-validated descendant teardown, bounded TERM/KILL,
   launch/destroy lifecycle lock, Firefox profile override checks.
-- [x] Dependency manifest, local checksummed release archives, manual private
+- [x] Dependency manifest, local checksummed release archives, manual
   Actions artifacts workflow, Ubuntu build matrix, portable Blender output.
 - [x] Opt-in managed-only GTK modifier/scroll observer and reviewed live runner.
 - [x] Experimental bridge hardening: cursor invalidation/GL resource cleanup,
@@ -112,7 +112,7 @@ that all bugs or live platform incompatibilities are eliminated.
 - Native capture remains deferred after measurement: grim observation median
   25.23 ms including CLI overhead. Native keyboard was worthwhile (40.36 ms
   versus helper 750.24 ms for the same 180-codepoint input in ReleaseSafe).
-- Private repository created; 0.4 maintenance matrix passed on Ubuntu 22.04/24.04
+- Historical repository setup: the 0.4 maintenance matrix passed on Ubuntu 22.04/24.04
   (run 34074547410, commit 4f230f3). Follow-up commits require their own CI result;
   manual packaging verification is tracked separately.
 - New live XWayland test requires a managed opt-in startup/display route; current

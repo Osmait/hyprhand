@@ -1,0 +1,297 @@
+[
+  {
+    "source_seconds": 43.343,
+    "command": [
+      "deskctl",
+      "state",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 43.408,
+    "command": [
+      "deskctl",
+      "doctor",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 52.1,
+    "command": [
+      "deskctl",
+      "sessions",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 52.162,
+    "command": [
+      "deskctl",
+      "focus",
+      "0x55820c4ac3e0",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent"
+  },
+  {
+    "source_seconds": 52.243,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 71.384,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "video-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "539",
+      "--y",
+      "304"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent"
+  },
+  {
+    "source_seconds": 71.431,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+a",
+      "--session",
+      "video-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent"
+  },
+  {
+    "source_seconds": 71.499,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "video-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "Hello from an AI agent! Unicode: ñ ✓"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent"
+  },
+  {
+    "source_seconds": 71.578,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 88.997,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "video-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "297",
+      "--y",
+      "357"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent"
+  },
+  {
+    "source_seconds": 89.674,
+    "command": [
+      "deskctl",
+      "wait",
+      "stable",
+      "--pixels",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 89.736,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 113.641,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "video-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "576",
+      "--y",
+      "306"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent"
+  },
+  {
+    "source_seconds": 113.687,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+a",
+      "--session",
+      "video-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent"
+  },
+  {
+    "source_seconds": 113.762,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "video-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "Observe. Act. Verify. Stay in control."
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent"
+  },
+  {
+    "source_seconds": 113.85,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 131.099,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "video-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "297",
+      "--y",
+      "357"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent"
+  },
+  {
+    "source_seconds": 131.777,
+    "command": [
+      "deskctl",
+      "wait",
+      "stable",
+      "--pixels",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 131.84,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  },
+  {
+    "source_seconds": 144.582,
+    "command": [
+      "deskctl",
+      "stop",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "stopped"
+  },
+  {
+    "source_seconds": 144.644,
+    "command": [
+      "deskctl",
+      "doctor",
+      "--session",
+      "video-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null
+  }
+]

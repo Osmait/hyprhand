@@ -43,5 +43,9 @@ jobs:
           zig build pip -Doptimize=ReleaseSafe -Dcpu=baseline
           zig build pip-test -Doptimize=ReleaseSafe -Dcpu=baseline
           python3 tests/viewer_broadway.py
-      - run: python3 -m py_compile tests/*.py tests/fixtures/*.py scripts/*.py examples/blender/style_room.py
+      - run: python3 -m py_compile tests/*.py tests/fixtures/*.py scripts/*.py packaging/*.py examples/blender/style_room.py examples/gtk/note.py
       - run: bash -n completions/deskctl.bash
+      - name: Experimental build-script syntax (no plugin loading)
+        run: |
+          sh -n experimental/cursor-outline/build.sh
+          sh -n experimental/headless-formats/build.sh

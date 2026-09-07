@@ -318,7 +318,7 @@ else:
 
     def test_unicode_stdin_not_shell_or_options(self):
         self.cli("enable")
-        text = "--help; $(touch /DO-NOT-CREATE) `echo hola` ñáéíóú ∇\nsegunda línea"
+        text = "--help; $(touch /DO-NOT-CREATE) `echo hello` ñáéíóú ∇\nsecond line"
         self.cli("type", "--window", self.address, "--text", text, "--session", "host")
         captured = json.loads((self.root / "input.json").read_text())
         self.assertEqual(captured, {"argv": ["-"], "text": text})

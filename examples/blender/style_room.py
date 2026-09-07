@@ -3,7 +3,7 @@
 Run in Blender's Python console using exec(compile(...)). No external assets.
 Outputs go beside the open .blend, or to the existing absolute directory in
 DESKCTL_BLENDER_OUTPUT_DIR. An unsaved scene requires that explicit directory.
-This script saves habitacion-realista.blend and configures the PNG output path;
+This script saves room-styled.blend and configures the PNG output path;
 it does not render. Existing styled outputs may be replaced on reruns.
 Principled shader reference: https://docs.blender.org/api/main/bpy.types.ShaderNodeBsdfPrincipled.html
 """
@@ -26,12 +26,12 @@ else:
     raise RuntimeError('Save the room first or set DESKCTL_BLENDER_OUTPUT_DIR')
 if not ROOT.is_dir():
     raise ValueError('The Blender output directory must already exist')
-OUTPUT_BLEND = ROOT / 'habitacion-realista.blend'
+OUTPUT_BLEND = ROOT / 'room-styled.blend'
 if bpy.data.filepath and OUTPUT_BLEND.resolve() == Path(bpy.data.filepath).resolve():
     raise RuntimeError('Choose a different output directory to preserve the open .blend')
 random.seed(19)
 scene = bpy.context.scene
-assert '01 Suelo' in bpy.data.objects, 'Open the deskctl room first'
+assert '01 Floor' in bpy.data.objects, 'Open the deskctl room first'
 
 # Only remove generated objects when rerunning this styling pass.
 for ob in list(bpy.data.objects):
@@ -78,17 +78,17 @@ def mat(name, color, rough=.6, metal=0, texture=None):
             p.inputs['Sheen Weight'].default_value = .3
     return m
 
-oak = mat('Roble natural | veta', (.46, .29, .14), .48, texture='wood')
-cream = mat('Estuco calido', (.72, .68, .58), .88, texture='plaster')
-sage = mat('Lino salvia', (.19, .28, .19), .88, texture='fabric')
-ivory = mat('Algodon marfil', (.79, .76, .66), .9, texture='fabric')
-terracotta = mat('Ceramica arcilla', (.39, .13, .07), .72)
-black = mat('Metal grafito', (.027, .034, .03), .35, .65)
-brass = mat('Laton cepillado', (.5, .3, .1), .32, .75)
-rugmat = mat('Alfombra boucle', (.54, .43, .29), .96, texture='fabric')
-paper = mat('Papel hueso', (.8, .75, .62), .92)
-leafmat = mat('Hojas verde profundo', (.045, .15, .052), .4)
-soil = mat('Tierra', (.04, .022, .011), 1)
+oak = mat('Natural oak | grain', (.46, .29, .14), .48, texture='wood')
+cream = mat('Warm plaster', (.72, .68, .58), .88, texture='plaster')
+sage = mat('Sage linen', (.19, .28, .19), .88, texture='fabric')
+ivory = mat('Ivory cotton', (.79, .76, .66), .9, texture='fabric')
+terracotta = mat('Clay ceramic', (.39, .13, .07), .72)
+black = mat('Graphite metal', (.027, .034, .03), .35, .65)
+brass = mat('Brushed brass', (.5, .3, .1), .32, .75)
+rugmat = mat('Boucle rug', (.54, .43, .29), .96, texture='fabric')
+paper = mat('Off-white paper', (.8, .75, .62), .92)
+leafmat = mat('Deep green leaves', (.045, .15, .052), .4)
+soil = mat('Soil', (.04, .022, .011), 1)
 
 def assign(ob, material):
     ob.data.materials.clear()
@@ -102,10 +102,10 @@ def cube(name, loc, dims, material, bevel=.025):
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     assign(ob, material)
     if bevel:
-        mod = ob.modifiers.new('Bordes artesanales', 'BEVEL')
+        mod = ob.modifiers.new('Crafted edges', 'BEVEL')
         mod.width = bevel
         mod.segments = 3
-        mod = ob.modifiers.new('Normales', 'WEIGHTED_NORMAL')
+        mod = ob.modifiers.new('Normals', 'WEIGHTED_NORMAL')
     return ob
 
 def sphere(name, loc, scale, material):
@@ -124,7 +124,7 @@ def cylinder(name, loc, radius, depth, material, r2=None):
     ob = tag(bpy.context.object)
     ob.name = name
     assign(ob, material)
-    be = ob.modifiers.new('Cantos suaves', 'BEVEL')
+    be = ob.modifiers.new('Soft edges', 'BEVEL')
     be.width = .012
     be.segments = 3
     for p in ob.data.polygons:
@@ -138,12 +138,12 @@ def rod(name, start, end, radius, material):
     return ob
 
 mapping = {
-    '01 Suelo': oak, '02 Pared fondo': cream, '03 Pared lateral': cream,
-    '04 Cama base': oak, '05 Colchon': ivory, '06 Cabecero': oak,
-    '07 Almohada': ivory, '08 Escritorio tablero': oak,
-    '09 Escritorio soporte A': oak, '10 Escritorio soporte B': oak,
-    '11 Silla asiento': sage, '12 Silla base': black,
-    '13 Silla respaldo': sage, '14 Alfombra': rugmat,
+    '01 Floor': oak, '02 Back wall': cream, '03 Side wall': cream,
+    '04 Bed base': oak, '05 Mattress': ivory, '06 Headboard': oak,
+    '07 Pillow': ivory, '08 Desktop': oak,
+    '09 Desk support A': oak, '10 Desk support B': oak,
+    '11 Chair seat': sage, '12 Chair base': black,
+    '13 Chair back': sage, '14 Rug': rugmat,
 }
 for name, material in mapping.items():
     ob = bpy.data.objects[name]
@@ -156,19 +156,19 @@ for row in range(18):
     y = -2.45 + row * .275
     boundaries = [-2.92] + ([ -1.4, .5, 2.3] if row % 2 else [-2.1, -.2, 1.7]) + [2.92]
     for j, (a,b) in enumerate(zip(boundaries, boundaries[1:])):
-        cube('Roble tabla %02d-%d' % (row,j), ((a+b)/2, y, .018),
+        cube('Oak plank %02d-%d' % (row,j), ((a+b)/2, y, .018),
              (b-a-.008, .267, .03), oak, .004)
-cube('Zocalo posterior', (0,2.365,.1), (5.82,.045,.18), oak, .008)
-cube('Zocalo lateral', (-2.865,0,.1), (.045,4.74,.18), oak, .008)
+cube('Back baseboard', (0,2.365,.1), (5.82,.045,.18), oak, .008)
+cube('Side baseboard', (-2.865,0,.1), (.045,4.74,.18), oak, .008)
 
 # More generous rug, kept out of the desk legs.
-rug = bpy.data.objects['14 Alfombra']
+rug = bpy.data.objects['14 Rug']
 rug.location = (.1,-1.36,.071)
 rug.scale = (1.3,1.18,1)
 for side in (-1,1):
     for i in range(55):
         x = -1.4+i*.055
-        rod('Fleco de yute', (x,-1.36+side*.825,.073),
+        rod('Jute fringe', (x,-1.36+side*.825,.073),
             (x+.008,-1.36+side*.91,.072), .003, rugmat)
 
 # Organic duvet with a folded-over edge and light wrinkles.
@@ -191,70 +191,70 @@ for j in range(ny-1):
     for i in range(nx-1):
         a=j*nx+i
         faces.append((a,a+1,a+nx+1,a+nx))
-me=bpy.data.meshes.new('Tejido ondulado')
+me=bpy.data.meshes.new('Wavy fabric')
 me.from_pydata(verts,[],faces)
-duvet=tag(bpy.data.objects.new('Edredon salvia',me))
+duvet=tag(bpy.data.objects.new('Sage duvet',me))
 scene.collection.objects.link(duvet)
 assign(duvet,sage)
 for p in me.polygons: p.use_smooth=True
-sub=duvet.modifiers.new('Suavizado textil','SUBSURF'); sub.levels=1
-sol=duvet.modifiers.new('Grosor tejido','SOLIDIFY'); sol.thickness=.025
+sub=duvet.modifiers.new('Fabric smoothing','SUBSURF'); sub.levels=1
+sol=duvet.modifiers.new('Fabric thickness','SOLIDIFY'); sol.thickness=.025
 
 # Hide the block pillow, retain it as the original editable geometry.
-bpy.data.objects['07 Almohada'].hide_render=True
-bpy.data.objects['07 Almohada'].hide_set(True)
+bpy.data.objects['07 Pillow'].hide_render=True
+bpy.data.objects['07 Pillow'].hide_set(True)
 for x in (1.02,2.05):
-    pillow=cube('Almohadon de lino', (x,1.66,.83), (.88,.62,.22), ivory, .1)
+    pillow=cube('Linen pillow', (x,1.66,.83), (.88,.62,.22), ivory, .1)
     pillow.rotation_euler[2]=-.05 if x<1.5 else .06
-    sub=pillow.modifiers.new('Relleno suave','SUBSURF'); sub.levels=2
+    sub=pillow.modifiers.new('Soft filling','SUBSURF'); sub.levels=2
     for p in pillow.data.polygons:p.use_smooth=True
-cube('Manta doblada', (1.55,-.48,.808), (2.06,.48,.065), ivory, .035)
+cube('Folded blanket', (1.55,-.48,.808), (2.06,.48,.065), ivory, .035)
 
 # Slatted headboard detail.
 for i in range(19):
-    cube('Liston cabecero', (.56+i*.11,2.101,.61), (.055,.035,.95), oak, .012)
+    cube('Headboard slat', (.56+i*.11,2.101,.61), (.055,.035,.95), oak, .012)
 
 # Desk styling: closed notebook, pen, cup, a lamp.
-cube('Cuaderno cubierta', (-1.47,1.53,.927), (.5,.34,.028), terracotta, .008)
-cube('Cuaderno papel', (-1.47,1.53,.945), (.477,.322,.025), paper, .004)
-rod('Boligrafo', (-1.66,1.53,.963),(-1.34,1.61,.963),.012,brass)
-cylinder('Taza ceramica',(-.94,1.67,1.025),.075,.19,cream)
-cylinder('Cafe',(-.94,1.67,1.123),.059,.006,soil)
-cylinder('Lampara base',(-2.03,1.79,.934),.135,.035,brass)
-rod('Lampara brazo',(-2.03,1.79,.95),(-2.03,1.79,1.43),.018,brass)
-cylinder('Pantalla escritorio',(-2.03,1.79,1.48),.18,.17,cream,.095)
+cube('Notebook cover', (-1.47,1.53,.927), (.5,.34,.028), terracotta, .008)
+cube('Notebook pages', (-1.47,1.53,.945), (.477,.322,.025), paper, .004)
+rod('Pen', (-1.66,1.53,.963),(-1.34,1.61,.963),.012,brass)
+cylinder('Ceramic cup',(-.94,1.67,1.025),.075,.19,cream)
+cylinder('Coffee',(-.94,1.67,1.123),.059,.006,soil)
+cylinder('Lamp base',(-2.03,1.79,.934),.135,.035,brass)
+rod('Lamp arm',(-2.03,1.79,.95),(-2.03,1.79,1.43),.018,brass)
+cylinder('Desk lampshade',(-2.03,1.79,1.48),.18,.17,cream,.095)
 
 # Abstract framed wall art above the desk, built from geometry.
-cube('Marco arte',(-1.43,2.354,2.05),(1.16,.07,1.16),oak,.01)
-cube('Paspartu',(-1.43,2.31,2.05),(1.065,.014,1.065),paper,.002)
-cube('Arte salvia',(-1.55,2.294,1.96),(.48,.008,.64),sage,.002)
-disk=cylinder('Arte sol',(-1.21,2.278,2.29),.205,.012,terracotta)
+cube('Art frame',(-1.43,2.354,2.05),(1.16,.07,1.16),oak,.01)
+cube('Mat board',(-1.43,2.31,2.05),(1.065,.014,1.065),paper,.002)
+cube('Sage artwork',(-1.55,2.294,1.96),(.48,.008,.64),sage,.002)
+disk=cylinder('Sun artwork',(-1.21,2.278,2.29),.205,.012,terracotta)
 disk.rotation_euler[0]=math.pi/2
-cube('Arte horizonte',(-1.43,2.266,1.75),(.83,.01,.07),oak,.002)
+cube('Horizon artwork',(-1.43,2.266,1.75),(.83,.01,.07),oak,.002)
 
 # Bedside oak table on the left of the bed.
-cylinder('Mesa auxiliar',(.06,1.65,.52),.32,.065,oak)
+cylinder('Side table',(.06,1.65,.52),.32,.065,oak)
 for a in (0,2.094,4.189):
-    rod('Pata auxiliar',(.06+math.cos(a)*.23,1.65+math.sin(a)*.23,.045),
+    rod('Side table leg',(.06+math.cos(a)*.23,1.65+math.sin(a)*.23,.045),
         (.06+math.cos(a)*.19,1.65+math.sin(a)*.19,.49),.025,oak)
-cylinder('Jarron',(.06,1.65,.685),.105,.26,terracotta,.062)
+cylinder('Vase',(.06,1.65,.685),.105,.26,terracotta,.062)
 for a in range(5):
-    rod('Rama seca',(.06,1.65,.78),(.06+math.sin(a)*.17,1.65+math.cos(a)*.14,1.13+a*.018),.007,oak)
+    rod('Dry branch',(.06,1.65,.78),(.06+math.sin(a)*.17,1.65+math.cos(a)*.14,1.13+a*.018),.007,oak)
 
 # Foliage softens the front left corner.
-cylinder('Maceta',(-2.35,-1.65,.32),.23,.55,terracotta,.32)
-cylinder('Tierra maceta',(-2.35,-1.65,.59),.29,.03,soil)
+cylinder('Plant pot',(-2.35,-1.65,.32),.23,.55,terracotta,.32)
+cylinder('Pot soil',(-2.35,-1.65,.59),.29,.03,soil)
 for i in range(13):
     a=i*2.399
     z=.84+(i%5)*.16
     end=(-2.35+math.cos(a)*.35,-1.65+math.sin(a)*.35,z)
-    rod('Tallo',(-2.35,-1.65,.56),end,.009,leafmat)
-    ob=sphere('Hoja',end,(.13,.045,.29),leafmat)
+    rod('Stem',(-2.35,-1.65,.56),end,.009,leafmat)
+    ob=sphere('Leaf',end,(.13,.045,.29),leafmat)
     ob.rotation_euler=(math.sin(a)*.65,math.cos(a)*.65,a)
 
 # Ground and studio lighting: open dollhouse, not an enclosed interior.
-ground=mat('Fondo arena',(.32,.29,.235),.94)
-cube('Suelo estudio',(0,0,-.27),(200,200,.1),ground,0)
+ground=mat('Sand background',(.32,.29,.235),.94)
+cube('Studio floor',(0,0,-.27),(200,200,.1),ground,0)
 
 def area(name,loc,target,power,size,color):
     data=bpy.data.lights.new(name,'AREA')
@@ -264,16 +264,16 @@ def area(name,loc,target,power,size,color):
     ob.rotation_euler=(Vector(target)-ob.location).to_track_quat('-Z','Y').to_euler()
     return ob
 
-area('Ventana luz principal',(0,-3.8,6.5),(0,.5,0),1150,4.0,(1,.87,.69))
-area('Relleno cielo',(4,-.5,4.5),(0,1,1),750,3.5,(.77,.87,1))
-area('Luz cenital',(-1,2,5),(0,0,0),600,2.5,(1,.93,.8))
-area('Lampara calida',(-2.03,1.79,1.37),(-2.03,1.79,.9),8,.15,(1,.57,.27))
+area('Main window light',(0,-3.8,6.5),(0,.5,0),1150,4.0,(1,.87,.69))
+area('Sky fill',(4,-.5,4.5),(0,1,1),750,3.5,(.77,.87,1))
+area('Top light',(-1,2,5),(0,0,0),600,2.5,(1,.93,.8))
+area('Warm lamp',(-2.03,1.79,1.37),(-2.03,1.79,.9),8,.15,(1,.57,.27))
 scene.world.use_nodes=True
 scene.world.node_tree.nodes['Background'].inputs['Color'].default_value=(.63,.72,.85,1)
 scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value=.22
 
-camdata=bpy.data.cameras.new('Camara editorial')
-cam=tag(bpy.data.objects.new('Camara editorial',camdata));scene.collection.objects.link(cam)
+camdata=bpy.data.cameras.new('Editorial camera')
+cam=tag(bpy.data.objects.new('Editorial camera',camdata));scene.collection.objects.link(cam)
 cam.location=(9,-12,8.8)
 target=Vector((0,.15,1.02))
 cam.rotation_euler=(target-cam.location).to_track_quat('-Z','Y').to_euler()
@@ -287,7 +287,7 @@ scene.render.resolution_x=1500
 scene.render.resolution_y=1500
 scene.render.resolution_percentage=100
 scene.render.image_settings.file_format='PNG'
-scene.render.filepath=str(ROOT/'habitacion-realista.png')
+scene.render.filepath=str(ROOT/'room-styled.png')
 scene.render.film_transparent=False
 scene.view_settings.view_transform='AgX'
 try:

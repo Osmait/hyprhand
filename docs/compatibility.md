@@ -1,49 +1,42 @@
-# Matriz de compatibilidad — 0.4.0
+# Compatibility matrix — 0.4.0
 
-Esta matriz distingue pruebas locales documentadas, cobertura automatizada sin
-escritorio y compatibilidad pendiente. Los resultados se limitan a las versiones,
-aplicaciones y escenarios descritos en cada registro. La configuración de CI
-no demuestra por sí sola una ejecución remota satisfactoria.
-`status: sent` solo confirma envío, no el efecto en
-la aplicación; se necesita observar y verificar cada resultado.
+This matrix distinguishes recorded local tests, automated offline coverage, and
+unverified configurations. Results apply only to the versions, applications, and
+scenarios in each report. Workflow configuration alone does not prove a successful
+remote run. `status: sent` confirms delivery, not the application's outcome.
 
-| Entorno o función | Evidencia y alcance | Límites |
+| Environment or feature | Evidence and scope | Limits |
 | --- | --- | --- |
-| Ubuntu 22.04 y 24.04, Linux x86_64/glibc | CI configurado con Zig 0.16.0 y Python 3.12: compilación, tests unitarios, protocolos simulados, ciclo de vida y contrato de fiabilidad offline | No ejecuta Hyprland ni aplicaciones gráficas; los resultados remotos deben consultarse en cada ejecución de CI |
-| GTK4/Wayland sobre Hyprland 0.56.2 | El registro local describe texto, clic/doble clic, movimiento, scroll, arrastre y cancelación en fixtures GTK4 | No certifica otros toolkits, versiones, GPUs o todas las escalas/rotaciones |
-| GTK4/XWayland | El registro local incluye pruebas del fixture X11; `tests/live_smoke.py --x11` comprueba backend, texto, clic y scroll | Teclado/scroll dependen de `xdotool`; scroll en detentes enteros, no subpíxeles. No implica paridad completa con Wayland ni las mismas garantías de liberación de entrada |
-| GTK4 en workspace oculto, mismo compositor | La [prueba local de fondo](background-probe.md) confirmó acciones AT-SPI de texto/botón sin pérdida de foco en ese fixture | `sendshortcut` produjo salida/entrada de foco Wayland en primer plano. Otro workspace no aísla la entrada; `activewindow` puede ocultar esa interrupción |
-| Sesión propia anidada, Hyprlang/Lua | Registros locales de ciclo de vida y entrada en ventanas propias | Abrir/cerrar la previsualización puede afectar el foco del host. Aislamiento de entrada no es aislamiento de archivos, red, permisos o credenciales; apps gestionadas deben usar Wayland |
-| Blender 5.2.1 LTS / Wayland nativo | En una instancia nueva con configuración de fábrica, dentro del compositor hijo, `Shift+F4` cambió la vista 3D a la consola Python y `Ctrl+Space` maximizó el editor de consola; ambos resultados verificados mediante capturas. El fallo previo de Shift queda corregido para ese atajo y escenario | **Compatibilidad parcial**: no valida otros atajos, modos, perfiles, versiones ni XWayland. Los problemas anteriores de scroll y arrastre no se consideran resueltos por estas pruebas; un éxito en GTK no demuestra éxito en Blender |
-| Headless sin puente en el stack NVIDIA documentado | El registro local indica `HeadlessRenderUnavailable` | No hay fallback silencioso al host; no se promete soporte headless general |
-| Headless con puente experimental | Registro previo de captura/clic GTK4 y ciclo de vida en NVIDIA, **Aquamarine 0.15.0 + Hyprland 0.56.2**, Hyprlang/Lua | Solo nueva sesión headless propia, selección explícita del `.so`, ABI exacta y renderizador Wayland del padre. No combinar con `--nested`; no funciona como escritorio autónomo sin sesión gráfica |
-| Suite headless de fiabilidad 0.4.0, GTK/Wayland | Suite completa con **10 comprobaciones verificadas**: atajos/modificadores, todos los modos de scroll explícitos e implícitos y cancelación. Además, el [registro local](reliability-040.md) recoge escritura Unicode exacta, clic normal, arrastre de 270 px y rechazo con `StaleObservation` ante cambios de geometría durante la aproximación | Solo el fixture GTK y el stack documentado, **Hyprland 0.56.2 + Aquamarine 0.15.0** con puente headless explícito. No certifica XWayland, Blender, otras GPUs ni equivalencia de distancia visual entre aplicaciones |
-| Contorno de cursor experimental | Registro local de flecha/I-beam, clics y apagado en compositor desechable; Hyprland **0.56.2**, OpenGL, Hyprlang | No se incluye/carga al empaquetar. Activación Lua, cursores animados, todas las escalas/rotaciones y sesiones largas no están validados |
-| Otras arquitecturas, musl, otras distribuciones o compositores | Sin matriz de paquetes ni resultado local establecido aquí | Requieren compilación y validación propias; no se promete compatibilidad binaria |
+| Ubuntu 22.04/24.04, Linux x86_64/glibc | CI configured with Zig 0.16.0/Python 3.12 for builds, unit tests, fake protocols, lifecycle and offline reliability contracts | No Hyprland or live GUI apps; inspect the run for the exact commit |
+| GTK4/Wayland on Hyprland 0.56.2 | Local fixture reports cover text, click/double click, motion, scroll, drag and cancellation | Does not certify other toolkits, versions, GPUs, scales or rotations |
+| GTK4/XWayland | Historical X11 fixture results; `tests/live_smoke.py --x11` checks backend, text, click and scroll | Keyboard/scroll use `xdotool`; integer detents, no subpixels or equivalent native cleanup guarantees |
+| Hidden workspace, same compositor | [Background probe](background-probe.md) observed AT-SPI text/button actions without fixture focus loss | Targeted `sendshortcut` caused foreground keyboard leave/enter despite unchanged `activewindow`; workspaces do not isolate input |
+| Managed nested session, Hyprlang/Lua | Local lifecycle and input records in child windows | Opening/closing the nested window can affect host focus; apps must use Wayland; no file/network/credential sandbox |
+| Blender 5.2.1 LTS / native Wayland | Fresh factory-config instance in child compositor: `Shift+F4` switched 3D view to Python console; `Ctrl+Space` maximized that editor; screenshots verified both | **Partial compatibility** only. Other shortcuts, modes, profiles, versions, XWayland, prior scroll and drag issues remain unverified |
+| Headless without bridge, recorded NVIDIA stack | Local `HeadlessRenderUnavailable` | No silent fallback to host and no general headless promise |
+| Experimental headless bridge | Recorded GTK4 capture/click and lifecycle on **Aquamarine 0.15.0 + Hyprland 0.56.2**, Hyprlang/Lua, NVIDIA | New managed headless session only; explicit `.so`, exact ABI, parent Wayland renderer; cannot combine with `--nested` |
+| 0.4.0 headless GTK/Wayland reliability | Ten verified checks covering modifiers, all explicit/implicit scroll modes and cancellation; [report](reliability-040.md) also records exact Unicode, click, 270 px drag and stale-geometry rejection | Exact documented stack and explicit bridge only; does not certify XWayland, Blender, other GPUs, or equal visual scroll distances |
+| Optional GTK4 preview | Hyprlang native checks; Lua rule/viewer checks in an isolated compositor; fake-worker and private Broadway regressions | Integrated live Lua host launcher, automatic repositioning, fullscreen/multi-monitor, hours-long and cross-GPU coverage remain incomplete |
+| Experimental cursor outline | Arrow/I-beam, click-through and stop in disposable **Hyprland 0.56.2**, OpenGL, Hyprlang compositor | Not automatically built/loaded; Lua activation, animated cursors, all transforms/scales and long sessions unverified |
+| Other architectures, musl, distributions or compositors | No established package matrix/local result here | Require independent builds and testing; no binary compatibility promise |
 
-Los resultados GTK/Wayland/XWayland proceden del registro local en
-[PLAN.md](../PLAN.md) y de los alcances de los fixtures en `tests/live_smoke.py`,
-`tests/live_motion.py` y `tests/live_advanced.py`. Los resultados y restricciones
-de headless/contorno se detallan en [puentes experimentales](experimental-bridges.md).
-El [registro local de fiabilidad 0.4.0](reliability-040.md) reúne la evidencia,
-incidencias y límites de la suite GTK y de las dos comprobaciones puntuales en Blender.
-Las pruebas offline de
-`tests/fixtures/test_reliability_contract.py` validan las guardas y los criterios
-de éxito con eventos sintéticos; no sustituyen la verificación en una aplicación.
+GTK/Wayland/XWayland evidence comes from [PLAN.md](../PLAN.md) and the fixture
+scopes in `tests/live_smoke.py`, `tests/live_motion.py`, and
+`tests/live_advanced.py`. See [experimental bridges](experimental-bridges.md),
+[0.4.0 reliability](reliability-040.md), and [audit follow-up](audit-followup-2026-09.md)
+for details and open issues. Synthetic observer records check test gates and
+success criteria; they do not replace observing a real application.
 
-En Blender, vuelve a observar tras cada acción y comprueba el editor activo,
-el modo y el efecto real. No encadenes atajos/scroll/arrastres basándote solo en
-una respuesta de envío. El ejemplo Python cambia una escena y guarda un archivo;
-su validación de sintaxis no demuestra que el control GUI funcione.
+In Blender, observe after each action and verify the active editor, mode, and
+actual result. A Python example that changes a scene and saves a file does not
+establish GUI automation support merely because its syntax checks pass.
 
-El puente headless depende de APIs internas. La compilación verifica Aquamarine
-0.15.0, pero esa comprobación por sí sola no garantiza la ABI del proceso en el
-que se cargue; el alcance documentado sigue siendo Hyprland 0.56.2. Debe aplicarse
-solo al nuevo compositor hijo, nunca precargarse globalmente ni en el host.
-No añade soporte genérico para otras GPUs/versiones. Los perfiles y el D-Bus son
-propios, pero los permisos del usuario y sus archivos siguen compartidos.
+The headless bridge uses internal APIs. Checking Aquamarine 0.15.0 at build time
+does not prove every ABI detail of the loading process. Restrict it to the
+documented Hyprland 0.56.2 stack and the new child compositor; never preload it
+globally. Private profiles and D-Bus do not isolate user files or permissions.
 
-Los paquetes incluyen metadatos de plataforma y dependencias, no una promesa
-de portabilidad universal. Consulta [dependencias](dependencies.md) antes de
-instalar. Los workflows no cambian la visibilidad privada del repositorio,
-no publican releases/tags y no aportan una licencia de redistribución.
+Packages record platform and dependency metadata, not universal portability.
+Read [dependencies](dependencies.md) before installing. Workflows do not change
+repository visibility or publish releases/tags. Licensing is described in the
+[project README](../README.md).

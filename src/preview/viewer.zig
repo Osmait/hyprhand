@@ -60,7 +60,7 @@ fn lost() void {
     c.gtk_picture_set_paintable(state.picture, null);
     state.last_frame = 0;
     state.paint_pending = null;
-    label(if (state.stop_failed) "Sin señal · No se pudo detener. Reintenta." else if (state.stop_confirmed) "Sin señal · Control detenido" else "Sin señal · Sesión cerrada, bloqueada o no disponible");
+    label(if (state.stop_failed) "No signal · Could not stop input. Try again." else if (state.stop_confirmed) "No signal · Input stopped" else "No signal · Session closed, locked, or unavailable");
 }
 
 fn spawn(command: [*:0]const u8, frame: bool) ?*c.GSubprocess {
@@ -124,7 +124,7 @@ fn frameDone(_: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callconv(
     if (state.stop_confirmed and job.captured_ms > state.stopped_at) state.stop_confirmed = !job.enabled;
     const enabled = job.enabled and !state.stop_confirmed;
     c.gtk_widget_set_sensitive(state.stop, @intFromBool(state.stop_process == null and enabled));
-    label(if (state.stop_process != null) "Deteniendo control…" else if (state.stop_failed) "No se pudo detener · Reintenta" else if (enabled) "● En vivo · Control habilitado" else "● En vivo · Control detenido");
+    label(if (state.stop_process != null) "Stopping input…" else if (state.stop_failed) "Could not stop input · Try again" else if (enabled) "● Live · Input enabled" else "● Live · Input stopped");
 }
 
 fn requestFrame() void {
@@ -229,14 +229,14 @@ fn stopDone(object: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callc
     if (state.stop_confirmed) state.stopped_at = now();
     state.stop_failed = !state.stop_confirmed;
     c.gtk_widget_set_sensitive(state.stop, @intFromBool(state.stop_failed));
-    label(if (state.stop_failed) "No se pudo detener · Reintenta" else "Control detenido · Aplicaciones abiertas");
+    label(if (state.stop_failed) "Could not stop input · Try again" else "Input stopped · Applications remain open");
 }
 
 fn stopClicked(_: ?*c.GtkButton, _: ?*anyopaque) callconv(.c) void {
     if (state.stop_process != null or state.closing) return;
     state.stop_failed = false;
     state.stop_confirmed = false;
-    label("Deteniendo control…");
+    label("Stopping input…");
     c.gtk_widget_set_sensitive(state.stop, 0);
     state.stop_process = spawn("_preview_stop", false);
     state.stop_started = now();
@@ -244,7 +244,7 @@ fn stopClicked(_: ?*c.GtkButton, _: ?*anyopaque) callconv(.c) void {
         c.g_subprocess_wait_async(process, null, stopDone, null);
     } else {
         state.stop_failed = true;
-        label("No se pudo detener · Reintenta");
+        label("Could not stop input · Try again");
         c.gtk_widget_set_sensitive(state.stop, 1);
     }
 }
@@ -291,7 +291,7 @@ pub fn main(init: std.process.Init) !void {
     if (fps < 1 or fps > 15) return error.InvalidPreviewFps;
     const app_id = init.environ_map.get("DESKCTL_PIP_APP_ID") orelse return error.UseDeskctlPreview;
     c.g_set_prgname(try a.dupeZ(u8, app_id));
-    c.g_set_application_name("deskctl · Vista de sesión");
+    c.g_set_application_name("deskctl · Session preview");
     if (c.gtk_init_check() == 0) return error.PreviewDisplayUnavailable;
     const style = c.gtk_css_provider_new();
     c.gtk_css_provider_load_from_data(style, css, css.len);
@@ -308,43 +308,43 @@ pub fn main(init: std.process.Init) !void {
     const picture: *c.GtkPicture = @ptrCast(c.gtk_picture_new());
     c.gtk_picture_set_content_fit(picture, c.GTK_CONTENT_FIT_CONTAIN);
     c.gtk_picture_set_can_shrink(picture, 1);
-    c.gtk_picture_set_alternative_text(picture, "Vista de la sesión del agente; no envía clics ni teclado");
+    c.gtk_picture_set_alternative_text(picture, "Agent session preview; does not forward clicks or keyboard input");
     c.gtk_widget_set_hexpand(@ptrCast(picture), 1);
     c.gtk_widget_set_vexpand(@ptrCast(picture), 1);
     c.gtk_overlay_set_child(overlay, @ptrCast(picture));
     const header: *c.GtkBox = @ptrCast(c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 12));
     c.gtk_widget_add_css_class(@ptrCast(header), "pip-top");
     c.gtk_widget_set_valign(@ptrCast(header), c.GTK_ALIGN_START);
-    const title: *c.GtkLabel = @ptrCast(c.gtk_label_new(try std.fmt.allocPrintSentinel(a, "{s} · Solo lectura", .{argv[2]}, 0)));
+    const title: *c.GtkLabel = @ptrCast(c.gtk_label_new(try std.fmt.allocPrintSentinel(a, "{s} · Read-only", .{argv[2]}, 0)));
     c.gtk_label_set_xalign(title, 0);
     c.gtk_label_set_ellipsize(title, c.PANGO_ELLIPSIZE_END);
     c.gtk_widget_set_hexpand(@ptrCast(title), 1);
-    c.gtk_widget_set_tooltip_text(@ptrCast(title), try std.fmt.allocPrintSentinel(a, "{s} · Arrastra la imagen para mover el visor", .{argv[2]}, 0));
+    c.gtk_widget_set_tooltip_text(@ptrCast(title), try std.fmt.allocPrintSentinel(a, "{s} · Drag the image to move the viewer", .{argv[2]}, 0));
     const close = c.gtk_button_new_from_icon_name("window-close-symbolic").?;
     c.gtk_widget_add_css_class(close, "pip-close");
-    c.gtk_widget_set_tooltip_text(close, "Cerrar visor (el agente continúa)");
+    c.gtk_widget_set_tooltip_text(close, "Close viewer (the agent keeps running)");
     c.gtk_box_append(header, @ptrCast(title));
     c.gtk_box_append(header, close);
     c.gtk_overlay_add_overlay(overlay, @ptrCast(header));
     const footer: *c.GtkBox = @ptrCast(c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 10));
     c.gtk_widget_set_valign(@ptrCast(footer), c.GTK_ALIGN_END);
     c.gtk_widget_add_css_class(@ptrCast(footer), "pip-bottom");
-    const status: *c.GtkLabel = @ptrCast(c.gtk_label_new("Conectando…"));
+    const status: *c.GtkLabel = @ptrCast(c.gtk_label_new("Connecting…"));
     c.gtk_label_set_xalign(status, 0);
     c.gtk_label_set_wrap(status, 1);
     c.gtk_label_set_lines(status, 2);
     c.gtk_label_set_ellipsize(status, c.PANGO_ELLIPSIZE_END);
     c.gtk_widget_set_hexpand(@ptrCast(status), 1);
-    const stop = c.gtk_button_new_with_label("Detener agente").?;
+    const stop = c.gtk_button_new_with_label("Stop input").?;
     c.gtk_widget_add_css_class(stop, "destructive-action");
-    c.gtk_widget_set_tooltip_text(stop, "Deshabilita la entrada de deskctl. No cierra las aplicaciones ni termina otros procesos del agente.");
+    c.gtk_widget_set_tooltip_text(stop, "Disable deskctl input. Applications and other agent processes remain running.");
     c.gtk_box_append(footer, @ptrCast(status));
     c.gtk_box_append(footer, stop);
     const grip = c.gtk_drawing_area_new().?;
     c.gtk_widget_set_size_request(grip, 32, 32);
     c.gtk_widget_set_valign(grip, c.GTK_ALIGN_END);
     c.gtk_widget_set_cursor_from_name(grip, "se-resize");
-    c.gtk_widget_set_tooltip_text(grip, "Arrastra para cambiar tamaño; también puedes usar los atajos de Hyprland");
+    c.gtk_widget_set_tooltip_text(grip, "Drag to resize; Hyprland shortcuts also work");
     c.gtk_drawing_area_set_draw_func(@ptrCast(grip), drawGrip, null, null);
     const resize = c.gtk_gesture_click_new();
     _ = c.g_signal_connect_data(resize, "pressed", @ptrCast(&resizePressed), window, null, 0);

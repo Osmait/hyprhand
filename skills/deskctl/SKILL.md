@@ -47,7 +47,7 @@ continue using `observe` and the normal frame contract for all agent input.
    ```sh
    deskctl click --session SESSION --frame FRAME_ID --x 100 --y 200
    deskctl key ctrl+a --session SESSION --window ADDRESS
-   deskctl type --session SESSION --window ADDRESS --text 'Hola, ñ ✓'
+   deskctl type --session SESSION --window ADDRESS --text 'Hello, Unicode: ñ ✓'
    deskctl scroll --session SESSION --frame FRAME_ID --x 500 --y 400 --dy 2
    deskctl drag --session SESSION --frame FRAME_ID --x 100 --y 200 --to-x 300 --to-y 200
    ```

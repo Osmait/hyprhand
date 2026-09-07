@@ -1,0 +1,7 @@
+Use deskctl to update the note in the demo application.
+
+Replace the draft with: Hello from an AI agent! Unicode: ñ ✓
+Click Apply text and verify the exact text in the visible result.
+Then replace it with: Observe. Act. Verify. Stay in control.
+Apply it again and verify the final result with a fresh screenshot.
+Stop deskctl input when you are finished, leaving the application open.

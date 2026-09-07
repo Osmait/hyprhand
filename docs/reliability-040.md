@@ -1,60 +1,57 @@
-# Fiabilidad 0.4.0 — registro local
+# Reliability 0.4.0 — local historical report
 
-Pruebas realizadas el 6 de septiembre de 2026, Hyprland 0.56.2,
-Aquamarine 0.15.0, GTK4 nativo, salida HEADLESS-1 1920×1080 con puente
-experimental seleccionado explícitamente. Sesión desechable `reliability-040`;
-ninguna entrada dirigida al escritorio host. No es una certificación de otros
-equipos, aplicaciones o versiones.
+Tests were performed on 2026-09-06 with Hyprland 0.56.2, Aquamarine 0.15.0,
+native GTK4, and HEADLESS-1 at 1920 × 1080 using an explicitly selected experimental
+bridge. The disposable session was `reliability-040`; no input targeted the host.
+This does not certify other machines, applications, or versions.
 
-## Puntero
+## Pointer
 
-- Clic con aura y ventana explícita: evento recibido y etiqueta de confirmación
-  inspeccionada en una captura nueva.
-- Arrastre normal de 270 px: receptor GTK confirmó `drag-end`, dx=270, dy=0.
-- Cambio de geometría durante aproximación de 5 s: `StaleObservation` antes del
-  clic. El contador de clics permaneció en uno. Se restauró la geometría de la
-  ventana de prueba, no una ventana del usuario.
-- Interferencia durante arrastre de 5 s: se movió deliberadamente el cursor del
-  compositor hijo con su IPC exacto. deskctl devolvió `CursorPositionMismatch`
-  y el receptor confirmó la liberación del botón (`drag-end`).
-- Scroll de rueda dosificado y continuo inverso: desplazamientos visibles
-  comprobados con capturas antes/después. La distancia visual no es equivalente
-  entre modos y depende de la aplicación.
-- La observación detallada detectó un quinto evento `surface` después de los
-  cuatro pasos `wheel`: lo provocaba enviar fin de eje al terminar una rueda.
-  Se limita ese cierre a gestos continuos. La repetición produjo exactamente
-  cuatro eventos `wheel`, dy=1 cada uno, sin evento adicional.
+- Click with aura and explicit window: receiver event confirmed and confirmation
+  label inspected in a fresh screenshot.
+- Normal 270 px drag: GTK receiver confirmed `drag-end`, dx=270, dy=0.
+- Geometry change during 5 s approach: `StaleObservation` before click; click
+  counter remained at one. Only test-window geometry was restored.
+- Interference during 5 s drag: the child's cursor was deliberately moved through
+  its exact IPC. deskctl returned `CursorPositionMismatch` and the receiver
+  confirmed button release through `drag-end`.
+- Paced wheel and reverse continuous scroll: before/after screenshots confirmed
+  movement. Visual distance differs by mode and application.
+- Detailed observation found a fifth `surface` event after four wheel steps,
+  caused by sending axis-stop for a wheel. End-of-axis was restricted to
+  continuous gestures. Repetition yielded exactly four `wheel` events with dy=1
+  and no extra event.
 
-## Teclado y pruebas sin escritorio
+## Keyboard and offline tests
 
-El backend envía teclas físicas de modificadores y máscaras derivadas de su
-mapa XKB autocontenido. Las pruebas de protocolo utilizan sockets Wayland/IPC
-privados simulados: no pueden inyectar entrada en un compositor real.
+The native backend sends physical modifier keys and masks resolved from a
+self-contained XKB map. Protocol tests use private fake Wayland/IPC sockets and
+cannot inject input into a real compositor.
 
-La primera ejecución GTK detectó una suposición incorrecta del observador:
-esperaba una notificación de máscara cero inmediatamente después de soltar
-Control. El receptor sí registró Control abajo, `a` con máscara Control y ambas
-liberaciones. GTK actualiza la señal de modificadores al procesar eventos de
-teclado; la siguiente tecla sin modificadores es la comprobación necesaria.
-Referencia: [implementación de GtkEventControllerKey](https://github.com/GNOME/gtk/blob/main/gtk/gtkeventcontrollerkey.c).
+The initial GTK run found an observer assumption error: it expected an immediate
+zero modifier-mask callback after Control release. The receiver recorded Control
+down, `a` with Control mask, and both releases. GTK updates its controller mask
+while processing key events; a following unmodified key is the needed evidence.
+The observer checks balanced physical release and an unmodified F12 probe rather
+than fabricating a zero callback.
 
-La repetición completa pasó diez comprobaciones: tres grupos de atajos nativos,
-los modos `auto`, `wheel` y `continuous` con ventana explícita e implícita, y
-cancelación del scroll por SIGTERM sin eventos posteriores. Se inspeccionó una
-captura nueva antes de cada acción de puntero. También se recibió exactamente
-`Zig rápido: ñ ✓ — prueba Unicode` mediante escritura nativa.
+The complete rerun passed ten checks: three native shortcut groups, auto/wheel/
+continuous with explicit and implicit windows, and SIGTERM cancellation without
+subsequent scroll events. A new screenshot was reviewed before each pointer action.
+An exact Unicode string containing accents, ñ, a check mark and an em dash was
+also received through native typing.
 
-`Shift+Tab` reveló otro fallo real: el mapa de un solo nivel no entregaba
-`ISO_Left_Tab` y GTK no cambiaba de campo. Los mapas de atajos ahora incluyen
-niveles Shift para Tab y letras; el mapa de escritura conserva texto exacto.
-La navegación inversa y la selección por palabras con Ctrl+Shift pasaron después.
+`Shift+Tab` exposed a real bug: a one-level keymap failed to send `ISO_Left_Tab`,
+so GTK did not change fields. Shortcut maps gained Shift levels for Tab/letters;
+text maps retained exact text behavior. Reverse navigation and Ctrl+Shift word
+selection then passed.
 
-En Blender **5.2.1 LTS**, una instancia nueva con configuración de fábrica en
-la misma sesión privada recibió `Shift+F4` y cambió de vista 3D a consola Python;
-`Ctrl+Espacio` maximizó ese editor. Ambos efectos se comprobaron en capturas.
-Esto valida esos atajos, no todo el modelado, scroll o arrastre de Blender.
+In **Blender 5.2.1 LTS**, a fresh factory-config instance in the same private
+session received `Shift+F4` and switched from 3D view to Python console;
+`Ctrl+Space` maximized that editor. Screenshots verified both. This validates
+those shortcuts, not all Blender modeling, scroll, or drag workflows.
 
-Comandos reproducibles sin entrada gráfica:
+## Reproducible offline commands
 
 ```sh
 zig build test
@@ -66,23 +63,18 @@ python3 tests/session_lifecycle.py
 python3 -m unittest discover -s packaging -p 'test_*.py'
 ```
 
-Los ocho tests de teclado aislados también forman parte de los 26 tests Zig;
-no deben sumarse dos veces. La integración tiene 36 casos, el protocolo de
-teclado siete, el ciclo de vida doce y el empaquetado siete. El contrato del
-observador gráfico tiene otros 31 tests sin escritorio: 119 casos automatizados
-distintos en total entre estas suites.
+At the time, eight isolated keyboard tests overlapped the 26 Zig tests and were
+not counted twice. Integration had 36 cases, keyboard protocol seven, lifecycle
+twelve, packaging seven, and the offline graphical-observer contract 31: 119
+unique automated cases across those suites. Current suite counts may differ.
 
-Al finalizar se detuvo el control y se destruyó `reliability-040`. Se conservan
-sus perfiles/logs temporales para diagnóstico; no se borraron archivos del
-usuario. La prueba no guardó escenas de Blender.
+Cleanup stopped control and destroyed `reliability-040`, retaining temporary
+profiles/logs for diagnosis. No user files were deleted or Blender scenes saved.
 
-## Límites conservados
+## Preserved limits
 
-No se añade entrada aislada a workspaces del mismo compositor, sandbox de
-archivos/credenciales, acciones semánticas AT-SPI generales ni captura nativa.
-Los puentes C++ siguen siendo experimentales y no se cargan en el host.
-Las comprobaciones son guardas periódicas, no transacciones atómicas frente a
-cambios simultáneos del escritorio. Después de una interrupción puede existir
-entrada ya recibida; cancelarla no deshace sus efectos.
-Mover/redimensionar la propia ventana con un arrastre puede invalidar el frame
-y abortar; la prueba de arrastre verificada ocurrió dentro del contenido GTK.
+No same-compositor workspace input isolation, file/credential sandbox, general
+AT-SPI semantic actions, or native screenshot backend was added. Experimental
+bridge ABI/GPU restrictions remain. Native cleanup cannot guarantee recovery from
+SIGKILL or compositor failure; X11 helpers have weaker release guarantees.
+Success in GTK does not establish correctness in another application's UI.

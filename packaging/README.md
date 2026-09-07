@@ -96,5 +96,15 @@ or any GitHub settings. Availability of private-repository hosted runners depend
 on the account's Actions configuration and quota. No remote run is implied by
 the presence of these workflows.
 
-No license has been selected. Creating a package does not grant redistribution
-rights; a license decision remains with the repository owner.
+No project license has been selected. Creating a package does not grant project
+redistribution rights; a license decision remains with the repository owner.
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) preserves the original Wayland
+protocol permissions independently of that decision.
+
+Before publication, follow the [readiness report](../docs/open-source-readiness.md).
+`python3 scripts/check_docs.py` validates local documentation links and the package
+payload. Example/fixture guides and the skill instructions are included so those
+links work; source code, test runners and editable Blender scenes remain excluded.
+The four README images, recorded demo video, poster, subtitles and normalized
+provenance are included so the illustrated guide also works after extraction.
+Raw recordings and unredacted command logs remain excluded.

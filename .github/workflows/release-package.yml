@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       package:
-        description: Build and upload private-repository Actions artifacts (no release or tag)
+        description: Build and upload Actions artifacts (no release or tag)
         type: boolean
         required: true
         default: false
