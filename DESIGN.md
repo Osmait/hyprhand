@@ -1,5 +1,5 @@
 ---
-name: deskctl borderless PiP
+name: hyprhand borderless PiP
 description: Image-first native monitor with integrated controls
 colors:
   canvas: "#080c12"
@@ -11,7 +11,7 @@ rounded:
   control: "6px"
 ---
 
-# Design System: deskctl PiP
+# Design System: hyprhand PiP
 
 ## Overview
 
@@ -53,7 +53,7 @@ grip is two diagonal Cairo strokes, not a text character masquerading as an icon
   the viewer. The lower-right 32px grip begins a native southeast resize.
   Compositor move/resize shortcuts remain available.
 - Close and stop are permanently visible GTK buttons with tooltips and a visible
-  keyboard focus outline. Close exits only the viewer; stop disables deskctl
+  keyboard focus outline. Close exits only the viewer; stop disables hyprhand
   input while leaving applications open. No resume or input-forwarding path.
 - States remain connecting, live/enabled, live/stopped, stopping, failed and
   disconnected. Stale or failed captures clear the picture, not the controls.

@@ -69,7 +69,7 @@ class Preview(unittest.TestCase):
         helper = self.root / "grim"
         helper.write_text(f"#!{sys.executable}\n" + r'''
 import json, os, pathlib, signal, struct, sys, time, zlib, binascii
-root = pathlib.Path(os.environ['DESKCTL_PREVIEW_TEST_ROOT'])
+root = pathlib.Path(os.environ['HYPRHAND_PREVIEW_TEST_ROOT'])
 if (root / 'ignore-term').exists(): signal.signal(signal.SIGTERM, signal.SIG_IGN)
 (root / 'capture.json').write_text(json.dumps({'argv': sys.argv, 'pid': os.getpid(),
     'runtime': os.environ['XDG_RUNTIME_DIR'], 'instance': os.environ['HYPRLAND_INSTANCE_SIGNATURE']}))
@@ -89,7 +89,7 @@ else:
     sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' + struct.pack('>II', width, 540))
 ''')
         helper.chmod(0o700)
-        self.env.update(PATH=f"{self.root}:{os.environ['PATH']}", DESKCTL_PREVIEW_TEST_ROOT=str(self.root))
+        self.env.update(PATH=f"{self.root}:{os.environ['PATH']}", HYPRHAND_PREVIEW_TEST_ROOT=str(self.root))
         self.cli("enable", "--session", "check")
 
     def argv(self, command="_preview_frame", instance="test", monitor="HEADLESS-1"):
@@ -274,7 +274,7 @@ else:
         self.provider = "lua"
         self.viewer_cleanup()
         self.assertTrue(any("hl.window_rule(" in request and "no_initial_focus=true" in request
-                            and "match={class='^deskctl-pip-" in request for request in self.requests))
+                            and "match={class='^hyprhand-pip-" in request for request in self.requests))
         self.assertFalse(any(request.startswith("/keyword ") for request in self.requests))
 
     def viewer_cleanup(self):
@@ -286,9 +286,9 @@ else:
         (host / ".socket.sock").symlink_to(self.runtime / "hypr/test/.socket.sock")
         binary_dir = self.root / "bin"
         binary_dir.mkdir()
-        cli = binary_dir / "deskctl"
+        cli = binary_dir / "hyprhand"
         shutil.copy2(BIN, cli)
-        viewer = binary_dir / "deskctl-pip"
+        viewer = binary_dir / "hyprhand-pip"
         marker = self.root / "viewer.pid"
         viewer.write_text(f"#!{sys.executable}\n" +
                           "import os, pathlib, signal, time\n" +

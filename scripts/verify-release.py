@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a deskctl archive and checksum without extracting or executing it."""
+"""Verify a hyprhand archive and checksum without extracting or executing it."""
 import argparse
 import hashlib
 import json
@@ -30,7 +30,7 @@ def verify(archive_path):
             if member.uid or member.gid or member.uname or member.gname:
                 raise ValueError("archive contains local ownership metadata")
             relative = path.relative_to(root).as_posix()
-            expected_mode = 0o755 if member.isdir() or relative == "bin/deskctl" else 0o644
+            expected_mode = 0o755 if member.isdir() or relative == "bin/hyprhand" else 0o644
             if member.mode != expected_mode:
                 raise ValueError("unexpected archive permissions")
             if member.isfile():

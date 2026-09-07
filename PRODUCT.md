@@ -1,4 +1,4 @@
-# deskctl
+# hyprhand
 
 <!-- impeccable:product-schema 1 -->
 
@@ -20,7 +20,7 @@ entering that session.
 ## Confirmed preview workflow
 
 A live, read-only Picture-in-Picture on the host, movable and resizable. Show the
-managed session and its cursor. A stop control disables deskctl input without
+managed session and its cursor. A stop control disables hyprhand input without
 closing the applications. Closing the viewer does not stop the agent. Never
 forward pointer or keyboard input from the viewer to the source session.
 

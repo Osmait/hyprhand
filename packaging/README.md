@@ -9,7 +9,7 @@ input. It does not create a release, tag, commit or upload anything itself.
 From the checkout, with the [build dependencies](../docs/dependencies.md):
 
 ```sh
-python3 scripts/package-release.py --version 0.4.0 --output /tmp/deskctl-release-0.4.0
+python3 scripts/package-release.py --version 0.4.0 --output /tmp/hyprhand-release-0.4.0
 ```
 
 Use the actual source version and a new output directory. Existing output paths
@@ -30,13 +30,13 @@ Wayland/Hyprland sockets and the already-required libxkbcommon; it needs no live
 compositor or additional desktop packages.
 The reliability contract suite imports `tests/live_reliability.py` and
 `tests/fixtures/reliability.py` to check safety gates and receiver evidence with
-synthetic records and mocked operations. It does not invoke deskctl, import GTK
+synthetic records and mocked operations. It does not invoke hyprhand, import GTK
 or open a GUI. CI also checks these modules' syntax; live tests remain opt-in.
 
 The archive name contains the application version, OS, architecture, build
 distribution/version and build glibc version. Its contents are explicitly
 selected: the stripped ReleaseSafe executable, Bash/Fish completions, the
-deskctl skill, the main usage guide and supporting documentation, and these manifests:
+hyprhand skill, the main usage guide and supporting documentation, and these manifests:
 
 - `metadata.json`: version, source commit/dirty state, Zig version, CPU baseline,
   build platform and completed non-live checks. Live tests are `not_run`.
@@ -57,9 +57,9 @@ A separate `.tar.gz.sha256` verifies the archive. From the output directory,
 verify before extracting; then verify the files inside the extracted directory:
 
 ```sh
-sha256sum --check deskctl-VERSION-PLATFORM.tar.gz.sha256
-tar -xzf deskctl-VERSION-PLATFORM.tar.gz
-cd deskctl-VERSION-PLATFORM
+sha256sum --check hyprhand-VERSION-PLATFORM.tar.gz.sha256
+tar -xzf hyprhand-VERSION-PLATFORM.tar.gz
+cd hyprhand-VERSION-PLATFORM
 sha256sum --check SHA256SUMS
 ```
 
@@ -80,8 +80,8 @@ neither alone establishes compatibility of all transitive libraries. No composit
 GPU drivers or optional experimental `.so` bridges are bundled. Installation is
 manual; packaging never writes to system prefixes or desktop configuration.
 
-The optional GTK4 `deskctl-pip` viewer is also excluded. Build it explicitly from
-the matching source checkout with `zig build pip` and install it beside `deskctl`.
+The optional GTK4 `hyprhand-pip` viewer is also excluded. Build it explicitly from
+the matching source checkout with `zig build pip` and install it beside `hyprhand`.
 The CLI archive includes [preview usage and limits](../docs/preview.md), but does
 not acquire a GTK runtime dependency. CI checks its build on Ubuntu 24.04 and
 runs `tests/preview.py` without a GUI on both matrix entries.

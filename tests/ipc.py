@@ -10,12 +10,12 @@ import threading
 import time
 import unittest
 
-BIN = Path(os.environ.get("DESKCTL_TEST_BIN", str(Path(__file__).resolve().parents[1] / "zig-out/bin/deskctl")))
+BIN = Path(os.environ.get("HYPRHAND_TEST_BIN", str(Path(__file__).resolve().parents[1] / "zig-out/bin/hyprhand")))
 
 
 class IPC(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="deskctl-ipc-")
+        self.temp = tempfile.TemporaryDirectory(prefix="hyprhand-ipc-")
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
         ipc = root / "hypr/test"

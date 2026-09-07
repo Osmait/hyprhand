@@ -1,5 +1,9 @@
 # Spreadsheet agent demonstration
 
+This recording predates the **Hyprhand** rename and uses the former name
+**deskctl**. Original media and command evidence retain that name. See the
+[rename notes](../../docs/renaming.md).
+
 This example records a real Codex CLI task and a real LibreOffice Calc window
 side by side. The coordinator types the [prompt](prompt.txt) into Codex and submits
 it. The agent then builds the spreadsheet through deskctl mouse and keyboard input.
@@ -33,11 +37,12 @@ rate uses the totals, not the average of the six monthly percentages.
 
 ## Reproduce
 
-1. Install deskctl and LibreOffice Calc. Create a dedicated managed session using
+1. Install hyprhand and LibreOffice Calc. Create a dedicated managed session using
    the [session guide](../../docs/sessions.md).
 2. Enable input in that session and launch a blank Calc document there. Launch
-   your agent in a terminal and give it deskctl plus an image-viewing tool.
-3. Give the agent the included prompt and your actual session name. Require fresh
+   your agent in a terminal and give it hyprhand plus an image-viewing tool.
+3. Give the agent the included prompt with `deskctl` replaced by `hyprhand`,
+   and your actual session name. Require fresh
    screenshot inspection before pointer actions. Do not reuse recorded coordinates
    or frame/window identifiers.
 4. Require all document creation, formatting, formulas, chart insertion and saving

@@ -1,7 +1,7 @@
 """Opt-in test: opens a disposable GTK window and uses the real mouse/keyboard.
 
 Run: python3 tests/live_smoke.py --live
-Requires Python GObject + GTK4 in addition to deskctl's dependencies.
+Requires Python GObject + GTK4 in addition to hyprhand's dependencies.
 """
 import json
 import os
@@ -11,8 +11,8 @@ import subprocess
 import sys
 import time
 
-BIN = Path(__file__).resolve().parents[1] / "zig-out/bin/deskctl"
-SESSION = os.environ.get("DESKCTL_TEST_SESSION", "host")
+BIN = Path(__file__).resolve().parents[1] / "zig-out/bin/hyprhand"
+SESSION = os.environ.get("HYPRHAND_TEST_SESSION", "host")
 
 
 def fixture():
@@ -20,10 +20,10 @@ def fixture():
     gi.require_version("Gtk", "4.0")
     from gi.repository import Gtk, GLib, Gio
 
-    app = Gtk.Application(application_id="org.deskctl.Smoke", flags=Gio.ApplicationFlags.NON_UNIQUE)
+    app = Gtk.Application(application_id="org.hyprhand.Smoke", flags=Gio.ApplicationFlags.NON_UNIQUE)
 
     def activate(app):
-        window = Gtk.ApplicationWindow(application=app, title="deskctl smoke test")
+        window = Gtk.ApplicationWindow(application=app, title="hyprhand smoke test")
         if "--motion-events" in sys.argv:
             motion = Gtk.EventControllerMotion()
             motion.connect("motion", lambda _, x, y: print(json.dumps({"event": "motion", "x": x, "y": y}), flush=True))
@@ -39,7 +39,7 @@ def fixture():
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
         for prop in ("margin-top", "margin-bottom", "margin-start", "margin-end"):
             box.set_property(prop, 30)
-        box.append(Gtk.Label(label="Temporary window for verifying deskctl"))
+        box.append(Gtk.Label(label="Temporary window for verifying hyprhand"))
         entry = Gtk.Entry()
         entry.set_text("previous content")
         box.append(entry)
@@ -100,8 +100,8 @@ def cli(*args):
         args[args.index("--session") + 1] = SESSION
     else:
         args += ["--session", SESSION]
-    if args[0] in ("type", "key") and os.environ.get("DESKCTL_TEST_BACKEND"):
-        args += ["--backend", os.environ["DESKCTL_TEST_BACKEND"]]
+    if args[0] in ("type", "key") and os.environ.get("HYPRHAND_TEST_BACKEND"):
+        args += ["--backend", os.environ["HYPRHAND_TEST_BACKEND"]]
     result = subprocess.run([str(BIN), *args], capture_output=True, text=True, timeout=12)
     payload = json.loads(result.stdout)
     if result.returncode:
@@ -160,7 +160,7 @@ def main():
         cli("type", "--window", address, "--text", text, "--session", "host")
         time.sleep(.15)
         # Local widget coordinates come from our test fixture; the desktop
-        # position and screenshot transformation come from deskctl.
+        # position and screenshot transformation come from hyprhand.
         state = cli("state")
         window = next(w for w in state["windows"] if w["address"] == address)
         gx = window["at"][0] + ready["button"][0]

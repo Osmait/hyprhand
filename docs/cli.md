@@ -1,13 +1,13 @@
 # CLI reference
 
-This reference describes deskctl 0.4.0. Run `deskctl --help` for the compact command
-list and `deskctl --version` for the installed version. Commands beginning with
+This reference describes hyprhand 0.4.0. Run `hyprhand --help` for the compact command
+list and `hyprhand --version` for the installed version. Commands beginning with
 `_` are internal workers or diagnostics, not a stable integration API.
 
 ## Invocation and output
 
 ```text
-deskctl COMMAND [ARGUMENTS] [--session NAME] [OPTIONS]
+hyprhand COMMAND [ARGUMENTS] [--session NAME] [OPTIONS]
 ```
 
 Read commands default to `host`. Input commands (`focus`, `workspace`, pointer
@@ -17,7 +17,7 @@ Session names begin with an ASCII letter, contain only letters, digits, `_` or
 `-`, and have at most 32 characters. `host` is reserved.
 
 Unknown, repeated, or command-inappropriate options are rejected. Use `--` before
-the executable and arguments passed to `launch`. deskctl does not interpret them
+the executable and arguments passed to `launch`. hyprhand does not interpret them
 as a shell expression.
 
 | Output | Contract |
@@ -43,13 +43,13 @@ respective Hyprland data in `data`. Hyprland-provided fields can vary by version
 ## Inspection and observation
 
 ```sh
-deskctl doctor --session host
-deskctl state --session host
-deskctl windows --session host
-deskctl monitors --session host
-deskctl workspaces --session host
-deskctl sessions
-deskctl observe --session host --monitor MONITOR_NAME --scale 1
+hyprhand doctor --session host
+hyprhand state --session host
+hyprhand windows --session host
+hyprhand monitors --session host
+hyprhand workspaces --session host
+hyprhand sessions
+hyprhand observe --session host --monitor MONITOR_NAME --scale 1
 ```
 
 `doctor` checks prerequisites, display routing, and protocol availability. It does
@@ -81,7 +81,7 @@ The response contains `ok`, `capture_duration_ms`, and `frame`:
 All pointer coordinates are **pixels in the returned PNG**, with origin at its
 upper-left corner. They must be finite and satisfy `0 <= x < image_width` and
 `0 <= y < image_height`. If an image viewer rescales the image, map your selection
-back to the original PNG dimensions before calling deskctl.
+back to the original PNG dimensions before calling hyprhand.
 
 The conversion is:
 
@@ -104,10 +104,10 @@ they do not make checking and acting atomic.
 ## Enable, stop, focus, and workspace
 
 ```sh
-deskctl enable --session agent
-deskctl focus WINDOW_ADDRESS --session agent
-deskctl workspace 2 --session agent
-deskctl stop --session agent
+hyprhand enable --session agent
+hyprhand focus WINDOW_ADDRESS --session agent
+hyprhand workspace 2 --session agent
+hyprhand stop --session agent
 ```
 
 Input is disabled until enabled. A window address comes from `windows` or `state`;
@@ -117,7 +117,7 @@ The optional `enable --indicator outline` requires the explicitly loaded
 control disabled.
 
 `stop` revokes authorization without waiting for the action lock. It cancels
-guarded deskctl input, leaving applications and external jobs open. It cannot
+guarded hyprhand input, leaving applications and external jobs open. It cannot
 undo events or text already sent. Never automatically re-enable after a human stop.
 
 ## Pointer actions
@@ -126,12 +126,12 @@ The following commands show separate examples. Replace `FRAME_ID` and coordinate
 with a fresh, inspected observation for each action.
 
 ```sh
-deskctl move --session agent --frame FRAME_ID --x 300 --y 200
-deskctl click --session agent --frame FRAME_ID --x 300 --y 200 --button left
-deskctl doubleclick --session agent --frame FRAME_ID --x 300 --y 200
-deskctl drag --session agent --frame FRAME_ID --x 100 --y 200 \
+hyprhand move --session agent --frame FRAME_ID --x 300 --y 200
+hyprhand click --session agent --frame FRAME_ID --x 300 --y 200 --button left
+hyprhand doubleclick --session agent --frame FRAME_ID --x 300 --y 200
+hyprhand drag --session agent --frame FRAME_ID --x 100 --y 200 \
   --to-x 400 --to-y 200 --duration-ms 500
-deskctl scroll --session agent --frame FRAME_ID --x 500 --y 400 --dy 2
+hyprhand scroll --session agent --frame FRAME_ID --x 500 --y 400 --dy 2
 ```
 
 All pointer commands accept `--window WINDOW_ADDRESS`, `--dry-run`,
@@ -192,9 +192,9 @@ no subpixel wheel behavior and weaker cleanup guarantees.
 ## Keyboard
 
 ```sh
-deskctl type --session agent --window WINDOW_ADDRESS --text 'Hello, Unicode: ñ ✓'
-deskctl key ctrl+shift+Return --session agent --window WINDOW_ADDRESS
-deskctl key alt+Left --session agent --window WINDOW_ADDRESS
+hyprhand type --session agent --window WINDOW_ADDRESS --text 'Hello, Unicode: ñ ✓'
+hyprhand key ctrl+shift+Return --session agent --window WINDOW_ADDRESS
+hyprhand key alt+Left --session agent --window WINDOW_ADDRESS
 ```
 
 Both commands require the exact target to remain focused. UTF-8 text supports up
@@ -219,12 +219,12 @@ partial text delivery. `--dry-run` validates without typing.
 ## Waits and events
 
 ```sh
-deskctl wait focus --session agent --window WINDOW_ADDRESS
-deskctl wait window --session agent --class firefox
-deskctl wait workspace --session agent --workspace 2
-deskctl wait stable --session agent --stable-ms 300
-deskctl wait stable --session agent --pixels --monitor MONITOR_NAME --timeout-ms 5000
-deskctl events --session agent --limit 20 --timeout-ms 5000
+hyprhand wait focus --session agent --window WINDOW_ADDRESS
+hyprhand wait window --session agent --class firefox
+hyprhand wait workspace --session agent --workspace 2
+hyprhand wait stable --session agent --stable-ms 300
+hyprhand wait stable --session agent --pixels --monitor MONITOR_NAME --timeout-ms 5000
+hyprhand events --session agent --limit 20 --timeout-ms 5000
 ```
 
 `wait window` accepts an exact `--window` address, a `--class`, or both; the
@@ -242,7 +242,7 @@ they do not attest to application-level outcomes.
 ## Accessibility
 
 ```sh
-deskctl accessibility --session agent --window WINDOW_ADDRESS \
+hyprhand accessibility --session agent --window WINDOW_ADDRESS \
   --depth 5 --limit 100 --timeout-ms 5000
 ```
 
@@ -259,9 +259,9 @@ AT-SPI editing or click actions.
 ## Logs, cleanup, and cancellation
 
 ```sh
-deskctl logs --session agent --limit 20
-deskctl gc --session agent --older-than-ms 300000 --dry-run
-deskctl gc --session agent
+hyprhand logs --session agent --limit 20
+hyprhand gc --session agent --older-than-ms 300000 --dry-run
+hyprhand gc --session agent
 ```
 
 Audit records contain time, session, action, and status, excluding typed text,

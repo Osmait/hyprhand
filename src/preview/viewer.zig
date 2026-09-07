@@ -286,23 +286,23 @@ fn resizePressed(gesture: ?*c.GtkGestureClick, _: c_int, _: f64, _: f64, data: ?
 pub fn main(init: std.process.Init) !void {
     const a = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(a);
-    if (argv.len != 6) return error.UseDeskctlPreview;
+    if (argv.len != 6) return error.UseHyprhandPreview;
     const fps = try std.fmt.parseInt(u32, argv[5], 10);
     if (fps < 1 or fps > 15) return error.InvalidPreviewFps;
-    const app_id = init.environ_map.get("DESKCTL_PIP_APP_ID") orelse return error.UseDeskctlPreview;
+    const app_id = init.environ_map.get("HYPRHAND_PIP_APP_ID") orelse return error.UseHyprhandPreview;
     c.g_set_prgname(try a.dupeZ(u8, app_id));
-    c.g_set_application_name("deskctl · Session preview");
+    c.g_set_application_name("Hyprhand · Session preview");
     if (c.gtk_init_check() == 0) return error.PreviewDisplayUnavailable;
     const style = c.gtk_css_provider_new();
     c.gtk_css_provider_load_from_data(style, css, css.len);
     c.gtk_style_context_add_provider_for_display(c.gdk_display_get_default(), @ptrCast(style), 800);
     c.g_object_unref(style);
     const window: *c.GtkWindow = @ptrCast(c.gtk_window_new());
-    c.gtk_window_set_title(window, try std.fmt.allocPrintSentinel(a, "deskctl · {s}", .{argv[2]}, 0));
+    c.gtk_window_set_title(window, try std.fmt.allocPrintSentinel(a, "Hyprhand · {s}", .{argv[2]}, 0));
     c.gtk_window_set_default_size(window, 640, 360);
     c.gtk_widget_set_size_request(@ptrCast(window), 360, 203);
     c.gtk_window_set_decorated(window, 0);
-    c.gtk_widget_add_css_class(@ptrCast(window), "deskctl-pip");
+    c.gtk_widget_add_css_class(@ptrCast(window), "hyprhand-pip");
     const handle: *c.GtkWindowHandle = @ptrCast(c.gtk_window_handle_new());
     const overlay: *c.GtkOverlay = @ptrCast(c.gtk_overlay_new());
     const picture: *c.GtkPicture = @ptrCast(c.gtk_picture_new());
@@ -337,7 +337,7 @@ pub fn main(init: std.process.Init) !void {
     c.gtk_widget_set_hexpand(@ptrCast(status), 1);
     const stop = c.gtk_button_new_with_label("Stop input").?;
     c.gtk_widget_add_css_class(stop, "destructive-action");
-    c.gtk_widget_set_tooltip_text(stop, "Disable deskctl input. Applications and other agent processes remain running.");
+    c.gtk_widget_set_tooltip_text(stop, "Disable hyprhand input. Applications and other agent processes remain running.");
     c.gtk_box_append(footer, @ptrCast(status));
     c.gtk_box_append(footer, stop);
     const grip = c.gtk_drawing_area_new().?;
@@ -363,7 +363,7 @@ pub fn main(init: std.process.Init) !void {
         .status = status,
         .stop = stop,
         .cadence = .{ .interval_ms = @intCast((1000 + fps - 1) / fps) },
-        .metrics = if (init.environ_map.get("DESKCTL_PIP_METRICS")) |v| std.mem.eql(u8, v, "1") else false,
+        .metrics = if (init.environ_map.get("HYPRHAND_PIP_METRICS")) |v| std.mem.eql(u8, v, "1") else false,
         .metrics_started = now(),
         .metrics_emitted = now(),
     };

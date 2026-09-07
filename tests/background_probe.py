@@ -21,8 +21,8 @@ import sys
 import threading
 import time
 
-BIN = Path(__file__).resolve().parents[1] / "zig-out/bin/deskctl"
-TEXT = "deskctl background test ñ 123"
+BIN = Path(__file__).resolve().parents[1] / "zig-out/bin/hyprhand"
+TEXT = "hyprhand background test ñ 123"
 INSTANCE = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
 SOCKET = Path(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent")) / "hypr" / INSTANCE / ".socket.sock"
 
@@ -52,9 +52,9 @@ def fixture(tag):
     from gi.repository import Gtk, GLib, Gio
     def emit(event, **values):
         print(json.dumps({"event": event, **values}), flush=True)
-    app = Gtk.Application(application_id="org.deskctl.BackgroundProbe", flags=Gio.ApplicationFlags.NON_UNIQUE)
+    app = Gtk.Application(application_id="org.hyprhand.BackgroundProbe", flags=Gio.ApplicationFlags.NON_UNIQUE)
     def activate(app):
-        win = Gtk.ApplicationWindow(application=app, title="deskctl background " + tag)
+        win = Gtk.ApplicationWindow(application=app, title="hyprhand background " + tag)
         win.set_default_size(540, 380)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         for prop in ("margin-top", "margin-bottom", "margin-start", "margin-end"): box.set_property(prop, 24)

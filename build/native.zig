@@ -18,7 +18,7 @@ pub fn configure(b: *std.Build, module: *std.Build.Module) void {
         module.addIncludePath(h.dirname());
         addCode(b, module, source, protocol[1]);
     }
-    // Layer shell refers to xdg_popup even though deskctl creates no popups.
+    // Layer shell refers to xdg_popup even though hyprhand creates no popups.
     addCode(b, module, b.path("protocols/xdg-shell.xml"), "xdg-shell");
     for ([_][]const u8{ "wayland-client", "xkbcommon", "atspi-2", "gobject-2.0" }) |library|
         module.linkSystemLibrary(library, .{});

@@ -1,4 +1,0 @@
-interface:
-  display_name: "deskctl"
-  short_description: "Control seguro de escritorios Hyprland"
-  default_prompt: "Usa $deskctl para observar, actuar y verificar esta tarea en Hyprland."

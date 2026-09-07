@@ -1,4 +1,4 @@
-"""Offline safety/oracle checks. Never invokes deskctl, imports GTK, or opens UI.
+"""Offline safety/oracle checks. Never invokes hyprhand, imports GTK, or opens UI.
 
 Run: python3 -B tests/fixtures/test_reliability_contract.py
 """
@@ -18,7 +18,7 @@ import reliability as fixture
 
 
 def options(**changes):
-    values = dict(deskctl=Path("/nonexistent/deskctl"), session="test-managed",
+    values = dict(hyprhand=Path("/nonexistent/hyprhand"), session="test-managed",
                   events=Path("/nonexistent/events"), live=True, pointer=False,
                   scroll_mode="all", guard="stop")
     return SimpleNamespace(**(values | changes))
@@ -44,7 +44,7 @@ class Safety(unittest.TestCase):
         self.popen.assert_not_called()
 
     def test_environment_cannot_implicitly_authorize_session(self):
-        with patch.dict(live.os.environ, {"DESKCTL_TEST_SESSION": "test-managed"}), \
+        with patch.dict(live.os.environ, {"HYPRHAND_TEST_SESSION": "test-managed"}), \
                 contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             live.main(["--live", "--events", "/missing"])
         self.run.assert_not_called()
@@ -56,7 +56,7 @@ class Safety(unittest.TestCase):
         self.run.assert_not_called()
 
     def test_no_enable_launch_focus_or_session_mutation(self):
-        cli = live.Deskctl("/missing", "test-managed")
+        cli = live.Hyprhand("/missing", "test-managed")
         for args in (("enable",), ("launch",), ("focus", "0x1"), ("workspace", "2"),
                      ("session", "destroy", "test-managed"), ("state", "--session", "host")):
             with self.subTest(args=args), self.assertRaises(RuntimeError):
@@ -64,7 +64,7 @@ class Safety(unittest.TestCase):
         self.run.assert_not_called()
 
     def test_help_is_standalone_but_session_operations_are_scoped(self):
-        cli = live.Deskctl("/missing", "test-managed")
+        cli = live.Hyprhand("/missing", "test-managed")
         self.assertEqual(cli.argv("--help"), ["/missing", "--help"])
         self.assertEqual(cli.argv("doctor"), ["/missing", "doctor", "--session", "test-managed"])
         self.assertEqual(cli.argv("session", "inspect", "test-managed"),
@@ -73,7 +73,7 @@ class Safety(unittest.TestCase):
     def test_stop_and_other_errors_latch_against_further_input(self):
         for code in ("ControlStopped", "humanstop", "SessionLocked", "Cancelled", "WindowNotFocused", "StaleObservation"):
             with self.subTest(code=code):
-                cli = live.Deskctl("/missing", "test-managed")
+                cli = live.Hyprhand("/missing", "test-managed")
                 cli.decode(SimpleNamespace(returncode=1), json.dumps({"ok": False, "err": {"code": code}}), "", {code})
                 for args in (("key", "a"), ("scroll",), ("enable",)):
                     with self.assertRaises(RuntimeError):
@@ -81,7 +81,7 @@ class Safety(unittest.TestCase):
         self.run.assert_not_called()
 
     def test_halted_cli_allows_only_scoped_read_and_stop(self):
-        cli = live.Deskctl("/missing", "test-managed")
+        cli = live.Hyprhand("/missing", "test-managed")
         cli.halted = True
         for command in ("doctor", "state", "stop"):
             self.assertEqual(cli.argv(command), ["/missing", command, "--session", "test-managed"])
@@ -118,7 +118,7 @@ class Safety(unittest.TestCase):
 
     def test_fixture_refuses_host_environment_before_gtk_import(self):
         with patch.dict(live.os.environ, {"XDG_CONFIG_HOME": "/home/user/.config"}, clear=True), \
-                self.assertRaisesRegex(RuntimeError, "deskctl launch"):
+                self.assertRaisesRegex(RuntimeError, "hyprhand launch"):
             fixture.main(["--live", "--session", "test-managed", "--events", "/missing"])
         self.run.assert_not_called()
 
@@ -321,7 +321,7 @@ class CancelLifecycle(unittest.TestCase):
         child.send_signal.side_effect = lambda sig: order.append(("signal", sig))
 
         def stop(argv, **_kwargs):
-            self.assertEqual(argv, [str(suite.args.deskctl), "stop", "--session", "test-managed"])
+            self.assertEqual(argv, [str(suite.args.hyprhand), "stop", "--session", "test-managed"])
             order.append("stop-owned-token")
             return SimpleNamespace(returncode=0, stdout='{"ok":true,"session_id":"test-managed"}', stderr="")
 

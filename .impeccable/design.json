@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "title": "Design System: deskctl borderless PiP",
+  "title": "Design System: hyprhand borderless PiP",
   "extensions": {
     "native": {
       "platform": "Linux / Hyprland",
@@ -31,7 +31,7 @@
         "move": "Drag non-control image content using GtkWindowHandle",
         "resize": "Drag southeast grip; compositor move/resize shortcuts remain available",
         "close": "Viewer only; agent continues",
-        "stop": "Disable source deskctl input without closing applications",
+        "stop": "Disable source hyprhand input without closing applications",
         "keyboard": "Focusable close/stop with explicit visible outline",
         "forwardInput": false
       },

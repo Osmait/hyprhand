@@ -180,7 +180,7 @@ test "pointer snapshot excludes only the current process aura, never arbitrary o
     defer arena.deinit();
     const a = arena.allocator();
     const parsed = try std.json.parseFromSlice(std.json.Value, a,
-        \\{"levels":{"3":[{"namespace":"deskctl-aura","pid":42},{"namespace":"deskctl-aura","pid":43},{"namespace":"dialog","pid":42},{"namespace":"deskctl-aura"} ]}}
+        \\{"levels":{"3":[{"namespace":"hyprhand-aura","pid":42},{"namespace":"hyprhand-aura","pid":43},{"namespace":"dialog","pid":42},{"namespace":"hyprhand-aura"} ]}}
     , .{});
     const filtered = try stripOwnedAura(a, parsed.value, 42);
     const items = filtered.object.get("levels").?.object.get("3").?.array.items;

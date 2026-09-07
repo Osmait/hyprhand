@@ -1,4 +1,4 @@
-_deskctl_complete() {
+_hyprhand_complete() {
     local cur=${COMP_WORDS[COMP_CWORD]}
     local commands='doctor state monitors windows workspaces sessions session launch observe preview focus workspace move click doubleclick drag scroll type key stop enable wait events logs gc accessibility'
     if (( COMP_CWORD == 1 )); then
@@ -21,4 +21,4 @@ _deskctl_complete() {
         COMPREPLY=( $(compgen -W '--session --window --monitor --frame --x --y --to-x --to-y --duration-ms --scroll-mode --move-duration-ms --no-aura --indicator --headless-bridge --button --dx --dy --text --backend --dry-run --timeout-ms --stable-ms --pixels --class --workspace --limit --depth --older-than-ms --nested --lua' -- "$cur") )
     fi
 }
-complete -F _deskctl_complete deskctl
+complete -F _hyprhand_complete hyprhand

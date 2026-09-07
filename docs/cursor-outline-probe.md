@@ -50,7 +50,7 @@ implement the continuous indicator. To build and run the diagnostic:
 
 ```sh
 zig build
-./zig-out/bin/deskctl _cursor_probe --session host
+./zig-out/bin/hyprhand _cursor_probe --session host
 ```
 
 Its output is diagnostic and is not a stable public automation contract.

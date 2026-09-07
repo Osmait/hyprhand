@@ -29,7 +29,7 @@ fn directory(rt: *Runtime, path: []const u8) !void {
     try scoped.prepare();
 }
 fn root(rt: *Runtime) ![]const u8 {
-    const path = try std.fmt.allocPrint(rt.a, "{s}/deskctl-sessions", .{rt.env.get("XDG_RUNTIME_DIR").?});
+    const path = try std.fmt.allocPrint(rt.a, "{s}/hyprhand-sessions", .{rt.env.get("XDG_RUNTIME_DIR").?});
     try directory(rt, path);
     return path;
 }
@@ -273,7 +273,7 @@ pub fn route(rt: *Runtime, name: []const u8) !void {
     rt.instance = session.instance;
     rt.display = session.display;
     rt.socket = try std.fmt.allocPrint(rt.a, "{s}/hypr/{s}/.socket.sock", .{ session.runtime, session.instance });
-    rt.directory = try std.fmt.allocPrint(rt.a, "{s}/deskctl-{x}", .{ session.runtime, std.hash.Wyhash.hash(0, session.instance) });
+    rt.directory = try std.fmt.allocPrint(rt.a, "{s}/hyprhand-{x}", .{ session.runtime, std.hash.Wyhash.hash(0, session.instance) });
     // Never call setenv: libc can invalidate Zig's startup environment block.
     // Native Wayland gets an absolute socket; children get this explicit map.
     try rt.validateDisplay();
@@ -313,7 +313,7 @@ fn create(rt: *Runtime, opt: Args) !void {
     }
     // An invalid libseat backend prevents physical-seat/DRM acquisition. The
     // Wayland backend supplies the render allocator, even in hidden mode.
-    try env.put("LIBSEAT_BACKEND", "deskctl-disabled");
+    try env.put("LIBSEAT_BACKEND", "hyprhand-disabled");
     try env.put("HYPRLAND_NO_SD_VARS", "1");
     try env.put("HYPRLAND_NO_SD_NOTIFY", "1");
     const dbus = try std.fmt.allocPrint(rt.a, "unix:path={s}/bus", .{runtime});

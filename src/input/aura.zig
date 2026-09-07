@@ -7,7 +7,7 @@ const Pointer = @import("pointer.zig").Pointer;
 const extent = 64;
 const scale = 2;
 const pixels = extent * scale;
-pub const namespace = "deskctl-aura";
+pub const namespace = "hyprhand-aura";
 
 // Premultiplied ARGB: a restrained blue glow and thin soft ring. Transparent
 // outside its footprint; no cursor replacement or compositor theme changes.
@@ -29,7 +29,7 @@ const Buffer = struct {
     fn create(self: *Buffer, shm: *c.struct_wl_shm, width: u32, height: u32, painted: bool) !void {
         const length = @as(u64, width) * height * 4;
         if (width == 0 or height == 0 or length > 64 * 1024 * 1024) return error.AuraGeometryUnsupported;
-        const fd = c.memfd_create("deskctl-aura", c.MFD_CLOEXEC);
+        const fd = c.memfd_create("hyprhand-aura", c.MFD_CLOEXEC);
         if (fd < 0) return error.AuraBufferUnavailable;
         defer _ = c.close(fd);
         if (c.ftruncate(fd, @intCast(length)) != 0) return error.AuraBufferUnavailable;

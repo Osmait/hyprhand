@@ -25,7 +25,7 @@ pub const Runtime = struct {
         const display = context.environ_map.get("WAYLAND_DISPLAY") orelse return error.MissingWaylandDisplay;
         if (!std.fs.path.isAbsolute(runtime) or std.mem.indexOfScalar(u8, instance, '/') != null or instance.len == 0) return error.InvalidSessionEnvironment;
         const socket = try std.fmt.allocPrint(a, "{s}/hypr/{s}/.socket.sock", .{ runtime, instance });
-        const directory = try std.fmt.allocPrint(a, "{s}/deskctl-{x}", .{ runtime, std.hash.Wyhash.hash(0, instance) });
+        const directory = try std.fmt.allocPrint(a, "{s}/hyprhand-{x}", .{ runtime, std.hash.Wyhash.hash(0, instance) });
         return .{ .a = a, .io = context.io, .env = context.environ_map, .instance = instance, .display = display, .socket = socket, .directory = directory };
     }
 
@@ -190,7 +190,7 @@ pub const Runtime = struct {
             if (!std.mem.eql(u8, provider.configProvider, "hyprlang")) return error.OutlineRequiresHyprlang;
             // The optional plugin must already be loaded by the user. Never
             // load code into the compositor as a side effect of enabling input.
-            const result = try ipc.request(self.a, self.socket, try std.fmt.allocPrint(self.a, "/dispatch deskctl:outline {s}", .{try self.path("enabled")}));
+            const result = try ipc.request(self.a, self.socket, try std.fmt.allocPrint(self.a, "/dispatch hyprhand:outline {s}", .{try self.path("enabled")}));
             if (!std.mem.eql(u8, std.mem.trim(u8, result, " \r\n"), "ok")) return error.OutlinePluginUnavailable;
             try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = try self.path("outline"), .data = name, .flags = .{ .exclusive = true } });
         }
@@ -272,7 +272,7 @@ pub const Runtime = struct {
     /// pidfd polling allows stop to cancel without reaping outside Zig's child API.
     pub fn run(self: *Runtime, argv: []const []const u8, input: ?[]const u8, controlled: bool) !void {
         const stdin_fd = if (input) |text| blk: {
-            const fd = c.memfd_create("deskctl-input", c.MFD_CLOEXEC);
+            const fd = c.memfd_create("hyprhand-input", c.MFD_CLOEXEC);
             if (fd < 0) return error.InputBufferFailed;
             errdefer _ = c.close(fd);
             var written: usize = 0;

@@ -14,8 +14,8 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-BIN = ROOT / "zig-out/bin/deskctl"
-SESSION = os.environ.get("DESKCTL_TEST_SESSION", "host")
+BIN = ROOT / "zig-out/bin/hyprhand"
+SESSION = os.environ.get("HYPRHAND_TEST_SESSION", "host")
 
 def call(*args):
     p = subprocess.run([str(BIN), *args, "--session", SESSION], capture_output=True, text=True, timeout=15)
@@ -27,7 +27,7 @@ def main():
     original = call("state")
     original_address = original["active_window"].get("address")
     doctor = call("doctor")
-    if doctor["control_enabled"]: raise RuntimeError("Stop other deskctl work before starting this test")
+    if doctor["control_enabled"]: raise RuntimeError("Stop other hyprhand work before starting this test")
     token_file = Path(doctor["state_directory"]) / "enabled"
     token = None
     fixture_env = dict(os.environ, GDK_BACKEND="wayland")

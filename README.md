@@ -1,8 +1,8 @@
-# deskctl
+# Hyprhand
 
 **Local desktop automation for Linux and Hyprland, written in Zig.**
 
-deskctl gives scripts and external AI agents a command-line interface to inspect
+Hyprhand gives scripts and external AI agents a command-line interface to inspect
 windows, capture screenshots, and send mouse and keyboard input. Commands return
 structured JSON. The tool runs locally: it includes no AI model, MCP server,
 clipboard transport, or always-on input service.
@@ -15,9 +15,15 @@ Picture-in-Picture viewer lets you watch a managed session from your desktop.
 limited [compatibility matrix](docs/compatibility.md). Managed sessions isolate
 input; they share your user account's files, credentials, network, and permissions.
 
+Previously named **deskctl**. The CLI is now `hyprhand`; see the
+[rename and upgrade notes](docs/renaming.md) for installation and session changes.
+
 ## Watch an agent build a spreadsheet
 
 ![Animated recording: the real prompt is submitted to Codex, then the agent builds a spreadsheet in Calc](docs/video/spreadsheet-preview.gif)
+
+These recordings predate the rename and show **deskctl**, the former name of
+Hyprhand. Their original prompts, transcripts, subtitles, and media are preserved.
 
 The preview animates directly in this README. It shows the **actual prompt being
 submitted in Codex**, then a real LibreOffice Calc spreadsheet taking shape:
@@ -72,7 +78,7 @@ for your existing host windows.
 
 ```mermaid
 flowchart LR
-    A[Script or agent] --> B[deskctl CLI]
+    A[Script or agent] --> B[hyprhand CLI]
     B --> C[Hyprland IPC: state and focus]
     B --> D[grim: image and frame metadata]
     B --> E[Wayland: keyboard, buttons and scroll]
@@ -114,12 +120,12 @@ feature-specific requirements, and binary compatibility limits.
 ## Build and install
 
 ```sh
-git clone https://github.com/Osmait/computer-use-hyperland.git
-cd computer-use-hyperland
+git clone https://github.com/Osmait/hyprhand.git
+cd hyprhand
 zig version                       # Expected: 0.16.0 for the pinned workflow
 zig build -Doptimize=ReleaseSafe
-./zig-out/bin/deskctl --help
-./zig-out/bin/deskctl doctor --session host
+./zig-out/bin/hyprhand --help
+./zig-out/bin/hyprhand doctor --session host
 
 # Install for the current user:
 zig build -Doptimize=ReleaseSafe --prefix "$HOME/.local"
@@ -131,8 +137,8 @@ prerequisites and protocol availability without injecting input. An available
 prerequisite is not a verified screenshot, successful headless startup, or working
 accessibility tree; inspect its `checks` fields.
 
-Installation adds `bin/deskctl`, Bash/Fish completions, and
-`share/deskctl/skills/deskctl`. It does not edit your Hyprland configuration.
+Installation adds `bin/hyprhand`, Bash/Fish completions, and
+`share/hyprhand/skills/hyprhand`. It does not edit your Hyprland configuration.
 Shells may need their normal completion setup for a user-local prefix.
 
 To install the optional viewer alongside the CLI:
@@ -148,23 +154,23 @@ static binaries. Packaging does not publish a GitHub Release.
 ## Example: fill and apply a note
 
 The included GTK application makes the input/output loop easy to see. It requires
-Python GI and GTK4 in addition to deskctl. Run these commands from the checkout:
+Python GI and GTK4 in addition to hyprhand. Run these commands from the checkout:
 
 ```sh
-deskctl session create note-demo --nested
-deskctl enable --session note-demo
-deskctl launch --session note-demo -- python3 "$PWD/examples/gtk/note.py"
-deskctl wait window --session note-demo --class org.deskctl.NoteDemo
-deskctl windows --session note-demo
+hyprhand session create note-demo --nested
+hyprhand enable --session note-demo
+hyprhand launch --session note-demo -- python3 "$PWD/examples/gtk/note.py"
+hyprhand wait window --session note-demo --class org.hyprhand.NoteDemo
+hyprhand windows --session note-demo
 ```
 
 Copy the matching window's `address` from `data`, then replace `WINDOW_ADDRESS`
 below. The application starts with the note field focused.
 
 ```sh
-deskctl focus WINDOW_ADDRESS --session note-demo
-deskctl wait focus --session note-demo --window WINDOW_ADDRESS
-deskctl observe --session note-demo
+hyprhand focus WINDOW_ADDRESS --session note-demo
+hyprhand wait focus --session note-demo --window WINDOW_ADDRESS
+hyprhand observe --session note-demo
 ```
 
 **Before:** open `frame.image_path` and inspect the starting state.
@@ -174,32 +180,33 @@ deskctl observe --session note-demo
 Replace the text, let the application paint, and inspect a fresh screenshot:
 
 ```sh
-deskctl key ctrl+a --session note-demo --window WINDOW_ADDRESS
-deskctl type --session note-demo --window WINDOW_ADDRESS \
-  --text 'Hello from deskctl! Unicode: ñ ✓'
-deskctl wait stable --session note-demo --pixels
-deskctl observe --session note-demo
+hyprhand key ctrl+a --session note-demo --window WINDOW_ADDRESS
+hyprhand type --session note-demo --window WINDOW_ADDRESS \
+  --text 'Hello from hyprhand! Unicode: ñ ✓'
+hyprhand wait stable --session note-demo --pixels
+hyprhand observe --session note-demo
 ```
 
 Use the new `frame.frame_id` and the **Apply text** button's coordinates **from
 your actual PNG**, replacing `FRAME_ID`, `BUTTON_X`, and `BUTTON_Y`:
 
 ```sh
-deskctl click --session note-demo --window WINDOW_ADDRESS \
+hyprhand click --session note-demo --window WINDOW_ADDRESS \
   --frame FRAME_ID --x BUTTON_X --y BUTTON_Y
-deskctl wait stable --session note-demo --pixels
-deskctl observe --session note-demo
+hyprhand wait stable --session note-demo --pixels
+hyprhand observe --session note-demo
 ```
 
 **Verify:** the final image should show **Text applied successfully** followed by
-`Hello from deskctl! Unicode: ñ ✓`, as shown below. Applying text only changes
+`Hello from hyprhand! Unicode: ñ ✓`. The original screenshot below uses the
+previous name, deskctl. Applying text only changes
 this demo window; it does not save a file or send a network request.
 
 ![The application confirms the exact text after the guarded click](docs/images/note-after.png)
 
 ```sh
-deskctl stop --session note-demo
-deskctl session destroy note-demo
+hyprhand stop --session note-demo
+hyprhand session destroy note-demo
 ```
 
 The screenshots used a dedicated headless test session with the explicit
@@ -213,9 +220,9 @@ and [image provenance](docs/images/README.md) for the recorded environment.
 Start by inspecting the session:
 
 ```sh
-deskctl doctor --session host
-deskctl windows --session host
-deskctl monitors --session host
+hyprhand doctor --session host
+hyprhand windows --session host
+hyprhand monitors --session host
 ```
 
 Choose a real window address from `windows` and a monitor name from `monitors`.
@@ -224,20 +231,20 @@ with values returned by your session. Coordinates are illustrative: select the
 actual target from your screenshot.
 
 ```sh
-deskctl enable --session host
-deskctl focus WINDOW_ADDRESS --session host
-deskctl wait focus --window WINDOW_ADDRESS --session host
-deskctl observe --session host --monitor MONITOR_NAME
+hyprhand enable --session host
+hyprhand focus WINDOW_ADDRESS --session host
+hyprhand wait focus --window WINDOW_ADDRESS --session host
+hyprhand observe --session host --monitor MONITOR_NAME
 
 # Open frame.image_path, then use that frame's ID and image coordinates:
-deskctl click --session host --frame FRAME_ID --x 620 --y 340 --dry-run
-deskctl click --session host --frame FRAME_ID --x 620 --y 340
-deskctl observe --session host
+hyprhand click --session host --frame FRAME_ID --x 620 --y 340 --dry-run
+hyprhand click --session host --frame FRAME_ID --x 620 --y 340
+hyprhand observe --session host
 
 # Only send text/shortcuts to the exact focused window:
-deskctl type --session host --window WINDOW_ADDRESS --text 'Hello, Unicode: ñ ✓'
-deskctl observe --session host
-deskctl stop --session host
+hyprhand type --session host --window WINDOW_ADDRESS --text 'Hello, Unicode: ñ ✓'
+hyprhand observe --session host
+hyprhand stop --session host
 ```
 
 Focus the destination **before** observing. Frames expire after 30 seconds and
@@ -248,15 +255,15 @@ can run while control is stopped. On `host`, your mouse and keyboard remain shar
 ## Quick start: independent session
 
 ```sh
-deskctl session create agent --nested
-deskctl session inspect agent
-deskctl enable --session agent
-deskctl launch --session agent -- firefox about:blank
-deskctl windows --session agent
-deskctl observe --session agent
+hyprhand session create agent --nested
+hyprhand session inspect agent
+hyprhand enable --session agent
+hyprhand launch --session agent -- firefox about:blank
+hyprhand windows --session agent
+hyprhand observe --session agent
 
-# Requires the optional viewer installed beside deskctl:
-deskctl preview --session agent --fps 5
+# Requires the optional viewer installed beside hyprhand:
+hyprhand preview --session agent --fps 5
 ```
 
 `--nested` opens a compositor window; opening or closing it can affect host focus.
@@ -274,21 +281,21 @@ Generic application process reuse still needs verification. See the
 When finished:
 
 ```sh
-deskctl stop --session agent
-deskctl session destroy agent
+hyprhand stop --session agent
+hyprhand session destroy agent
 ```
 
-`stop` disables deskctl input without closing applications. `session destroy`
+`stop` disables hyprhand input without closing applications. `session destroy`
 closes tracked session processes and applications, retaining profiles and logs
 for diagnosis. It does not delete user documents.
 
 ## Watch and stop the agent
 
-![The real deskctl Picture-in-Picture viewer with live status and Stop input](docs/images/session-preview.png)
+![The real Picture-in-Picture viewer, recorded under the former deskctl name, with live status and Stop input](docs/images/session-preview.png)
 
 ```sh
 # Use an existing managed session; keep this command running in its own terminal.
-deskctl preview --session note-demo --fps 5
+hyprhand preview --session note-demo --fps 5
 ```
 
 The [Picture-in-Picture viewer](docs/preview.md) shows the managed desktop and its
@@ -296,7 +303,7 @@ cursor in a floating, pinned, borderless window. Drag the image to move the view
 and its lower-right grip to resize it. The source image is limited to 960 × 540,
 at up to 1–15 fps (5 by default), backing off to 1 fps when unchanged.
 
-- **Stop input** revokes deskctl input permission in the source session. It leaves
+- **Stop input** revokes hyprhand input permission in the source session. It leaves
   applications and external agent processes running.
 - **Close** closes only the viewer. It does not stop input or terminate the agent.
 - **No signal** clears stale or unavailable imagery. The viewer never forwards
@@ -315,20 +322,20 @@ own output directory. It saves `room-styled.blend`; rendering is a separate step
 To open the example in an independent desktop from the checkout:
 
 ```sh
-deskctl session create blender-demo --nested
-deskctl enable --session blender-demo
-deskctl launch --session blender-demo -- blender \
+hyprhand session create blender-demo --nested
+hyprhand enable --session blender-demo
+hyprhand launch --session blender-demo -- blender \
   "$PWD/examples/blender/assets/room-original.blend"
-deskctl windows --session blender-demo
-deskctl observe --session blender-demo
+hyprhand windows --session blender-demo
+hyprhand observe --session blender-demo
 ```
 
 Inspect the image before interacting with Blender. When finished, save any work
 you want to keep, stop input, and destroy only the demo session:
 
 ```sh
-deskctl stop --session blender-demo
-deskctl session destroy blender-demo
+hyprhand stop --session blender-demo
+hyprhand session destroy blender-demo
 ```
 
 This image is the existing rendered result of the project example. It is not
@@ -337,17 +344,17 @@ shortcut scope and remaining limits are in [compatibility](docs/compatibility.md
 
 ## Agent integration
 
-The repository includes an English [deskctl skill](skills/deskctl/SKILL.md) with
+The repository includes an English [hyprhand skill](skills/hyprhand/SKILL.md) with
 session-selection rules and an observe/act/verify workflow. Copy or symlink its
 folder into your agent's skill directory. For a user-local Codex installation,
 if the destination does not already exist:
 
 ```sh
 mkdir -p "$HOME/.codex/skills"
-ln -s "$HOME/.local/share/deskctl/skills/deskctl" "$HOME/.codex/skills/deskctl"
+ln -s "$HOME/.local/share/hyprhand/skills/hyprhand" "$HOME/.codex/skills/hyprhand"
 ```
 
-The external agent supplies reasoning and an image-viewing tool. deskctl needs no
+The external agent supplies reasoning and an image-viewing tool. hyprhand needs no
 AI credentials. Agents should preserve explicit session selection, verify outcomes,
 and never automatically re-enable after a human stop.
 

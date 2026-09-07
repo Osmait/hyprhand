@@ -5,14 +5,14 @@ Build the CLI and the optional native Zig/GTK4 viewer:
 ```sh
 zig build -Doptimize=ReleaseSafe
 zig build pip -Doptimize=ReleaseSafe
-zig-out/bin/deskctl preview --session agent
+zig-out/bin/hyprhand preview --session agent
 # Explicit output and maximum frame frequency:
-zig-out/bin/deskctl preview --session agent --monitor HEADLESS-1 --fps 10
+zig-out/bin/hyprhand preview --session agent --monitor HEADLESS-1 --fps 10
 ```
 
 Requires an **existing, running managed session**, GTK4 >= 4.8 (headers and
-pkg-config for building), and grim. Keep `deskctl-pip` beside the matching
-`deskctl` binary. The default CLI build/archive does not depend on or include
+pkg-config for building), and grim. Keep `hyprhand-pip` beside the matching
+`hyprhand` binary. The default CLI build/archive does not depend on or include
 GTK4. The optional build verifies its narrow FFI declarations against the
 installed GTK headers; application and viewer logic remain Zig.
 
@@ -44,9 +44,9 @@ See the compositor's [window-rule API](https://wiki.hypr.land/configuring/core/r
   The configured rate is a maximum: repeated identical images progressively
   back off to one capture per second. Changed pixels restore the target rate;
   detecting activity after an idle period can therefore take up to one second.
-- **Stop input** disables deskctl input in that source. It cancels guarded
-  deskctl actions, not the model, shell jobs, rendering, or other automation
-  that bypasses deskctl. Applications remain open. There is no resume button.
+- **Stop input** disables hyprhand input in that source. It cancels guarded
+  hyprhand actions, not the model, shell jobs, rendering, or other automation
+  that bypasses hyprhand. Applications remain open. There is no resume button.
 - Closing the PiP or interrupting its foreground CLI closes **only the viewer**.
   Source applications and the input token remain unchanged. A stop already
   requested is allowed to complete during normal close.
@@ -133,7 +133,7 @@ python3 scripts/benchmark_preview.py --live --session agent --seconds 120 --fps 
 This opt-in script opens/closes only its own host preview, never enables input,
 and requires an existing managed source. It reports 30 standalone worker latency
 samples, viewer RSS and CPU including live/reaped workers. Optional JSON telemetry
-(`DESKCTL_PIP_METRICS=1`) distinguishes received frames, new textures, GTK paints
+(`HYPRHAND_PIP_METRICS=1`) distinguishes received frames, new textures, GTK paints
 and updates with confirmed GDK presentation timestamps. Unsupported presentation
 feedback is reported as null, not zero FPS. An unchanged scene intentionally
 has few visual updates. GPU/compositor CPU and total tree memory remain outside
@@ -154,7 +154,7 @@ measurements. Current changes and offline comparisons are documented in
 Borderless revision: verified over a room-image application at both new sizes,
 with accessible close/stop labels and scoped border/shadow suppression. In a
 separate disposable compositor, dragging the image changed the window position
-and dragging the grip began resizing. The deskctl frame guard then aborted each
+and dragging the grip began resizing. The hyprhand frame guard then aborted each
 automated drag when geometry changed, as intended; it was not weakened. Stop
 through the overlay disabled only the source, left its two applications alive,
 and left host authorization disabled. Closing the isolated viewer left the

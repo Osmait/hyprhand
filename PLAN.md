@@ -1,4 +1,4 @@
-# deskctl delivery ledger
+# hyprhand delivery ledger
 
 Scope: CLI only, no MCP. Preserve host configuration and user applications.
 

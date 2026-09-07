@@ -11,19 +11,19 @@ import threading
 import time
 import unittest
 
-BIN = Path(os.environ.get("DESKCTL_TEST_BIN", str(Path(__file__).resolve().parents[1] / "zig-out/bin/deskctl")))
+BIN = Path(os.environ.get("HYPRHAND_TEST_BIN", str(Path(__file__).resolve().parents[1] / "zig-out/bin/hyprhand")))
 
 
 class CLI(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="deskctl-test-")
+        self.temp = tempfile.TemporaryDirectory(prefix="hyprhand-test-")
         self.root = Path(self.temp.name)
         self.session = self.root / "hypr/test-instance"
         self.session.mkdir(parents=True)
         (self.session / "hyprland.lock").write_text("123\nwayland-test\n")
         self.env = dict(os.environ, XDG_RUNTIME_DIR=str(self.root),
                         HYPRLAND_INSTANCE_SIGNATURE="test-instance", WAYLAND_DISPLAY="wayland-test",
-                        PATH=f"{self.root}:{os.environ['PATH']}", DESKCTL_TEST_ROOT=str(self.root))
+                        PATH=f"{self.root}:{os.environ['PATH']}", HYPRHAND_TEST_ROOT=str(self.root))
         self.address = "0x123"
         self.active = self.address
         self.locked = False
@@ -47,9 +47,9 @@ class CLI(unittest.TestCase):
         self.thread.start()
         helper = '''#!/usr/bin/python3
 import os, pathlib, struct, sys, time
-root = pathlib.Path(os.environ["DESKCTL_TEST_ROOT"])
+root = pathlib.Path(os.environ["HYPRHAND_TEST_ROOT"])
 if pathlib.Path(sys.argv[0]).name == "xdotool" and sys.argv[1] == "getwindowfocus":
-    print(os.environ.get("DESKCTL_TEST_X11_PID", "123"))
+    print(os.environ.get("HYPRHAND_TEST_X11_PID", "123"))
 elif pathlib.Path(sys.argv[0]).name == "grim":
     pathlib.Path(sys.argv[-1]).write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 1920, 1080))
 else:
@@ -102,7 +102,7 @@ else:
                 elif command == "version":
                     result = {"version": "test"}
                 elif command.startswith("dispatch "):
-                    if command.startswith("dispatch deskctl:outline ") and not self.outline_plugin:
+                    if command.startswith("dispatch hyprhand:outline ") and not self.outline_plugin:
                         conn.sendall(b"Invalid dispatcher")
                         continue
                     conn.sendall(b"ok")
@@ -206,7 +206,7 @@ else:
     def test_outline_lifetime_and_provider(self):
         self.outline_plugin = True
         self.assertEqual(self.cli("enable", "--indicator", "outline")["indicator"], "outline")
-        enabled = next(self.root.glob("deskctl-*/enabled"))
+        enabled = next(self.root.glob("hyprhand-*/enabled"))
         marker = enabled.with_name("outline")
         self.assertEqual(enabled.read_bytes(), marker.read_bytes())
         self.cli("enable")
@@ -262,9 +262,9 @@ else:
             self.hold_locked.clear()
             out, _ = process.communicate(timeout=2)
             self.assertEqual(json.loads(out)["err"]["code"], "ControlStopped")
-            self.assertFalse(list(self.root.glob("deskctl-*/enabled")))
+            self.assertFalse(list(self.root.glob("hyprhand-*/enabled")))
             self.cli("enable", "--session", "host")
-            self.assertTrue(list(self.root.glob("deskctl-*/enabled")))
+            self.assertTrue(list(self.root.glob("hyprhand-*/enabled")))
         finally:
             self.hold_locked.clear()
             if process.poll() is None:
@@ -339,7 +339,7 @@ else:
     def test_xwayland_rejects_other_display_target(self):
         self.xwayland = True
         self.cli("enable")
-        self.env["DESKCTL_TEST_X11_PID"] = "456"
+        self.env["HYPRHAND_TEST_X11_PID"] = "456"
         self.error("X11TargetMismatch", "type", "--window", self.address, "--text", "hola", "--session", "host")
         self.assertFalse((self.root / "input.json").exists())
 
@@ -467,7 +467,7 @@ else:
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue((self.root / "input.json").exists())
         self.assertEqual(self.cli("logs")["entries"][-1]["status"], "started")
-        path = next(self.root.glob("deskctl-*/actions.jsonl"))
+        path = next(self.root.glob("hyprhand-*/actions.jsonl"))
         with path.open("ab") as out: out.write(b'{"interrupted":')
         logs = self.cli("logs")
         self.assertTrue(logs["incomplete_tail"])

@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible deskctl problem
+about: Report a reproducible hyprhand problem
 labels: bug
 ---
 
@@ -11,7 +11,7 @@ follow SECURITY.md instead of posting details here.
 
 ## Environment
 
-- deskctl version and source commit:
+- hyprhand version and source commit:
 - Linux distribution / kernel / architecture:
 - Zig and Python versions:
 - Hyprland / Aquamarine versions:

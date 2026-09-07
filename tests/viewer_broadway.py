@@ -28,7 +28,7 @@ class Viewer(unittest.TestCase):
         self.root = self.fixture.root
         (self.root / "valid-png").touch()
         self.env = dict(self.fixture.env, GDK_BACKEND="broadway", BROADWAY_DISPLAY=":19",
-                        DESKCTL_PIP_APP_ID="deskctl-test-private", DESKCTL_PIP_METRICS="1")
+                        HYPRHAND_PIP_APP_ID="hyprhand-test-private", HYPRHAND_PIP_METRICS="1")
         for name in ("DISPLAY", "WAYLAND_SOCKET", "DBUS_SESSION_BUS_ADDRESS", "AT_SPI_BUS_ADDRESS"):
             self.env.pop(name, None)
         self.daemon = subprocess.Popen(["gtk4-broadwayd", "--unixsocket=" + str(self.root / "http.sock"), ":19"],
@@ -39,7 +39,7 @@ class Viewer(unittest.TestCase):
             self.assertIsNone(self.daemon.poll())
             self.assertLess(time.monotonic(), deadline)
             time.sleep(0.01)
-        self.viewer = subprocess.Popen([str(BIN.with_name("deskctl-pip")), str(BIN), "check", "test", "HEADLESS-1", "15"],
+        self.viewer = subprocess.Popen([str(BIN.with_name("hyprhand-pip")), str(BIN), "check", "test", "HEADLESS-1", "15"],
                                        env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
         self.addCleanup(self.finish, self.viewer)
         self.pending = b""

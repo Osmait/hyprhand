@@ -12,7 +12,7 @@ executables. See [compatibility](compatibility.md) and [packaging](../packaging/
 | Offline tests and packaging | Python 3.11+ (CI uses 3.12), Git, `readelf` and `strip` from binutils |
 | CLI runtime | Linux with pidfd support (5.3+), matching ELF loader/library ABIs, Hyprland IPC and the selected session's Wayland socket |
 | Screenshots | `grim` |
-| Optional preview | GTK4 >= 4.8; build with `zig build pip`; keep `deskctl-pip` beside `deskctl`; `grim`; tested Hyprlang/Lua hosts. Excluded from the default CLI archive |
+| Optional preview | GTK4 >= 4.8; build with `zig build pip`; keep `hyprhand-pip` beside `hyprhand`; `grim`; tested Hyprlang/Lua hosts. Excluded from the default CLI archive |
 | XWayland keyboard/scroll | `xdotool`, XWayland server, and target window's matching `DISPLAY` |
 | Wayland helper keyboard | `wtype` for `--backend helper`; not needed by the native keyboard |
 | Managed sessions | `Hyprland`, `dbus-daemon`; `at-spi2-registryd` and accessible widgets for AT-SPI |
@@ -73,12 +73,12 @@ zig build pip -Doptimize=ReleaseSafe --prefix "$HOME/.local"
 Ensure `$HOME/.local/bin` is on `PATH`. Installed paths relative to the prefix:
 
 ```text
-bin/deskctl
-bin/deskctl-pip                                      (optional)
-share/bash-completion/completions/deskctl
-share/fish/vendor_completions.d/deskctl.fish
-share/deskctl/skills/deskctl/SKILL.md
-share/deskctl/skills/deskctl/agents/openai.yaml
+bin/hyprhand
+bin/hyprhand-pip                                      (optional)
+share/bash-completion/completions/hyprhand
+share/fish/vendor_completions.d/hyprhand.fish
+share/hyprhand/skills/hyprhand/SKILL.md
+share/hyprhand/skills/hyprhand/agents/openai.yaml
 ```
 
 To uninstall, stop input, close any previews, and explicitly destroy managed
@@ -112,6 +112,6 @@ See [explicit bridge selection](experimental-bridges.md) and
 [hardening and metadata](experimental-hardening.md).
 
 The [Blender example](../examples/blender/README.md) chooses output beside the
-open `.blend` or in an existing absolute `DESKCTL_BLENDER_OUTPUT_DIR`. It refuses
+open `.blend` or in an existing absolute `HYPRHAND_BLENDER_OUTPUT_DIR`. It refuses
 to overwrite the open scene, but previously generated output names may be replaced.
 It configures a PNG destination and saves a styled scene without rendering.

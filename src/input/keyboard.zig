@@ -316,7 +316,7 @@ pub const Keyboard = struct {
         try self.available();
         if (self.device == null) return error.VirtualKeyboardUnavailable;
         if (self.held.count != 0) return error.KeyboardBusy;
-        const fd = c.memfd_create("deskctl-keymap", c.MFD_CLOEXEC);
+        const fd = c.memfd_create("hyprhand-keymap", c.MFD_CLOEXEC);
         if (fd < 0) return error.InputBufferFailed;
         defer _ = c.close(fd);
         // Include the NUL terminator; handle partial writes and interrupted syscalls.

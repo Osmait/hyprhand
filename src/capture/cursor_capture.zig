@@ -122,7 +122,7 @@ pub const Capture = struct {
         s.freeBuffer();
         if (s.width == 0 or s.height == 0 or s.width > 256 or s.height > 256) return error.CursorCaptureUnsupported;
         s.length = @as(usize, s.width) * s.height * 4;
-        const fd = c.memfd_create("deskctl-cursor-shape", c.MFD_CLOEXEC);
+        const fd = c.memfd_create("hyprhand-cursor-shape", c.MFD_CLOEXEC);
         if (fd < 0) return error.CursorCaptureUnavailable;
         defer _ = c.close(fd);
         if (c.ftruncate(fd, @intCast(s.length)) != 0) return error.CursorCaptureUnavailable;

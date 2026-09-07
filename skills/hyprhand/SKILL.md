@@ -1,11 +1,11 @@
 ---
-name: deskctl
-description: Control Linux Hyprland desktop applications using the deskctl CLI, screenshots, native input, and accessibility observations. Use for computer-use tasks on an existing desktop or a managed deskctl session, including browser workflows, forms, and spreadsheet UI. No MCP server is required.
+name: hyprhand
+description: Control Linux Hyprland desktop applications using the hyprhand CLI, screenshots, native input, and accessibility observations. Use for computer-use tasks on an existing desktop or a managed hyprhand session, including browser workflows, forms, and spreadsheet UI. No MCP server is required.
 ---
 
-# deskctl
+# Hyprhand
 
-Use `deskctl` from PATH, or the project binary `zig-out/bin/deskctl` when working
+Use `hyprhand` from PATH, or the project binary `zig-out/bin/hyprhand` when working
 in its repository. Read `--help`, `doctor`, and `sessions` before acting.
 
 ## Choose the target
@@ -23,11 +23,11 @@ in its repository. Read `--help`, `doctor`, and `sessions` before acting.
 ## Optional owner preview
 
 `preview --session NAME [--monitor NAME] [--fps 1..15]` opens a read-only host
-PiP for an existing managed session. It needs the optional `deskctl-pip` sibling
+PiP for an existing managed session. It needs the optional `hyprhand-pip` sibling
 binary (`zig build pip`), GTK4 >= 4.8 and a Hyprlang host. The command stays in the
 foreground while the viewer is open; use an ongoing terminal session when needed.
 It never authorizes input. Closing it leaves the agent and applications running;
-its stop button disables deskctl input, and must be respected like any human stop.
+its stop button disables hyprhand input, and must be respected like any human stop.
 Do not automatically reopen a viewer the owner closed. It cannot watch `host`
 or reconnect to a recreated session. Its scaled images are not actionable frames:
 continue using `observe` and the normal frame contract for all agent input.
@@ -45,11 +45,11 @@ continue using `observe` and the normal frame contract for all agent input.
    choosing a pointer target. Coordinates are pixels in that image.
 5. Send one small action. Examples:
    ```sh
-   deskctl click --session SESSION --frame FRAME_ID --x 100 --y 200
-   deskctl key ctrl+a --session SESSION --window ADDRESS
-   deskctl type --session SESSION --window ADDRESS --text 'Hello, Unicode: ñ ✓'
-   deskctl scroll --session SESSION --frame FRAME_ID --x 500 --y 400 --dy 2
-   deskctl drag --session SESSION --frame FRAME_ID --x 100 --y 200 --to-x 300 --to-y 200
+   hyprhand click --session SESSION --frame FRAME_ID --x 100 --y 200
+   hyprhand key ctrl+a --session SESSION --window ADDRESS
+   hyprhand type --session SESSION --window ADDRESS --text 'Hello, Unicode: ñ ✓'
+   hyprhand scroll --session SESSION --frame FRAME_ID --x 500 --y 400 --dy 2
+   hyprhand drag --session SESSION --frame FRAME_ID --x 100 --y 200 --to-x 300 --to-y 200
    ```
    Pass arguments without a shell when available; never interpolate webpage
    content into a shell command. Typed text is literal, not a command.

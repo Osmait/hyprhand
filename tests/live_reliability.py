@@ -18,7 +18,7 @@ image pixel coordinates yourself; fixture bounds are exposed only as context.
 window geometry DURING the final scroll. stop/cancel are automatic. Every guard
 is terminal: use a fresh, explicitly authorized run for another guard scenario.
 
-Requires Python 3, a built deskctl, and GTK4/PyGObject for the separate fixture.
+Requires Python 3, a built hyprhand, and GTK4/PyGObject for the separate fixture.
 No host input, automatic focus restoration, session destruction or git actions.
 Observer contract and run details: tests/fixtures/README.md.
 """
@@ -37,8 +37,8 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BIN = ROOT / "zig-out/bin/deskctl"
-TITLE = "deskctl reliability fixture"
+BIN = ROOT / "zig-out/bin/hyprhand"
+TITLE = "hyprhand reliability fixture"
 MODS = 1 | 4 | 8 | 64 | 128  # Shift, Control, Alt, Super, Level3; ignore locks.
 
 
@@ -76,7 +76,7 @@ def verify_scroll(mode, received):
         require(len(received) >= 3, "Continuous scrolling was not progressive")
 
 
-class Deskctl:
+class Hyprhand:
     def __init__(self, binary, session):
         self.binary = str(binary)
         self.session = session_name(session)
@@ -101,17 +101,17 @@ class Deskctl:
             result = json.loads(stdout)
         except (ValueError, TypeError) as exc:
             self.halted = True
-            raise RuntimeError(f"deskctl returned invalid JSON: {stderr[:300]}") from exc
+            raise RuntimeError(f"hyprhand returned invalid JSON: {stderr[:300]}") from exc
         code = result.get("err", {}).get("code")
         if process.returncode or not result.get("ok"):
             # Latch on EVERY error, including ControlStopped/humanstop. No retry.
             self.halted = True
             require(expected is not None and code in expected,
-                    f"deskctl failed: {code or result}")
+                    f"hyprhand failed: {code or result}")
         else:
             require(expected is None, f"Expected rejection {expected}, but input completed")
         if "session_id" in result:
-            require(result["session_id"] == self.session, "deskctl session mismatch")
+            require(result["session_id"] == self.session, "hyprhand session mismatch")
         return result
 
     def call(self, *args, expected=None):
@@ -175,18 +175,18 @@ class Observer:
 class Suite:
     def __init__(self, args):
         self.args = args
-        self.cli = Deskctl(args.deskctl, args.session)
+        self.cli = Hyprhand(args.hyprhand, args.session)
         self.observer = None
         self.token_path = None
         self.token = None
-        self.child = None  # Only a deskctl input process, never a GUI.
+        self.child = None  # Only a hyprhand input process, never a GUI.
         self.passed = []
 
     def preflight(self):
         # Skill preflight: standalone help; all session operations explicitly scoped.
         help_proc = subprocess.run(self.cli.argv("--help"), capture_output=True,
                                    text=True, timeout=15)
-        require(help_proc.returncode == 0, "Cannot read deskctl help")
+        require(help_proc.returncode == 0, "Cannot read hyprhand help")
         sessions = self.cli.call("sessions")["sessions"]
         require(any(s["id"] == self.args.session and s.get("running") and
                     s.get("shared_cursor") is False for s in sessions),
@@ -383,7 +383,7 @@ class Suite:
             expected = {"WindowNotFocused"} if cause == "focus" else {"StaleObservation"}
         stdout, stderr = self.child.communicate(timeout=12)
         self.cli.decode(self.child, stdout, stderr, expected)
-        # Observe the receiver, not just deskctl's acknowledgement. Allow events
+        # Observe the receiver, not just hyprhand's acknowledgement. Allow events
         # already queued in GTK to drain, then require a quiet interval.
         time.sleep(.2)
         quiet = self.observer.mark()
@@ -417,7 +417,7 @@ def parse_args(argv=None):
     parser.add_argument("--live", action="store_true", help="authorize input into the named managed fixture")
     parser.add_argument("--session", required=True, type=session_name, help="explicit managed session; no environment fallback")
     parser.add_argument("--events", required=True, type=Path, help="NDJSON file from the already-running reliability fixture")
-    parser.add_argument("--deskctl", type=Path, default=BIN)
+    parser.add_argument("--hyprhand", type=Path, default=BIN)
     parser.add_argument("--pointer", action="store_true", help="require terminal screenshot review before each pointer action")
     parser.add_argument("--scroll-mode", choices=("auto", "wheel", "continuous", "all"), default="all")
     parser.add_argument("--guard", choices=("stop", "cancel", "focus", "frame"), default="stop")

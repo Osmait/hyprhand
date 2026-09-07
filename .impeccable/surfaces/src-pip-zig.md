@@ -1,7 +1,7 @@
 # Preview surface contract
 
 Mode: Operate. The owner monitors a managed session while using the host.
-Success: recognize current activity and stop deskctl input with one explicit
+Success: recognize current activity and stop hyprhand input with one explicit
 action, without giving the agent host focus or input.
 
 User revision: borderless image-first PiP, controls integrated over the image.

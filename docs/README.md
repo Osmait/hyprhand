@@ -7,6 +7,7 @@ first session. Commands and documentation refer to source version **0.4.0**.
 
 | Guide | Contents |
 | --- | --- |
+| [Rename and upgrade notes](renaming.md) | Moving from deskctl to Hyprhand, installation paths and existing sessions |
 | [Dependencies](dependencies.md) | Build packages, runtime helpers, optional components, installation and removal |
 | [CLI reference](cli.md) | Commands, options, frame coordinates, JSON contract, input and cancellation |
 | [Managed sessions](sessions.md) | Host versus child sessions, environment routing, profiles and lifecycle |

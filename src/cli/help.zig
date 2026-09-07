@@ -1,5 +1,5 @@
 pub const text =
-    \\deskctl 0.4.0 — computer use for Hyprland (Zig 0.16, Linux)
+    \\hyprhand 0.4.0 — computer use for Hyprland (Zig 0.16, Linux)
     \\
     \\All commands accept --session NAME (default host). Input REQUIRES it.
     \\JSON output; events emits NDJSON. No MCP server or AI model.

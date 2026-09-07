@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Small GTK4 app for the README's observe/type/click/verify walkthrough.
 
-Run through deskctl launch in a disposable managed session. Requires Python GI
+Run through hyprhand launch in a disposable managed session. Requires Python GI
 and GTK4. All content stays in this window; no files or network requests are made.
 """
 import gi
@@ -11,7 +11,7 @@ from gi.repository import Gio, Gtk
 
 
 def activate(app):
-    window = Gtk.ApplicationWindow(application=app, title="deskctl · Note demo")
+    window = Gtk.ApplicationWindow(application=app, title="Hyprhand · Note demo")
     window.set_default_size(860, 520)
     header = Gtk.HeaderBar()
     window.set_titlebar(header)
@@ -25,7 +25,7 @@ def activate(app):
     title.add_css_class("title-1")
     box.append(title)
     description = Gtk.Label(
-        label="deskctl types into this field. Apply the text, then observe the result.",
+        label="Hyprhand types into this field. Apply the text, then observe the result.",
         xalign=0, wrap=True,
     )
     box.append(description)
@@ -58,7 +58,7 @@ def activate(app):
 
 
 if __name__ == "__main__":
-    app = Gtk.Application(application_id="org.deskctl.NoteDemo",
+    app = Gtk.Application(application_id="org.hyprhand.NoteDemo",
                           flags=Gio.ApplicationFlags.NON_UNIQUE)
     app.connect("activate", activate)
     app.run([])

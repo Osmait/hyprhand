@@ -70,9 +70,9 @@ pub fn launch(host: *Runtime, opt: Args) !void {
     const count = c.readlink("/proc/self/exe", &executable, executable.len);
     if (count <= 0 or count == executable.len) return error.PreviewHelperMissing;
     const cli = executable[0..@intCast(count)];
-    const helper = try std.fmt.allocPrintSentinel(host.a, "{s}/deskctl-pip", .{std.fs.path.dirname(cli).?}, 0);
+    const helper = try std.fmt.allocPrintSentinel(host.a, "{s}/hyprhand-pip", .{std.fs.path.dirname(cli).?}, 0);
     if (c.access(helper, c.X_OK) != 0) return error.PreviewHelperMissing;
-    const id = try std.fmt.allocPrint(host.a, "deskctl-pip-{d}", .{c.getpid()});
+    const id = try std.fmt.allocPrint(host.a, "hyprhand-pip-{d}", .{c.getpid()});
     // Set the match before any effects. Disable on exit, including partial
     // setup failure. No configuration files, reload, or unrelated rules touched.
     defer disableRule(host, id, lua);
@@ -99,7 +99,7 @@ pub fn launch(host: *Runtime, opt: Args) !void {
     var env = try host.env.clone(host.a);
     try env.put("GDK_BACKEND", "wayland");
     // GTK uses this per-process application class; no shared global settings.
-    try env.put("DESKCTL_PIP_APP_ID", id);
+    try env.put("HYPRHAND_PIP_APP_ID", id);
     var child = try std.process.spawn(host.io, .{
         .argv = &.{ helper, cli, opt.session, source.instance, output.name, try std.fmt.allocPrint(host.a, "{d}", .{opt.fps}) },
         .environ_map = &env,

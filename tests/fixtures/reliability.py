@@ -3,11 +3,11 @@
 Only run in an existing dedicated managed session after explicit authorization.
 Example from the repository root (use a fresh EVENTS path, never an existing file):
 
-  zig-out/bin/deskctl --help
-  zig-out/bin/deskctl sessions
-  zig-out/bin/deskctl doctor --session NAME
-  zig-out/bin/deskctl enable --session NAME
-  zig-out/bin/deskctl launch --session NAME -- python3 /ABS/REPO/tests/fixtures/reliability.py --live --session NAME --events /tmp/EVENTS
+  zig-out/bin/hyprhand --help
+  zig-out/bin/hyprhand sessions
+  zig-out/bin/hyprhand doctor --session NAME
+  zig-out/bin/hyprhand enable --session NAME
+  zig-out/bin/hyprhand launch --session NAME -- python3 /ABS/REPO/tests/fixtures/reliability.py --live --session NAME --events /tmp/EVENTS
   python3 tests/live_reliability.py --live --session NAME --events /tmp/EVENTS
 
 Do not repeat enable after humanstop/ControlStopped without renewed permission.
@@ -33,14 +33,14 @@ from live_reliability import TITLE, process_start, require, session_name
 
 
 def managed_environment(name):
-    # deskctl launch replaces XDG_RUNTIME_DIR, so calling `session inspect`
+    # hyprhand launch replaces XDG_RUNTIME_DIR, so calling `session inspect`
     # inside the child would search the wrong session registry. launch also
     # supplies a private profile-CONFIG directory beside its session.json.
     profile = Path(os.environ.get("XDG_CONFIG_HOME", ""))
     require(profile.is_absolute() and profile.name == "profile-CONFIG",
-            "Use deskctl launch in an explicitly authorized managed session")
+            "Use hyprhand launch in an explicitly authorized managed session")
     directory = profile.parent
-    require(directory.name == name and directory.parent.name == "deskctl-sessions",
+    require(directory.name == name and directory.parent.name == "hyprhand-sessions",
             "Profile is not part of the requested managed session")
     session = json.loads((directory / "session.json").read_text())
     require(session["name"] == name and session["directory"] == str(directory) and
@@ -50,7 +50,7 @@ def managed_environment(name):
     for name, key in (("XDG_RUNTIME_DIR", "runtime"), ("WAYLAND_DISPLAY", "display"),
                       ("HYPRLAND_INSTANCE_SIGNATURE", "instance"), ("DBUS_SESSION_BUS_ADDRESS", "dbus")):
         require(os.environ.get(name) == session[key],
-                f"{name} does not match managed session; use deskctl launch")
+                f"{name} does not match managed session; use hyprhand launch")
     for kind in ("compositor", "bus"):
         process = session[kind]
         require(type(process.get("pid")) is int and process["pid"] > 1 and
@@ -85,7 +85,7 @@ def main(argv=None):
             if started or event == "ready":
                 stream.write(json.dumps({"event": event, "time": time.monotonic(), **values}) + "\n")
 
-        app = Gtk.Application(application_id="org.deskctl.Reliability", flags=Gio.ApplicationFlags.NON_UNIQUE)
+        app = Gtk.Application(application_id="org.hyprhand.Reliability", flags=Gio.ApplicationFlags.NON_UNIQUE)
 
         def activate(application):
             nonlocal started
@@ -163,7 +163,7 @@ def main(argv=None):
             def scroll(_, dx, dy):
                 event = axis.get_current_event()
                 # GDK >= 4.8 exposes units. Missing support is a test failure for
-                # --pointer, not a false pass inferred from deskctl's mode flag.
+                # --pointer, not a false pass inferred from hyprhand's mode flag.
                 unit = event.get_unit().value_nick if event and hasattr(event, "get_unit") else "unknown"
                 emit("scroll", dx=dx, dy=dy, unit=unit,
                      raw_deltas=list(event.get_deltas()) if event else None,

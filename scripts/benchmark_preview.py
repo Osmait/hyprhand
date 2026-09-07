@@ -17,7 +17,7 @@ import threading
 from collections import deque
 import time
 
-BIN = Path(__file__).resolve().parents[1] / "zig-out/bin/deskctl"
+BIN = Path(__file__).resolve().parents[1] / "zig-out/bin/hyprhand"
 
 
 def cli(*args):
@@ -87,7 +87,7 @@ def main():
         latency.append((time.monotonic() - started) * 1000)
         sizes.append(len(frame))
     viewer = subprocess.Popen([str(BIN), "preview", "--session", args.session, "--fps", str(args.fps)],
-                              env=dict(os.environ, DESKCTL_PIP_METRICS="1"),
+                              env=dict(os.environ, HYPRHAND_PIP_METRICS="1"),
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     metric_rows = deque(maxlen=1024)
     metrics_lock = threading.Lock()

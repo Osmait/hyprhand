@@ -9,9 +9,9 @@ owner's Hyprland environment and let `--session NAME` perform routing.
 
 | Mode | Command | Behavior |
 | --- | --- | --- |
-| Existing desktop | `deskctl state --session host` | Shares your current cursor, focus, and applications |
-| Nested | `deskctl session create agent --nested` | Creates a child compositor with a visible parent window |
-| Headless | `deskctl session create agent` | Creates a child output without a nested preview window; requires compatible GPU buffers |
+| Existing desktop | `hyprhand state --session host` | Shares your current cursor, focus, and applications |
+| Nested | `hyprhand session create agent --nested` | Creates a child compositor with a visible parent window |
+| Headless | `hyprhand session create agent` | Creates a child output without a nested preview window; requires compatible GPU buffers |
 | Lua configuration | Add `--lua` to `session create` | Generates a Lua configuration instead of Hyprlang |
 
 Another workspace in `host` shares the compositor's input seat. It is not a
@@ -27,13 +27,13 @@ failure stops the failed child; there is no fallback to host input.
 ## Lifecycle
 
 ```sh
-deskctl session create agent --nested
-deskctl sessions
-deskctl session inspect agent
-deskctl doctor --session agent
-deskctl enable --session agent
-deskctl launch --session agent -- firefox about:blank
-deskctl windows --session agent
+hyprhand session create agent --nested
+hyprhand sessions
+hyprhand session inspect agent
+hyprhand doctor --session agent
+hyprhand enable --session agent
+hyprhand launch --session agent -- firefox about:blank
+hyprhand windows --session agent
 ```
 
 Session names have at most 32 characters, start with a letter, and contain ASCII
@@ -48,10 +48,10 @@ without launching. Discover the launched window through `windows` or `wait windo
 a PID alone does not establish that an application opened in the correct session.
 
 ```sh
-deskctl wait window --session agent --class firefox
-deskctl focus WINDOW_ADDRESS --session agent
-deskctl wait focus --session agent --window WINDOW_ADDRESS
-deskctl observe --session agent
+hyprhand wait window --session agent --class firefox
+hyprhand focus WINDOW_ADDRESS --session agent
+hyprhand wait focus --session agent --window WINDOW_ADDRESS
+hyprhand observe --session agent
 ```
 
 Replace `WINDOW_ADDRESS` with the returned address. Application classes can vary;
@@ -74,7 +74,7 @@ choose the class observed in your actual session.
 - The private bus does not activate host systemd user services or portals.
   Desktop integration and portal-based file pickers may not work.
 - An explicitly selected headless library is preloaded only into the newly
-  created compositor, not deskctl's bus, registry, or launched applications.
+  created compositor, not hyprhand's bus, registry, or launched applications.
 
 **This is not a security sandbox.** Files, credentials, network, user permissions,
 and potentially other services remain accessible. Do not treat managed sessions
@@ -83,13 +83,13 @@ as containment for untrusted applications or content. See [SECURITY.md](../SECUR
 ## Stop, preview, and destroy
 
 ```sh
-deskctl preview --session agent --fps 5
-deskctl stop --session agent
-deskctl session destroy agent
+hyprhand preview --session agent --fps 5
+hyprhand stop --session agent
+hyprhand session destroy agent
 ```
 
 Preview is read-only and requires the optional GTK executable. Its **Stop input**
-button revokes the source session's deskctl permission. Closing it leaves source
+button revokes the source session's hyprhand permission. Closing it leaves source
 applications and authorization unchanged. See [preview](preview.md).
 
 `stop` leaves applications open; `destroy` closes the tracked compositor, launched

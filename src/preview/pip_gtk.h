@@ -5,7 +5,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
-#ifndef DESKCTL_PIP_ABI_CHECK
+#ifndef HYPRHAND_PIP_ABI_CHECK
 #define OPAQUE(T) typedef struct _##T T
 OPAQUE(GtkWidget); OPAQUE(GtkWindow); OPAQUE(GtkBox);
 OPAQUE(GtkPicture); OPAQUE(GtkLabel); OPAQUE(GtkButton); OPAQUE(GdkPaintable);

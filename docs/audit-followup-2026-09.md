@@ -91,10 +91,10 @@ See [later offline performance work](performance-2026-09.md) before comparing nu
 ## Remote evidence recorded at the time
 
 The `4f230f3` CI passed on both Ubuntu versions
-([run](https://github.com/Osmait/computer-use-hyperland/actions/runs/34074547410)).
+([run](https://github.com/Osmait/hyprhand/actions/runs/34074547410)).
 Follow-up `261fe93` passed
-[CI](https://github.com/Osmait/computer-use-hyperland/actions/runs/34075926551)
-and [manual packaging](https://github.com/Osmait/computer-use-hyperland/actions/runs/34075926414).
+[CI](https://github.com/Osmait/hyprhand/actions/runs/34075926551)
+and [manual packaging](https://github.com/Osmait/hyprhand/actions/runs/34075926414).
 No tag or GitHub Release was created. Those runs exposed Node 20 action warnings;
 checkout/setup-python/upload-artifact were subsequently updated to SHA-pinned v7
 actions. The workflow update needs its own run; historical results do not verify

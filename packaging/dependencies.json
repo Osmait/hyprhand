@@ -23,10 +23,10 @@
     ]
   },
   "optional_components_not_bundled": {
-    "session_preview": "zig build pip: deskctl-pip beside deskctl; GTK4 >= 4.8 development/runtime libraries, grim; host Hyprlang/Lua window rules (tested on Hyprland 0.56.2). Not included in the default CLI archive",
+    "session_preview": "zig build pip: hyprhand-pip beside hyprhand; GTK4 >= 4.8 development/runtime libraries, grim; host Hyprlang/Lua window rules (tested on Hyprland 0.56.2). Not included in the default CLI archive",
     "headless_bridge": "Local C++23 build against Aquamarine 0.15.0, pixman and libdrm; restricted Hyprland 0.56.2 stack; parent Wayland renderer required",
     "cursor_outline": "Local C++23 build with exact Hyprland 0.56.2 headers and matching ABI; OpenGL and Hyprlang activation only",
     "live_test_fixtures": "Python GI, GTK4 and AT-SPI; opt-in, never run by packaging or CI",
-    "blender_example": "Blender with the original deskctl room open; not bundled or executed by packaging"
+    "blender_example": "Blender with the original hyprhand room open; not bundled or executed by packaging"
   }
 }

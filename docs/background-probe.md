@@ -52,7 +52,7 @@ report promises unrestricted invisible video editing.
 python3 tests/background_probe.py --live --workspace 4
 ```
 
-Requires the built `zig-out/bin/deskctl`, Python GI/GTK4/AT-SPI, an unlocked
+Requires the built `zig-out/bin/hyprhand`, Python GI/GTK4/AT-SPI, an unlocked
 Hyprlang host, and an unused destination workspace. The operator should not type
 during the run. The script verifies window identity and authorization, records
 GTK/Wayland events without saving user content, emits JSON, and aborts if the

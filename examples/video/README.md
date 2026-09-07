@@ -1,5 +1,9 @@
 # Recorded agent demo
 
+This recording predates the **Hyprhand** rename and uses the former name
+**deskctl**. Original media and command evidence retain that name. See the
+[rename notes](../../docs/renaming.md).
+
 This is a real, silent, captioned recording of a Codex subagent operating the
 included GTK note app through deskctl. The coordinator prepared an empty demo
 window, started screen capture, and sent the [task prompt](prompt.txt) to a separate
@@ -32,7 +36,8 @@ clicked **Apply text**, verified the visible results, and stopped input.
 
 Follow the [GTK walkthrough](../gtk/README.md) to create a disposable session and
 launch `examples/gtk/note.py`. Give an agent the text in `prompt.txt`, together with
-the actual managed session name and access to deskctl and an image-viewing tool.
+the actual managed session name and access to `hyprhand` and an image-viewing tool.
+Update command references from `deskctl` to `hyprhand` in the historical prompt.
 Require it to inspect fresh screenshots and verify both applied results. Do not
 copy the recording's coordinates or frame IDs into your session.
 

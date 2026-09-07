@@ -84,8 +84,8 @@ selected prefix's `lib`, using explicit step dependencies. Generated copies rema
 in the build cache at the paths printed by the scripts. After integration,
 `zig build cursor-plugin headless-bridge` succeeded and the installed pairs matched:
 
-- `deskctl-outline.so` / `deskctl-outline.so.build-metadata`
-- `deskctl-headless-formats.so` / `deskctl-headless-formats.so.build-metadata`
+- `hyprhand-outline.so` / `hyprhand-outline.so.build-metadata`
+- `hyprhand-headless-formats.so` / `hyprhand-headless-formats.so.build-metadata`
 
 This only builds, installs and inspects files. It adds no load/preload step and
 does not expand ABI guarantees or replace disposable-compositor testing.

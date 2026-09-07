@@ -43,8 +43,8 @@ python3 tests/fixtures/test_reliability_contract.py
 python3 -m unittest discover -s packaging -p 'test_*.py' -v
 ```
 
-Runners normally use `zig-out/bin/deskctl`; supported suites honor
-`DESKCTL_TEST_BIN` for a different build. Avoid pointing an offline fixture at a
+Runners normally use `zig-out/bin/hyprhand`; supported suites honor
+`HYPRHAND_TEST_BIN` for a different build. Avoid pointing an offline fixture at a
 wrapper that routes to a real desktop.
 
 ## Optional GTK checks without a host window
@@ -66,7 +66,7 @@ a host window, and it cannot establish physical Wayland presentation or GPU beha
 zig fmt --check build.zig build src
 python3 -m py_compile tests/*.py tests/fixtures/*.py scripts/*.py \
   packaging/*.py examples/blender/style_room.py examples/gtk/note.py
-bash -n completions/deskctl.bash
+bash -n completions/hyprhand.bash
 sh -n experimental/cursor-outline/build.sh
 sh -n experimental/headless-formats/build.sh
 python3 scripts/check_docs.py
@@ -81,17 +81,17 @@ Source-only links use repository URLs or are presented as source paths.
 Live runners create temporary windows and send real input. Use a disposable
 managed session, read the runner's instructions, and authorize the specific test.
 They are excluded from `zig build check`, normal CI, and package creation.
-Some older runners default to `host`; set `DESKCTL_TEST_SESSION` deliberately.
+Some older runners default to `host`; set `HYPRHAND_TEST_SESSION` deliberately.
 
 ```sh
-deskctl session create test-session --nested
-DESKCTL_TEST_SESSION=test-session python3 tests/live_smoke.py --live
-DESKCTL_TEST_SESSION=test-session python3 tests/live_advanced.py --live
-DESKCTL_TEST_SESSION=test-session python3 tests/live_motion.py --live
+hyprhand session create test-session --nested
+HYPRHAND_TEST_SESSION=test-session python3 tests/live_smoke.py --live
+HYPRHAND_TEST_SESSION=test-session python3 tests/live_advanced.py --live
+HYPRHAND_TEST_SESSION=test-session python3 tests/live_motion.py --live
 # Review the aura visually as well:
-DESKCTL_TEST_SESSION=test-session python3 tests/live_motion.py --live --aura-review
-deskctl stop --session test-session
-deskctl session destroy test-session
+HYPRHAND_TEST_SESSION=test-session python3 tests/live_motion.py --live --aura-review
+hyprhand stop --session test-session
+hyprhand session destroy test-session
 ```
 
 Motion tests require inspecting the newly printed screenshot and confirming it

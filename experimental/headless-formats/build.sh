@@ -38,7 +38,7 @@ source_hash=$(sha256sum < "$source")
 binary_hash=$(sha256sum < "$build_dir/artifact.so")
 compiler_target=$("$compiler" -dumpmachine)
 {
-    printf 'format=deskctl-experimental-build-v1\nbridge=headless-formats\n'
+    printf 'format=hyprhand-experimental-build-v1\nbridge=headless-formats\n'
     printf 'aquamarine=0.15.0\nsource_sha256=%s\nbinary_sha256=%s\n' "${source_hash%% *}" "${binary_hash%% *}"
     printf 'compiler=%s\ncompiler_target=%s\n' "$compiler" "$compiler_target"
     "$compiler" --version

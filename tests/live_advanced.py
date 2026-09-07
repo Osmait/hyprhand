@@ -1,6 +1,6 @@
 """Opt-in regression on a named managed session; never inject into host.
 
-DESKCTL_TEST_SESSION=NAME python3 tests/live_advanced.py --live
+HYPRHAND_TEST_SESSION=NAME python3 tests/live_advanced.py --live
 Requires a running managed session. Creates and closes only its GTK fixture.
 """
 import json
@@ -15,8 +15,8 @@ import time
 import statistics
 
 ROOT = Path(__file__).resolve().parents[1]
-BIN = ROOT / "zig-out/bin/deskctl"
-SESSION = os.environ.get("DESKCTL_TEST_SESSION")
+BIN = ROOT / "zig-out/bin/hyprhand"
+SESSION = os.environ.get("HYPRHAND_TEST_SESSION")
 
 def call(*args, host=False, ok=True):
     proc = subprocess.run([str(BIN), *args, "--session", "host" if host else SESSION], text=True, capture_output=True, timeout=15)
@@ -117,5 +117,5 @@ def main():
         if not original_enabled: call("stop")
 
 if __name__ == "__main__":
-    if "--live" not in sys.argv: sys.exit("Use --live and DESKCTL_TEST_SESSION=managed-name")
+    if "--live" not in sys.argv: sys.exit("Use --live and HYPRHAND_TEST_SESSION=managed-name")
     main()

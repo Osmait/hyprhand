@@ -144,10 +144,10 @@ fn execute(init: std.process.Init, opt: args.Args) !void {
 
 fn report(init: std.process.Init, err: anyerror) void {
     const hint: []const u8 = switch (err) {
-        error.PreviewHelperMissing => "Build the optional viewer with zig build pip; keep deskctl-pip beside deskctl.",
+        error.PreviewHelperMissing => "Build the optional viewer with zig build pip; keep hyprhand-pip beside hyprhand.",
         error.PreviewManagedSessionRequired => "Preview requires an explicit managed session, never host.",
         error.PreviewIdentityMismatch => "The original preview session ended or changed. Close the viewer and explicitly open a new one.",
-        error.ControlStopped => "Input is disabled. Run deskctl enable to enable it.",
+        error.ControlStopped => "Input is disabled. Run hyprhand enable to enable it.",
         error.StaleObservation => "The frame expired or desktop layout/focus changed. Observe again.",
         error.WindowNotFocused => "Focus the target window first, then verify it before typing.",
         error.CursorPositionMismatch => "Cursor diverged from the expected path: human movement, pointer locking/recentering or compositor constraints are possible. Input was aborted; observe again. No safety tolerance was relaxed.",
@@ -156,10 +156,10 @@ fn report(init: std.process.Init, err: anyerror) void {
         error.ContinuousScrollUnavailable => "XWayland fallback only supports wheel events. Choose --scroll-mode wheel (optionally paced). No continuous-to-wheel substitution was performed.",
         error.SessionRequired => "Input commands require an explicit --session NAME.",
         error.UnsupportedConfigProvider => "Dispatch supports Hyprlang and Lua providers only.",
-        error.FileNotFound => "A helper or required file is missing. Check deskctl doctor and install grim/wtype.",
-        error.ControlBusy => "Another deskctl input action is running.",
+        error.FileNotFound => "A helper or required file is missing. Check hyprhand doctor and install grim/wtype.",
+        error.ControlBusy => "Another hyprhand input action is running.",
         error.InvalidHeadlessBridge => "Use an absolute, trusted regular library path without spaces/colons, not writable by other users, only with session create (not --nested).",
-        error.OutlinePluginUnavailable => "The optional deskctl-outline plugin is not loaded or rejected activation. Input remains disabled. No plugin was auto-loaded.",
+        error.OutlinePluginUnavailable => "The optional hyprhand-outline plugin is not loaded or rejected activation. Input remains disabled. No plugin was auto-loaded.",
         error.OutlineRequiresHyprlang => "The experimental outline dispatcher currently requires Hyprlang. Input remains disabled.",
         error.HeadlessRenderUnavailable => "Headless GPU buffers failed. See compositor.log; try explicit --nested. The failed compositor was stopped.",
         error.SessionStartupFailed, error.SessionStartupTimeout, error.SessionConfigInvalid => "Managed session failed and its processes were stopped. Inspect compositor.log in the named session directory.",
@@ -171,7 +171,7 @@ fn report(init: std.process.Init, err: anyerror) void {
         error.CursorCaptureUnavailable, error.CursorCaptureUnsupported => "The compositor did not provide a usable cursor capture session. No theme or desktop configuration was changed.",
         error.XWaylandHelperMissing => "This is an XWayland window. Install xdotool for X11 keyboard input.",
         error.X11TargetMismatch => "The focused X11 window does not match the requested Hyprland client. Check DISPLAY and focus.",
-        else => "Run deskctl --help for usage. No task outcome has been verified.",
+        else => "Run hyprhand --help for usage. No task outcome has been verified.",
     };
     const message = std.json.Stringify.valueAlloc(init.arena.allocator(), .{ .ok = false, .err = .{ .code = @errorName(err), .message = hint } }, .{}) catch return;
     std.Io.File.stdout().writeStreamingAll(init.io, message) catch {};
@@ -190,7 +190,7 @@ pub fn main(init: std.process.Init) void {
         return;
     }
     if (argv.len == 2 and eq(argv[1], "--version")) {
-        std.Io.File.stdout().writeStreamingAll(init.io, "deskctl 0.4.0\n") catch {};
+        std.Io.File.stdout().writeStreamingAll(init.io, "hyprhand 0.4.0\n") catch {};
         return;
     }
     const opt = args.parse(argv[1..]) catch |err| {

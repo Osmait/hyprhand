@@ -113,7 +113,7 @@ verification is not a rebuild of this final media payload.
 ## Spreadsheet and inline-playback follow-up
 
 The subsequent spreadsheet demonstration records actual prompt entry and submission
-in Codex CLI 0.153.4, followed by a Calc dashboard built through deskctl. The saved
+in Codex CLI 0.153.4, followed by a Calc dashboard built through hyprhand. The saved
 ODS contains six monthly achievement formulas, SUM totals and a native two-series
 column chart. Independent inspection confirmed 1,980 signups, a target of 1,700
 and 116.47% overall achievement. The agent stopped input and the coordinator

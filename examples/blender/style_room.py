@@ -1,8 +1,8 @@
-"""Style the deskctl GUI-built room, preserving the original .blend file.
+"""Style the hyprhand GUI-built room, preserving the original .blend file.
 
 Run in Blender's Python console using exec(compile(...)). No external assets.
 Outputs go beside the open .blend, or to the existing absolute directory in
-DESKCTL_BLENDER_OUTPUT_DIR. An unsaved scene requires that explicit directory.
+HYPRHAND_BLENDER_OUTPUT_DIR. An unsaved scene requires that explicit directory.
 This script saves room-styled.blend and configures the PNG output path;
 it does not render. Existing styled outputs may be replaced on reruns.
 Principled shader reference: https://docs.blender.org/api/main/bpy.types.ShaderNodeBsdfPrincipled.html
@@ -14,16 +14,16 @@ import random
 from pathlib import Path
 from mathutils import Vector
 
-output_dir = os.environ.get('DESKCTL_BLENDER_OUTPUT_DIR')
+output_dir = os.environ.get('HYPRHAND_BLENDER_OUTPUT_DIR')
 if output_dir:
     ROOT = Path(output_dir).expanduser()
     if not ROOT.is_absolute():
-        raise ValueError('DESKCTL_BLENDER_OUTPUT_DIR must be an absolute directory')
+        raise ValueError('HYPRHAND_BLENDER_OUTPUT_DIR must be an absolute directory')
     ROOT = ROOT.resolve()
 elif bpy.data.filepath:
     ROOT = Path(bpy.data.filepath).resolve().parent
 else:
-    raise RuntimeError('Save the room first or set DESKCTL_BLENDER_OUTPUT_DIR')
+    raise RuntimeError('Save the room first or set HYPRHAND_BLENDER_OUTPUT_DIR')
 if not ROOT.is_dir():
     raise ValueError('The Blender output directory must already exist')
 OUTPUT_BLEND = ROOT / 'room-styled.blend'
@@ -31,15 +31,15 @@ if bpy.data.filepath and OUTPUT_BLEND.resolve() == Path(bpy.data.filepath).resol
     raise RuntimeError('Choose a different output directory to preserve the open .blend')
 random.seed(19)
 scene = bpy.context.scene
-assert '01 Floor' in bpy.data.objects, 'Open the deskctl room first'
+assert '01 Floor' in bpy.data.objects, 'Open the hyprhand room first'
 
 # Only remove generated objects when rerunning this styling pass.
 for ob in list(bpy.data.objects):
-    if ob.get('deskctl_style'):
+    if ob.get('hyprhand_style') or ob.get('deskctl_style'):
         bpy.data.objects.remove(ob, do_unlink=True)
 
 def tag(ob):
-    ob['deskctl_style'] = True
+    ob['hyprhand_style'] = True
     return ob
 
 def mat(name, color, rough=.6, metal=0, texture=None):
@@ -308,4 +308,4 @@ for screen in bpy.data.screens:
             a.spaces.active.shading.color_type='MATERIAL'
             a.spaces.active.overlay.show_overlays=False
 bpy.ops.wm.save_as_mainfile(filepath=str(OUTPUT_BLEND))
-print('DESKCTL_STYLE_READY',len(scene.objects),'objects',scene.cycles.device)
+print('HYPRHAND_STYLE_READY',len(scene.objects),'objects',scene.cycles.device)

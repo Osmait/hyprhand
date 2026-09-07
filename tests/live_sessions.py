@@ -11,7 +11,7 @@ import sys
 import time
 import uuid
 
-BIN = Path(__file__).resolve().parents[1] / "zig-out/bin/deskctl"
+BIN = Path(__file__).resolve().parents[1] / "zig-out/bin/hyprhand"
 
 def cli(*args, ok=True):
     p = subprocess.run([str(BIN), *args], capture_output=True, text=True, timeout=20)

@@ -13,7 +13,7 @@ This does not certify other machines, applications, or versions.
 - Geometry change during 5 s approach: `StaleObservation` before click; click
   counter remained at one. Only test-window geometry was restored.
 - Interference during 5 s drag: the child's cursor was deliberately moved through
-  its exact IPC. deskctl returned `CursorPositionMismatch` and the receiver
+  its exact IPC. hyprhand returned `CursorPositionMismatch` and the receiver
   confirmed button release through `drag-end`.
 - Paced wheel and reverse continuous scroll: before/after screenshots confirmed
   movement. Visual distance differs by mode and application.

@@ -1,7 +1,7 @@
 """Non-desktop session cleanup regressions: python3 tests/session_lifecycle.py.
 
 Uses private metadata, a fake IPC socket, and disposable subprocess trees only.
-Build first with zig build; DESKCTL_TEST_BIN can select a different binary.
+Build first with zig build; HYPRHAND_TEST_BIN can select a different binary.
 Linux pidfds are required by both the implementation and this test's cleanup.
 """
 import ctypes
@@ -20,7 +20,7 @@ import time
 import unittest
 
 
-BIN = Path(os.environ.get("DESKCTL_TEST_BIN", str(Path(__file__).resolve().parents[1] / "zig-out/bin/deskctl")))
+BIN = Path(os.environ.get("HYPRHAND_TEST_BIN", str(Path(__file__).resolve().parents[1] / "zig-out/bin/hyprhand")))
 
 
 def identity(pid):
@@ -79,9 +79,9 @@ class SessionLifecycle(unittest.TestCase):
         cls.libc.prctl(36, cls.previous_subreaper.value, 0, 0, 0)
 
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="deskctl-lifecycle-")
+        self.temp = tempfile.TemporaryDirectory(prefix="hyprhand-lifecycle-")
         self.root = Path(self.temp.name)
-        self.directory = self.root / "deskctl-sessions/check"
+        self.directory = self.root / "hyprhand-sessions/check"
         self.directory.mkdir(mode=0o700, parents=True)
         self.directory.parent.chmod(0o700)
         self.runtime = self.root / "d12345678"

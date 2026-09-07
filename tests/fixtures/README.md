@@ -8,7 +8,7 @@ and require `--live` and `--session NAME`; environment variables cannot silently
 select the runner's session.
 
 Fixture launch instructions are in `reliability.py --help`. Launch through
-`deskctl launch --session NAME` so its environment matches the managed metadata.
+`hyprhand launch --session NAME` so its environment matches the managed metadata.
 Choose a fresh observer path: the fixture creates it exclusively, with mode 0600.
 Wait for `ready`, leave the fixture's first entry focused, then run from the
 repository root:
@@ -41,7 +41,7 @@ within about 26 seconds, or 17 seconds for the final 10-second scroll, so the
 frame has time to remain valid for the whole action. Expired review aborts.
 
 For `--guard cancel`, the runner waits until the observer receives an axis event,
-sends SIGTERM to that deskctl scroll process, and requires a `Cancelled` result.
+sends SIGTERM to that hyprhand scroll process, and requires a `Cancelled` result.
 After a short queue-drain interval it requires no further received scroll events.
 Cancellation is terminal: there is no retry, follow-up input, or re-enable.
 Finally, the runner calls `stop` only if the original control token is still
@@ -88,5 +88,5 @@ python3 -B -O tests/fixtures/test_reliability_contract.py
 
 These use mocked process, observer and review boundaries. They cover permission
 gates, token lifecycle, receiver assertions, all six pointer variants and terminal
-cancellation. They do not start GTK, invoke deskctl, send signals to real
+cancellation. They do not start GTK, invoke hyprhand, send signals to real
 processes, choose live coordinates, or substitute for a live managed-session run.

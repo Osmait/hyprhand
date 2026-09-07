@@ -20,11 +20,11 @@ VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+
 # Explicit payload: never recursively collect the checkout, profiles, examples,
 # caches, logs, environment files, or optional compositor libraries.
 INSTALLED_FILES = (
-    "bin/deskctl",
-    "share/bash-completion/completions/deskctl",
-    "share/fish/vendor_completions.d/deskctl.fish",
-    "share/deskctl/skills/deskctl/SKILL.md",
-    "share/deskctl/skills/deskctl/agents/openai.yaml",
+    "bin/hyprhand",
+    "share/bash-completion/completions/hyprhand",
+    "share/fish/vendor_completions.d/hyprhand.fish",
+    "share/hyprhand/skills/hyprhand/SKILL.md",
+    "share/hyprhand/skills/hyprhand/agents/openai.yaml",
 )
 # Keep the source-relative documentation tree at the archive root so README
 # usage links and links between docs work without rewriting user-authored text.
@@ -37,10 +37,10 @@ DOCUMENTS = {relative: relative for relative in (
     "CONTRIBUTING.md", "docs/architecture.md", "docs/audit-2026-09.md",
     "docs/audit-followup-2026-09.md", "docs/performance-2026-09.md",
     "docs/README.md", "docs/cli.md", "docs/sessions.md", "docs/testing.md",
-    "docs/troubleshooting.md", "docs/open-source-readiness.md",
+    "docs/troubleshooting.md", "docs/renaming.md", "docs/open-source-readiness.md",
     "SECURITY.md", "THIRD_PARTY_NOTICES.md", "PRODUCT.md", "DESIGN.md",
     "examples/blender/README.md", "tests/fixtures/README.md",
-    "skills/deskctl/SKILL.md", "examples/gtk/README.md", "docs/images/README.md",
+    "skills/hyprhand/SKILL.md", "examples/gtk/README.md", "docs/images/README.md",
     "docs/images/note-before.png", "docs/images/note-after.png",
     "docs/images/session-preview.png", "examples/blender/assets/room-styled.png",
     "examples/video/README.md", "examples/video/prompt.txt",
@@ -130,7 +130,7 @@ def make_archive(payload, target, epoch):
                     info.uid = info.gid = 0
                     info.uname = info.gname = ""
                     info.mtime = epoch
-                    info.mode = 0o755 if path.is_dir() or path == payload / "bin/deskctl" else 0o644
+                    info.mode = 0o755 if path.is_dir() or path == payload / "bin/hyprhand" else 0o644
                     info.pax_headers = {}
                     if path.is_file():
                         with path.open("rb") as stream:
@@ -167,7 +167,7 @@ def package(version, output):
     distro_id = safe_component(distro["ID"])
     distro_version = safe_component(distro.get("VERSION_ID", "rolling"))
     label = f"linux-x86_64-{distro_id}-{distro_version}-glibc{safe_component(libc_version)}"
-    name = f"deskctl-{version}-{label}"
+    name = f"hyprhand-{version}-{label}"
     commit = run("git", "rev-parse", "HEAD")
     dirty = bool(run("git", "status", "--porcelain", "--untracked-files=normal"))
     epoch = int(os.environ.get("SOURCE_DATE_EPOCH", run("git", "show", "-s", "--format=%ct", "HEAD")))
@@ -175,35 +175,35 @@ def package(version, output):
         raise ValueError("SOURCE_DATE_EPOCH must fit a gzip timestamp (0..4294967295)")
     # Reserve a new output directory; never overwrite any existing artifacts.
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
-    with tempfile.TemporaryDirectory(prefix="deskctl-package-") as workspace:
+    with tempfile.TemporaryDirectory(prefix="hyprhand-package-") as workspace:
         work = Path(workspace)
         prefix = work / "install"
         flags = ["-Doptimize=ReleaseSafe", "-Dcpu=baseline", "--summary", "all",
                  "--prefix", str(prefix), "--cache-dir", str(work / "cache")]
         subprocess.run(["zig", "build", "test", *flags], cwd=ROOT, check=True)
         subprocess.run(["zig", "build", *flags], cwd=ROOT, check=True)
-        binary = prefix / "bin/deskctl"
+        binary = prefix / "bin/hyprhand"
         subprocess.run(["strip", "--strip-all", str(binary)], check=True)
         actual_version = run(str(binary), "--version")
-        if actual_version != f"deskctl {version}":
+        if actual_version != f"hyprhand {version}":
             raise ValueError("requested version does not match the built binary's --version")
         for suite in ("tests/integration.py", "tests/ipc.py", "tests/preview.py", "tests/keyboard_unit.py",
                       "tests/keyboard_protocol.py", "tests/session_lifecycle.py",
                       "tests/fixtures/test_reliability_contract.py"):
             subprocess.run([sys.executable, "-B", suite], cwd=ROOT, check=True,
-                           env=dict(os.environ, DESKCTL_TEST_BIN=str(binary)))
+                           env=dict(os.environ, HYPRHAND_TEST_BIN=str(binary)))
         observed = elf_dependencies(binary)
         payload = work / name
         payload.mkdir()
         for relative in INSTALLED_FILES:
-            copy_regular(prefix / relative, payload / relative, executable=relative == "bin/deskctl")
+            copy_regular(prefix / relative, payload / relative, executable=relative == "bin/hyprhand")
         for source, destination in DOCUMENTS.items():
             copy_regular(ROOT / source, payload / destination)
         requirements["observed_build"] = {"pkg_config_versions": modules, **observed}
         write_json(payload / "dependencies.json", requirements)
         write_json(payload / "metadata.json", {
             "schema_version": 1,
-            "name": "deskctl", "version": version,
+            "name": "hyprhand", "version": version,
             "platform": {"os": "linux", "architecture": "x86_64", "cpu": "baseline",
                          "distribution": distro_id, "distribution_version": distro_version,
                          "build_libc": libc_name, "build_libc_version": libc_version},

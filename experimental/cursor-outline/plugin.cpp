@@ -22,7 +22,7 @@
 #include <string_view>
 #include <vector>
 
-static_assert(std::string_view{GIT_TAG} == "v0.56.2", "deskctl outline requires Hyprland v0.56.2 headers");
+static_assert(std::string_view{GIT_TAG} == "v0.56.2", "hyprhand outline requires Hyprland v0.56.2 headers");
 static_assert(std::string_view{HYPRLAND_API_VERSION} == "0.1", "Re-audit the plugin API before upgrading");
 static_assert([] {
     constexpr std::string_view hash{GIT_COMMIT_HASH};
@@ -98,7 +98,7 @@ void cleanup() {
     stopTimer();
     renderListener.reset();
     shapeListener.reset();
-    if (dispatcherRegistered) HyprlandAPI::removeDispatcher(handle, "deskctl:outline");
+    if (dispatcherRegistered) HyprlandAPI::removeDispatcher(handle, "hyprhand:outline");
     dispatcherRegistered = false;
     deactivate();
     handle = nullptr;
@@ -251,25 +251,25 @@ void render(eRenderStage stage) {
 
 APICALL EXPORT std::string PLUGIN_API_VERSION() { return HYPRLAND_API_VERSION; }
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE h) {
-    if (HyprlandAPI::getHyprlandVersion(h).hash != GIT_COMMIT_HASH) throw std::runtime_error("deskctl outline: Hyprland version mismatch");
+    if (HyprlandAPI::getHyprlandVersion(h).hash != GIT_COMMIT_HASH) throw std::runtime_error("hyprhand outline: Hyprland version mismatch");
     const char* serverHash = __hyprland_api_get_hash();
     if (!serverHash || std::strcmp(serverHash, __hyprland_api_get_client_hash()) != 0)
-        throw std::runtime_error("deskctl outline: Hyprland dependency ABI hash mismatch");
+        throw std::runtime_error("hyprhand outline: Hyprland dependency ABI hash mismatch");
     if (!g_pHyprRenderer || g_pHyprRenderer->type() != Render::IHyprRenderer::RT_GL || !Render::GL::g_pHyprOpenGL ||
         Render::GL::g_pHyprOpenGL->m_eglContextVersion < Render::GL::CHyprOpenGLImpl::EGL_CONTEXT_GLES_3_0)
-        throw std::runtime_error("deskctl outline: OpenGL ES 3 renderer required");
+        throw std::runtime_error("hyprhand outline: OpenGL ES 3 renderer required");
     handle = h;
     try {
-        if (!HyprlandAPI::addDispatcherV2(h, "deskctl:outline", [](std::string path) -> SDispatchResult {
+        if (!HyprlandAPI::addDispatcherV2(h, "hyprhand:outline", [](std::string path) -> SDispatchResult {
             if (path == "stop") { deactivate(); return {}; }
             if (!timer) return {.success = false, .error = "Outline timer unavailable; reload in the disposable test session"};
             const std::filesystem::path p(path);
             const char* runtime = getenv("XDG_RUNTIME_DIR");
             struct stat dir{};
             if (!runtime || !p.is_absolute() || p.filename() != "enabled" || p.parent_path().parent_path() != runtime ||
-                !p.parent_path().filename().string().starts_with("deskctl-") ||
+                !p.parent_path().filename().string().starts_with("hyprhand-") ||
                 lstat(p.parent_path().c_str(), &dir) != 0 || !S_ISDIR(dir.st_mode) || dir.st_uid != getuid() || (dir.st_mode & 077))
-                return {.success = false, .error = "Invalid deskctl control path"};
+                return {.success = false, .error = "Invalid hyprhand control path"};
             const auto value = readToken(path);
             if (value.empty()) return {.success = false, .error = "Control token unavailable"};
             deactivate();
@@ -277,7 +277,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE h) {
             previous = damageCursor();
             g_pHyprRenderer->damageBox(previous);
             return {};
-        })) throw std::runtime_error("deskctl outline: dispatcher registration failed");
+        })) throw std::runtime_error("hyprhand outline: dispatcher registration failed");
         dispatcherRegistered = true;
         renderListener = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) {
             try { render(stage); } catch (...) { deactivate(); }
@@ -288,9 +288,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE h) {
         timer = wl_event_loop_add_timer(wl_display_get_event_loop(g_pCompositor->m_wlDisplay), [](void* data) -> int {
             try { return tick(data); } catch (...) { stopTimer(); deactivate(); return 0; }
         }, nullptr);
-        if (!timer) throw std::runtime_error("deskctl outline: timer unavailable");
-        if (wl_event_source_timer_update(timer, 20) < 0) throw std::runtime_error("deskctl outline: timer scheduling failed");
-        return {"deskctl-outline", "Blue glow from the real cursor alpha mask", "deskctl", "0.1-experimental"};
+        if (!timer) throw std::runtime_error("hyprhand outline: timer unavailable");
+        if (wl_event_source_timer_update(timer, 20) < 0) throw std::runtime_error("hyprhand outline: timer scheduling failed");
+        return {"hyprhand-outline", "Blue glow from the real cursor alpha mask", "hyprhand", "0.1-experimental"};
     } catch (...) {
         // Hyprland ejects a failed init without calling PLUGIN_EXIT.
         cleanup();

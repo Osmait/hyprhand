@@ -37,7 +37,7 @@ def local_links(text):
 
 
 def package_documents():
-    spec = importlib.util.spec_from_file_location("deskctl_package", ROOT / "scripts/package-release.py")
+    spec = importlib.util.spec_from_file_location("hyprhand_package", ROOT / "scripts/package-release.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.DOCUMENTS

@@ -19,22 +19,22 @@ renderer. The recorded NVIDIA setup fails without this bridge.
 ```sh
 zig build -Doptimize=ReleaseSafe
 zig build headless-bridge
-./zig-out/bin/deskctl session create bridge-test \
-  --headless-bridge /ABSOLUTE/PROJECT/zig-out/lib/deskctl-headless-formats.so
-./zig-out/bin/deskctl enable --session bridge-test
-./zig-out/bin/deskctl launch --session bridge-test -- firefox about:blank
-./zig-out/bin/deskctl observe --session bridge-test
+./zig-out/bin/hyprhand session create bridge-test \
+  --headless-bridge /ABSOLUTE/PROJECT/zig-out/lib/hyprhand-headless-formats.so
+./zig-out/bin/hyprhand enable --session bridge-test
+./zig-out/bin/hyprhand launch --session bridge-test -- firefox about:blank
+./zig-out/bin/hyprhand observe --session bridge-test
 # Inspect and complete your test, then:
-./zig-out/bin/deskctl stop --session bridge-test
-./zig-out/bin/deskctl session destroy bridge-test
+./zig-out/bin/hyprhand stop --session bridge-test
+./zig-out/bin/hyprhand session destroy bridge-test
 ```
 
 Replace the library path with the actual trusted build. It must be absolute, a
 regular file owned by the user or root, not group/other-writable, without a final
 symlink, spaces, or `:`. It cannot be combined with `--nested`.
 
-The CLI sets `LD_PRELOAD` only for the new Hyprland process, not deskctl, the parent,
-the private bus/registry, or apps launched by deskctl. A compositor could propagate
+The CLI sets `LD_PRELOAD` only for the new Hyprland process, not hyprhand, the parent,
+the private bus/registry, or apps launched by hyprhand. A compositor could propagate
 its own environment to processes it launches; do not add `exec` commands to this
 experimental configuration. `session inspect` records the selected library.
 
@@ -50,10 +50,10 @@ destruction, and no preload in bus/registry/apps were checked.
 
 ```sh
 python3 tests/live_sessions.py --live --headless \
-  --headless-bridge /ABSOLUTE/PROJECT/zig-out/lib/deskctl-headless-formats.so
+  --headless-bridge /ABSOLUTE/PROJECT/zig-out/lib/hyprhand-headless-formats.so
 # Repeat with --lua for that configuration provider.
 # Existing test session; interactive screenshot review required:
-DESKCTL_TEST_SESSION=bridge-test python3 tests/live_motion.py --live
+HYPRHAND_TEST_SESSION=bridge-test python3 tests/live_motion.py --live
 ```
 
 Headless still needs the parent renderer. It cannot operate host windows without
@@ -67,8 +67,8 @@ context, and **Hyprlang** activation. Lua activation is unsupported.
 
 ```sh
 zig build cursor-plugin
-./zig-out/bin/deskctl session create cursor-test --nested
-./zig-out/bin/deskctl session inspect cursor-test
+./zig-out/bin/hyprhand session create cursor-test --nested
+./zig-out/bin/hyprhand session inspect cursor-test
 ```
 
 Take the actual `runtime` and `instance` from inspection. The following commands
@@ -76,13 +76,13 @@ must target that disposable compositor, and use the actual absolute library path
 
 ```sh
 XDG_RUNTIME_DIR=TEST_RUNTIME hyprctl -i TEST_INSTANCE \
-  plugin load /ABSOLUTE/PROJECT/zig-out/lib/deskctl-outline.so
-./zig-out/bin/deskctl enable --session cursor-test --indicator outline
+  plugin load /ABSOLUTE/PROJECT/zig-out/lib/hyprhand-outline.so
+./zig-out/bin/hyprhand enable --session cursor-test --indicator outline
 # Inspect the cursor and interact with an explicitly selected test app.
-./zig-out/bin/deskctl stop --session cursor-test
+./zig-out/bin/hyprhand stop --session cursor-test
 XDG_RUNTIME_DIR=TEST_RUNTIME hyprctl -i TEST_INSTANCE \
-  plugin unload /ABSOLUTE/PROJECT/zig-out/lib/deskctl-outline.so
-./zig-out/bin/deskctl session destroy cursor-test
+  plugin unload /ABSOLUTE/PROJECT/zig-out/lib/hyprhand-outline.so
+./zig-out/bin/hyprhand session destroy cursor-test
 ```
 
 Do not point these commands at the host without deliberately accepting compositor

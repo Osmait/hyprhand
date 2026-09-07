@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hyprhand"
+  short_description: "Control Linux desktops running Hyprland"
+  default_prompt: "Use $hyprhand to observe, act, and verify this task in Hyprland."

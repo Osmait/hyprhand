@@ -47,15 +47,15 @@ jobs:
         env:
           PACKAGE_VERSION: ${{ inputs.version }}
         run: |
-          python3 scripts/package-release.py --version "$PACKAGE_VERSION" --output "$RUNNER_TEMP/deskctl-release"
-          python3 scripts/verify-release.py "$RUNNER_TEMP"/deskctl-release/*.tar.gz
+          python3 scripts/package-release.py --version "$PACKAGE_VERSION" --output "$RUNNER_TEMP/hyprhand-release"
+          python3 scripts/verify-release.py "$RUNNER_TEMP"/hyprhand-release/*.tar.gz
       - name: Upload only archives and checksums
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: deskctl-${{ matrix.os }}-x86_64
+          name: hyprhand-${{ matrix.os }}-x86_64
           path: |
-            ${{ runner.temp }}/deskctl-release/*.tar.gz
-            ${{ runner.temp }}/deskctl-release/*.tar.gz.sha256
+            ${{ runner.temp }}/hyprhand-release/*.tar.gz
+            ${{ runner.temp }}/hyprhand-release/*.tar.gz.sha256
           if-no-files-found: error
           retention-days: 7
           compression-level: 0

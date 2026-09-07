@@ -1,7 +1,7 @@
 # Blender room example
 
-This optional example demonstrates a room created with deskctl-assisted GUI work
-and then styled with Blender's Python API. It is not required by deskctl and is
+This optional example demonstrates a room created with hyprhand-assisted GUI work
+and then styled with Blender's Python API. It is not required by hyprhand and is
 excluded from the CLI binary archive. The recorded application version is Blender
 5.2.1 LTS; other Blender versions need their own validation.
 
@@ -31,7 +31,7 @@ as evidence that every Blender GUI command or workflow is supported.
 ```python
 import os
 from pathlib import Path
-os.environ['DESKCTL_BLENDER_OUTPUT_DIR'] = '/ABSOLUTE/PROJECT/output/blender-demo'
+os.environ['HYPRHAND_BLENDER_OUTPUT_DIR'] = '/ABSOLUTE/PROJECT/output/blender-demo'
 script = Path('/ABSOLUTE/PROJECT/examples/blender/style_room.py')
 exec(compile(script.read_text(), str(script), 'exec'))
 ```

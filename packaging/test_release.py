@@ -42,9 +42,9 @@ class Packaging(unittest.TestCase):
     def test_archive_integrity_and_normalized_headers(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            payload = root / "deskctl-0.3.0-test"
+            payload = root / "hyprhand-0.3.0-test"
             (payload / "bin").mkdir(parents=True)
-            (payload / "bin/deskctl").write_bytes(b"fixture, never executed")
+            (payload / "bin/hyprhand").write_bytes(b"fixture, never executed")
             release.write_json(payload / "metadata.json", {
                 "validation": {"unit_tests": "passed", "fake_compositor_integration": "passed",
                                "keyboard_unit": "passed", "keyboard_protocol": "passed",
@@ -68,12 +68,12 @@ class Packaging(unittest.TestCase):
             with tarfile.open(archive) as contents:
                 self.assertTrue(all(member.mtime == 1234 for member in contents.getmembers()))
             # Rebuilding normalizes filesystem times and incidental permissions.
-            (payload / "bin/deskctl").chmod(0o700)
+            (payload / "bin/hyprhand").chmod(0o700)
             second = root / "second.tar.gz"
             release.make_archive(payload, second, 1234)
             self.assertEqual(archive.read_bytes(), second.read_bytes())
             # A valid outer checksum cannot hide altered payload contents.
-            (payload / "bin/deskctl").write_bytes(b"changed")
+            (payload / "bin/hyprhand").write_bytes(b"changed")
             changed = root / "changed"
             changed.mkdir()
             tampered = changed / archive.name
@@ -133,17 +133,17 @@ class BlenderPaths(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self.assertEqual(self.resolve(str(root / "original.blend"), {}), root.resolve())
-            self.assertEqual(self.resolve("", {"DESKCTL_BLENDER_OUTPUT_DIR": temp}), root.resolve())
-            self.assertEqual(self.resolve("/different/original.blend", {"DESKCTL_BLENDER_OUTPUT_DIR": temp}), root.resolve())
+            self.assertEqual(self.resolve("", {"HYPRHAND_BLENDER_OUTPUT_DIR": temp}), root.resolve())
+            self.assertEqual(self.resolve("/different/original.blend", {"HYPRHAND_BLENDER_OUTPUT_DIR": temp}), root.resolve())
 
     def test_unsaved_relative_missing_and_overwrite_rejected(self):
         with self.assertRaisesRegex(RuntimeError, "Save the room"):
             self.resolve("", {})
         with self.assertRaisesRegex(ValueError, "absolute"):
-            self.resolve("", {"DESKCTL_BLENDER_OUTPUT_DIR": "relative"})
+            self.resolve("", {"HYPRHAND_BLENDER_OUTPUT_DIR": "relative"})
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "already exist"):
-                self.resolve("", {"DESKCTL_BLENDER_OUTPUT_DIR": str(Path(temp) / "missing")})
+                self.resolve("", {"HYPRHAND_BLENDER_OUTPUT_DIR": str(Path(temp) / "missing")})
             with self.assertRaisesRegex(RuntimeError, "preserve"):
                 self.resolve(str(Path(temp) / "room-styled.blend"), {})
 

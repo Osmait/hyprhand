@@ -17,7 +17,7 @@ def main():
     for name in ("WAYLAND_SOCKET", "WAYLAND_DISPLAY", "DISPLAY",
                  "HYPRLAND_INSTANCE_SIGNATURE", "DBUS_SESSION_BUS_ADDRESS"):
         env.pop(name, None)
-    with tempfile.TemporaryDirectory(prefix="deskctl-keyboard-unit-") as directory:
+    with tempfile.TemporaryDirectory(prefix="hyprhand-keyboard-unit-") as directory:
         env["XDG_RUNTIME_DIR"] = directory
         generated = Path(directory)
         protocols = {

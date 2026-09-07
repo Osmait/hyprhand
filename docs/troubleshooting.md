@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Start with `deskctl --version` and `deskctl doctor --session NAME` from the original
+Start with `hyprhand --version` and `hyprhand doctor --session NAME` from the original
 owner's Hyprland terminal. Inspect `checks`, `display_matches`, `config_provider`,
 and dependency availability. `operation_verified: false` means a check has not
 executed the corresponding operation.
@@ -16,7 +16,7 @@ the result before deciding what action is still needed.
 | `MissingRuntimeDir`, missing display/instance | Run inside the original Hyprland session environment; do not invent socket names or use an unrelated `DISPLAY` |
 | `SessionRequired` | Add an explicit `--session host` or managed session name |
 | `ControlStopped` | Input is disabled. Enable only when the operator authorizes control; never override a human stop automatically |
-| `ControlBusy` | Another deskctl input action holds the action lock. Let it finish or stop it; do not delete locks to bypass serialization |
+| `ControlBusy` | Another hyprhand input action holds the action lock. Let it finish or stop it; do not delete locks to bypass serialization |
 | `StaleObservation` | Frame expired or relevant focus/layout changed. Focus the intended window, observe again, inspect the PNG, and use its new frame ID |
 | `FrameNotFound`, `InvalidFrameId` | Use the exact `frame.frame_id` from the selected session; old captures may have been collected |
 | `SessionMismatch` | The frame or runtime belongs to a different session/display. Obtain a new observation from the intended session |
@@ -28,7 +28,7 @@ the result before deciding what action is still needed.
 | `ContinuousScrollUnavailable` | Explicit continuous scrolling is unsupported on XWayland. Select wheel mode if suitable; verify visible results |
 | `HeadlessRenderUnavailable` | GPU buffer allocation failed. Read the reported session's `compositor.log`; use explicit nested mode or review the exact-version experimental bridge |
 | `SessionStartupFailed`, `SessionStartupTimeout`, `SessionConfigInvalid` | Read `compositor.log` at the session path. Check Hyprland/dependencies/config provider; create sessions from the original host to avoid overly long nested socket paths |
-| `PreviewHelperMissing` | Build `zig build pip` and install `deskctl-pip` beside the matching CLI |
+| `PreviewHelperMissing` | Build `zig build pip` and install `hyprhand-pip` beside the matching CLI |
 | `PreviewManagedSessionRequired` | Preview only accepts an explicit managed session, never `host` |
 | `PreviewIdentityMismatch` | The source ended or was recreated. Close the old viewer and explicitly open a new one |
 | Preview shows **No signal** | Source is locked/unavailable, capture failed, or the frame is stale. Inspect that session and `grim`; the old image is intentionally cleared |
@@ -55,12 +55,12 @@ onscreen with compositor bindings. Fullscreen stacking depends on Hyprland.
 
 ## Useful diagnostics for a report
 
-Include the source commit, deskctl/Zig/Python versions, distribution, Hyprland and
+Include the source commit, hyprhand/Zig/Python versions, distribution, Hyprland and
 Aquamarine versions, GPU, config provider, host/nested/headless mode, backend,
 and exact redacted reproduction steps. Record whether a bridge is loaded and
 whether the failure was seen by the application or only in command output.
 
-`deskctl logs --session NAME --limit 20` contains redacted action metadata.
+`hyprhand logs --session NAME --limit 20` contains redacted action metadata.
 `session inspect NAME`, `doctor`, compositor logs, and screenshots may reveal
 private paths or content; review them before sharing. Do not upload browser
 profiles, runtime authorization files, credentials, or unrelated desktop captures.

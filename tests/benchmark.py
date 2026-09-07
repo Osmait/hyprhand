@@ -11,7 +11,7 @@ parser.add_argument("--session", default="host")
 parser.add_argument("--samples", type=int, default=15)
 opt = parser.parse_args()
 assert 1 <= opt.samples <= 100
-binary = Path(__file__).resolve().parents[1] / "zig-out/bin/deskctl"
+binary = Path(__file__).resolve().parents[1] / "zig-out/bin/hyprhand"
 results = {}
 for command in ("state", "observe"):
     elapsed, capture = [], []

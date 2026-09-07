@@ -1,4 +1,4 @@
-# Contributing to deskctl
+# Contributing to hyprhand
 
 Thanks for helping improve local desktop automation. Issues, reproducible bug
 reports, documentation fixes, and focused pull requests are welcome. Use English
@@ -12,8 +12,8 @@ Install the [build dependencies](docs/dependencies.md), use Zig 0.16.0 from
 Hyprland desktop.
 
 ```sh
-git clone https://github.com/Osmait/computer-use-hyperland.git
-cd computer-use-hyperland
+git clone https://github.com/Osmait/hyprhand.git
+cd hyprhand
 git switch -c your-change
 zig build -Doptimize=ReleaseSafe
 zig build check -Doptimize=ReleaseSafe

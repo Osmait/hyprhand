@@ -15,10 +15,10 @@ focuses on the latest source; no long-term support or backport schedule is promi
 
 ## Trust model
 
-deskctl runs as the desktop user. A managed session isolates input and compositor
+hyprhand runs as the desktop user. A managed session isolates input and compositor
 routing, **not** files, credentials, network, or user permissions. `HOME` remains
 unchanged. Applications and other processes under the same user account are not
-mutually isolated by runtime directory permissions or deskctl authorization tokens.
+mutually isolated by runtime directory permissions or hyprhand authorization tokens.
 Those tokens are a cooperative control mechanism, not an authentication boundary
 against malicious same-user processes.
 
