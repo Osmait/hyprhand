@@ -14,6 +14,7 @@ first session. Commands and documentation refer to source version **0.4.0**.
 | [Troubleshooting](troubleshooting.md) | Common error codes, diagnosis and recovery |
 | [Compatibility](compatibility.md) | Tested environments and unverified configurations |
 | [Experimental bridges](experimental-bridges.md) | Headless format bridge and continuous cursor outline |
+| [Spreadsheet agent demo](../examples/spreadsheet/README.md) | Actual prompt submission, Calc formulas, formatting and a chart |
 | [Recorded agent demo](../examples/video/README.md) | Real prompt-to-desktop video, transcript and editing provenance |
 | [GTK note demo](../examples/gtk/README.md) | Reproduce typing, a guarded click, and visible verification |
 | [README images](images/README.md) | Screenshot provenance and reproduction details |

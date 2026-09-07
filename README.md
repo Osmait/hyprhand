@@ -15,22 +15,37 @@ Picture-in-Picture viewer lets you watch a managed session from your desktop.
 limited [compatibility matrix](docs/compatibility.md). Managed sessions isolate
 input; they share your user account's files, credentials, network, and permissions.
 
-## Watch an agent use deskctl
+## Watch an agent build a spreadsheet
 
-[![Watch the recorded agent demo: prompt, real desktop actions, and verified result](docs/video/poster.jpg)](docs/video/deskctl-agent-demo.mp4)
+![Animated recording: the real prompt is submitted to Codex, then the agent builds a spreadsheet in Calc](docs/video/spreadsheet-preview.gif)
 
-**[Watch or download the video](docs/video/deskctl-agent-demo.mp4)** ·
-[Exact task prompt](examples/video/prompt.txt) ·
-[Command transcript](examples/video/commands.json) ·
-[English subtitles](docs/video/deskctl-agent-demo.srt)
+The preview animates directly in this README. It shows the **actual prompt being
+submitted in Codex**, then a real LibreOffice Calc spreadsheet taking shape:
+data, achievement formulas, styled headers, totals, and a native column chart.
+The prompt plays at normal speed; the condensed desktop preview runs at 6× with
+waiting intervals cut. The final result is held for inspection.
 
-A separate agent received a task, read screenshots, replaced the note twice,
-clicked **Apply text**, verified both visible results, and stopped deskctl input.
-This is actual desktop capture. The opening prompt card and command labels are
-editorial additions; pauses are cut and the retained actions play at normal speed.
-See [recording details](examples/video/README.md) for the setup and edit timeline.
+**Full recording — play here without downloading:**
 
-[Try the note demo](#example-fill-and-apply-a-note) ·
+https://github.com/user-attachments/assets/6bec3e5d-d27e-45eb-9249-4bcdfbf353c4
+
+
+[Task prompt](examples/spreadsheet/prompt.txt) ·
+[Saved spreadsheet](examples/spreadsheet/launch-dashboard.ods) ·
+[Input data](examples/spreadsheet/data.csv) ·
+[Command transcript](examples/spreadsheet/commands.json) ·
+[MP4 file](docs/video/spreadsheet-agent-demo.mp4) ·
+[English subtitles](docs/video/spreadsheet-agent-demo.srt)
+
+The agent entered fictional data, calculated **1,980 signups / 1,700 target =
+116.47% achievement**, created the chart, saved the document, and stopped input.
+This demo uses Calc and needs no Google account. It uses real mouse and keyboard
+input; no spreadsheet API or generated workbook replaces the recorded actions.
+The full MP4 retains desktop segments at 2×. See the
+[recording guide](examples/spreadsheet/README.md) for the setup, verification and edit timeline.
+
+[Try the simpler note demo](#example-fill-and-apply-a-note) ·
+[Watch the earlier note recording](examples/video/README.md) ·
 [See the live viewer](#watch-and-stop-the-agent) ·
 [Explore the Blender example](#example-style-a-blender-room)
 

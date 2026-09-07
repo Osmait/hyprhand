@@ -47,6 +47,12 @@ DOCUMENTS = {relative: relative for relative in (
     "examples/video/commands.json", "examples/video/edit.json",
     "examples/video/recording.json", "docs/video/deskctl-agent-demo.mp4",
     "docs/video/deskctl-agent-demo.srt", "docs/video/poster.jpg",
+    "examples/spreadsheet/README.md", "examples/spreadsheet/prompt.txt",
+    "examples/spreadsheet/data.csv", "examples/spreadsheet/commands.json",
+    "examples/spreadsheet/edit.json", "examples/spreadsheet/recording.json",
+    "examples/spreadsheet/launch-dashboard.ods",
+    "docs/video/spreadsheet-agent-demo.mp4", "docs/video/spreadsheet-agent-demo.srt",
+    "docs/video/spreadsheet-preview.gif", "docs/video/spreadsheet-poster.jpg",
 )}
 
 

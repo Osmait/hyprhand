@@ -109,3 +109,26 @@ files and package link targets. Python/JSON syntax and the targeted credential/p
 scan passed across 125 text files; `git diff --check` also passed. The expanded
 archive payload is covered by packaging regressions; the earlier 37-file archive
 verification is not a rebuild of this final media payload.
+
+## Spreadsheet and inline-playback follow-up
+
+The subsequent spreadsheet demonstration records actual prompt entry and submission
+in Codex CLI 0.153.4, followed by a Calc dashboard built through deskctl. The saved
+ODS contains six monthly achievement formulas, SUM totals and a native two-series
+column chart. Independent inspection confirmed 1,980 signups, a target of 1,700
+and 116.47% overall achievement. The agent stopped input and the coordinator
+ended capture and destroyed its session.
+
+The 987.2-second source capture contains 9,872 frames and 184 forwarded commands,
+including failed probes/focus guards and recoveries. The published MP4 is 88.9
+seconds at 1080p, with retained desktop intervals at 2x. A 44.01-second GIF provides
+an automatic inline preview with desktop intervals at 6x. Both include the real
+prompt submission and the final chart; editorial crops and speed changes are
+explained in the [recording guide](../examples/spreadsheet/README.md).
+
+The README also embeds a GitHub-uploaded MP4 attachment. GitHub's own Markdown
+renderer returned a native video element, and the uploaded bytes matched the
+local MP4. The final video decoded completely, the GIF's animation/loop metadata
+was checked, and prompt/action/result frames passed visual inspection. Documentation
+validation covered 37 Markdown files and the expanded payload; all eight packaging
+regressions passed. This follow-up changes documentation and example media only.

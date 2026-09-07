@@ -1,0 +1,3100 @@
+[
+  {
+    "source_seconds": 39.786,
+    "command": [
+      "deskctl",
+      "--help",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 2,
+    "ok": false,
+    "status": null,
+    "error": "UnknownCommand",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 39.853,
+    "command": [
+      "deskctl",
+      "doctor",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": true
+  },
+  {
+    "source_seconds": 39.914,
+    "command": [
+      "deskctl",
+      "sessions",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 39.976,
+    "command": [
+      "deskctl",
+      "state",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 40.036,
+    "command": [
+      "deskctl",
+      "windows",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 55.85,
+    "command": [
+      "deskctl",
+      "help",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 2,
+    "ok": false,
+    "status": null,
+    "error": "UnknownCommand",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 55.913,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 56.023,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 79.733,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "LAUNCH DASHBOARD\nJanuary–June • Fictional demo\n\nMonth\tSignups\tTarget\tAchievement\nJan\t120\t100\t=B5/C5\nFeb\t180\t150\t=B6/C6\nMar\t260\t250\t=B7/C7\nApr\t340\t300\t=B8/C8\nMay\t460\t400\t=B9/C9\nJun\t620\t500\t=B10/C10\nTOTAL\t=SUM(B5:B10)\t=SUM(C5:C10)\t=B11/C11"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 79.843,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 95.762,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 123.634,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 124.084,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "706",
+      "--y",
+      "136"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 124.13,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+a",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 124.197,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "A5"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 124.263,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 124.328,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "Jan"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFocused",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 124.39,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFocused",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 124.457,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFocused",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 124.589,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 131.655,
+    "command": [
+      "deskctl",
+      "state",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 147.239,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 147.707,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+a",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 148.174,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "A5"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 148.643,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 149.175,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 164.211,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1266",
+      "--y",
+      "575"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFocused",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 164.84,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 170.945,
+    "command": [
+      "deskctl",
+      "windows",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 179.533,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 179.602,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 180.069,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 180.178,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 194.394,
+    "command": [
+      "deskctl",
+      "type",
+      "--text",
+      "A5",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 194.808,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 195.225,
+    "command": [
+      "deskctl",
+      "type",
+      "--text",
+      "Jan",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 195.644,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 196.061,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 196.525,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 211.631,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "708",
+      "--y",
+      "135"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 211.977,
+    "command": [
+      "deskctl",
+      "key",
+      "Home",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 212.345,
+    "command": [
+      "deskctl",
+      "key",
+      "shift+End",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 212.716,
+    "command": [
+      "deskctl",
+      "type",
+      "--text",
+      "A1:D11",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 213.083,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 213.451,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+1",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFocused",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 213.98,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 220.909,
+    "command": [
+      "deskctl",
+      "windows",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 240.049,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 240.414,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--window",
+      "<observed>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 240.781,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 241.149,
+    "command": [
+      "deskctl",
+      "type",
+      "--text",
+      "A1:D11",
+      "--window",
+      "<observed>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 241.516,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--window",
+      "<observed>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 241.925,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 248.18,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+1",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 248.597,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 255.893,
+    "command": [
+      "deskctl",
+      "windows",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 266.043,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 266.173,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 282.701,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "819",
+      "--y",
+      "299"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 283.712,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 299.428,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1140",
+      "--y",
+      "570"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 299.477,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+a",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 300.15,
+    "command": [
+      "deskctl",
+      "type",
+      "--text",
+      "12",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 300.883,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 317.17,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+a",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 318.244,
+    "command": [
+      "deskctl",
+      "type",
+      "--text",
+      "12",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 319.366,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 332.318,
+    "command": [
+      "deskctl",
+      "--session",
+      "sheet-demo",
+      "--help"
+    ],
+    "returncode": 2,
+    "ok": false,
+    "status": null,
+    "error": "UnknownCommand",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 343.285,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 343.501,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFound",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 343.723,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFound",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 343.998,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFound",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 344.218,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFound",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 344.435,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFound",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 344.649,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFound",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 344.865,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFound",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 345.079,
+    "command": [
+      "deskctl",
+      "key",
+      "BackSpace",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFound",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 345.295,
+    "command": [
+      "deskctl",
+      "type",
+      "--text",
+      "12",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 1,
+    "ok": false,
+    "status": null,
+    "error": "WindowNotFound",
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 346.22,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 355.593,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 355.663,
+    "command": [
+      "deskctl",
+      "accessibility",
+      "--window",
+      "<observed>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 367.971,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "909",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 368.866,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 389.11,
+    "command": [
+      "deskctl",
+      "drag",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "930",
+      "--y",
+      "97",
+      "--to-x",
+      "881",
+      "--to-y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 389.56,
+    "command": [
+      "deskctl",
+      "type",
+      "--text",
+      "12",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 390.128,
+    "command": [
+      "deskctl",
+      "key",
+      "Return",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 391.258,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 405.925,
+    "command": [
+      "deskctl",
+      "type",
+      "--text",
+      "\n",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 406.857,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 423.584,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "967",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 424.179,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 439.017,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "899",
+      "--y",
+      "302"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 439.803,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 456.35,
+    "command": [
+      "deskctl",
+      "drag",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "720",
+      "--y",
+      "169",
+      "--to-x",
+      "967",
+      "--to-y",
+      "169"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 456.938,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 476.481,
+    "command": [
+      "deskctl",
+      "drag",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1009",
+      "--y",
+      "169",
+      "--to-x",
+      "1090",
+      "--to-y",
+      "169"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 477.282,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 489.784,
+    "command": [
+      "deskctl",
+      "drag",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1220",
+      "--y",
+      "270",
+      "--to-x",
+      "1220",
+      "--to-y",
+      "390"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 490.488,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 503.941,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 526.488,
+    "command": [
+      "deskctl",
+      "drag",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "779",
+      "--y",
+      "135",
+      "--to-x",
+      "642",
+      "--to-y",
+      "135"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 527.036,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "D5:D11\n"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 527.963,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 545.091,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+z",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 545.384,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "710",
+      "--y",
+      "135"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 545.985,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 562.425,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "D5:D11\n"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 563.234,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 582.016,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1631",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 582.859,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "710",
+      "--y",
+      "135"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 583.256,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "A4:D4\n"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 583.885,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 599.662,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1010",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 600.362,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1193",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 600.862,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 615.188,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1507",
+      "--y",
+      "267"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 615.585,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 624.697,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1149",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 625.287,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 646.735,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1535",
+      "--y",
+      "230"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 647.594,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "710",
+      "--y",
+      "135"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 647.943,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "A11:D11\n"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 648.463,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 668.511,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1010",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 669.16,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1170",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 669.78,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1126",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 670.491,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "710",
+      "--y",
+      "135"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 670.888,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "A1:D1\n"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 671.5,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 687.556,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1010",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 688.216,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "967",
+      "--y",
+      "97"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 688.707,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 705.166,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "901",
+      "--y",
+      "527"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 705.934,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "710",
+      "--y",
+      "135"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 706.283,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "A4:C10\n"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 706.899,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 715.795,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1533",
+      "--y",
+      "58"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 717.089,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 717.157,
+    "command": [
+      "deskctl",
+      "windows",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 723.902,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 731.001,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 741.805,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "831",
+      "--y",
+      "425"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 742.411,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 761.445,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1260",
+      "--y",
+      "375"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 761.797,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "Signups vs target\tSix months of launch momentum\tMonth\tPeople"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 762.707,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 783.465,
+    "command": [
+      "deskctl",
+      "drag",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1397",
+      "--y",
+      "416",
+      "--to-x",
+      "1074",
+      "--to-y",
+      "416"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 783.817,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "Six months of launch momentum"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 784.641,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1664",
+      "--y",
+      "486"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 785.047,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 804.267,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1175",
+      "--y",
+      "495"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 804.617,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "People"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 805.399,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1738",
+      "--y",
+      "742"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 806.243,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 806.317,
+    "command": [
+      "deskctl",
+      "key",
+      "Escape",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 806.836,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 822.1,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "950",
+      "--y",
+      "600"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 822.696,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 838.791,
+    "command": [
+      "deskctl",
+      "drag",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1470",
+      "--y",
+      "279",
+      "--to-x",
+      "980",
+      "--to-y",
+      "465"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 839.485,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 859.754,
+    "command": [
+      "deskctl",
+      "drag",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1267",
+      "--y",
+      "790",
+      "--to-x",
+      "1334",
+      "--to-y",
+      "850"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 860.301,
+    "command": [
+      "deskctl",
+      "key",
+      "Escape",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 860.773,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+s",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 861.895,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 861.96,
+    "command": [
+      "deskctl",
+      "windows",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 867.409,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 876.284,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "<checkout>/output/sheet-video/workspace/launch-dashboard.ods"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 877.114,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 892.879,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1837",
+      "--y",
+      "42"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 893.924,
+    "command": [
+      "deskctl",
+      "windows",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 894.037,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 903.509,
+    "command": [
+      "deskctl",
+      "focus",
+      "<observed-window>",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 903.62,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 919.042,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "710",
+      "--y",
+      "135"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 919.393,
+    "command": [
+      "deskctl",
+      "type",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>",
+      "--text",
+      "A1\n"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 920.0,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "744",
+      "--y",
+      "25"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 920.495,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 937.986,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "810",
+      "--y",
+      "243"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 938.434,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+s",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 939.152,
+    "command": [
+      "deskctl",
+      "observe",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 959.523,
+    "command": [
+      "deskctl",
+      "click",
+      "--session",
+      "sheet-demo",
+      "--frame",
+      "<observed>",
+      "--x",
+      "1382",
+      "--y",
+      "430"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 959.871,
+    "command": [
+      "deskctl",
+      "key",
+      "ctrl+s",
+      "--session",
+      "sheet-demo",
+      "--window",
+      "<observed>"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "sent",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 960.342,
+    "command": [
+      "deskctl",
+      "stop",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": "stopped",
+    "error": null,
+    "control_enabled": null
+  },
+  {
+    "source_seconds": 960.412,
+    "command": [
+      "deskctl",
+      "doctor",
+      "--session",
+      "sheet-demo"
+    ],
+    "returncode": 0,
+    "ok": true,
+    "status": null,
+    "error": null,
+    "control_enabled": false
+  }
+]

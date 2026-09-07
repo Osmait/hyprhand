@@ -1,0 +1,5 @@
+Use deskctl computer use to turn this blank Calc sheet into a polished launch dashboard.
+
+Use this fictional demo data (Month, Signups, Target): Jan 120 100; Feb 180 150; Mar 260 250; Apr 340 300; May 460 400; Jun 620 500.
+
+Add an achievement formula for each month, totals, a clear title, styled headers, readable column widths, and a column chart comparing signups with target. Verify the totals and save launch-dashboard.ods. Use only real mouse and keyboard input. Follow AGENTS.md, then stop input when done.

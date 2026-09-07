@@ -105,6 +105,8 @@ Before publication, follow the [readiness report](../docs/open-source-readiness.
 `python3 scripts/check_docs.py` validates local documentation links and the package
 payload. Example/fixture guides and the skill instructions are included so those
 links work; source code, test runners and editable Blender scenes remain excluded.
-The four README images, recorded demo video, poster, subtitles and normalized
-provenance are included so the illustrated guide also works after extraction.
+The four README images, recorded demo videos, animated spreadsheet preview,
+posters, subtitles, saved Calc example and normalized provenance are included so
+the illustrated guide also works after extraction. GitHub attachment players need
+network access and repository access; the committed media provides local playback.
 Raw recordings and unredacted command logs remain excluded.
