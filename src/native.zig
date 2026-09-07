@@ -13,6 +13,7 @@ pub const c = @cImport({
     @cInclude("sys/wait.h");
     @cInclude("sys/syscall.h");
     @cInclude("sys/random.h");
+    @cInclude("sys/prctl.h");
     @cInclude("poll.h");
     @cInclude("fcntl.h");
     @cInclude("unistd.h");

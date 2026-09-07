@@ -1,5 +1,7 @@
 .zig-cache/
 zig-out/
+# Local demonstration renders and editable media exports, not project sources.
+/output/
 *.png
 !/habitacion-realista.png
 __pycache__/

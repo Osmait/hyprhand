@@ -30,6 +30,7 @@ class CLI(unittest.TestCase):
         self.outline_plugin = False
         self.xwayland = False
         self.x = -1280
+        self.client_size = [1280, 720]
         self.extra_clients = []
         self.layers = {}
         self.commands = []
@@ -79,7 +80,7 @@ else:
                                "x": self.x, "y": 100, "scale": 1.5, "transform": 0,
                                "activeWorkspace": {"id": 1, "name": "1"}, "focused": True}]
                 elif command == "clients":
-                    result = [{"address": self.address, "at": [self.x, 100], "size": [1280, 720],
+                    result = [{"address": self.address, "at": [self.x, 100], "size": self.client_size,
                                "workspace": {"id": 1, "name": "1"}, "xwayland": self.xwayland, "pid": 123}] + self.extra_clients
                 elif command == "activewindow":
                     result = {"address": self.active}
@@ -159,6 +160,29 @@ else:
             self.cli(*base, "--duration-ms", duration)
         for duration in ("1", "49", "10001"):
             self.error("InvalidDuration", *base, "--duration-ms", duration)
+
+    def test_explicit_scroll_mode_and_pointer_window(self):
+        f = self.frame()
+        base = ("scroll", "--frame", f["frame_id"], "--x", "100", "--y", "100", "--session", "host", "--dry-run")
+        for mode in ("auto", "wheel", "continuous"):
+            for duration in ("0", "500"):
+                self.cli(*base, "--scroll-mode", mode, "--duration-ms", duration, "--window", self.address)
+        self.error("InvalidScrollMode", *base, "--scroll-mode", "magic")
+        self.error("UnknownOption", "state", "--scroll-mode", "wheel")
+        self.error("WindowNotFound", *base, "--window", "0x999")
+        self.error("InvalidWindowAddress", *base, "--window", "not-an-address")
+
+    def test_doctor_distinguishes_prerequisites_from_verification(self):
+        env = dict(self.env)
+        env.pop("DBUS_SESSION_BUS_ADDRESS", None)
+        result = self.cli("doctor", env=env)
+        self.assertFalse(result["capabilities"]["accessibility"])
+        self.assertFalse(result["checks"]["accessibility"]["operation_verified"])
+        self.assertFalse(result["checks"]["managed_sessions"]["operation_verified"])
+        self.assertFalse(result["checks"]["managed_sessions"]["headless_gpu_verified"])
+        self.assertFalse(result["checks"]["input"]["pointer_protocol_available"])
+        self.assertTrue(result["checks"]["capture"]["prerequisites_available"])
+        self.assertFalse(result["checks"]["capture"]["operation_verified"])
 
     def test_outline_requires_plugin_and_fails_closed(self):
         self.cli("enable")
@@ -305,6 +329,17 @@ else:
         f = self.frame()
         self.cli("drag", "--session", "host", "--frame", f["frame_id"], "--x", "1", "--y", "1", "--to-x", "4", "--to-y", "5", "--dry-run")
         self.error("CoordinatesOutOfBounds", "drag", "--session", "host", "--frame", f["frame_id"], "--x", "1", "--y", "1", "--to-x", "nan", "--to-y", "5", "--dry-run")
+        self.assertFalse(any("dispatch" in cmd for cmd in self.commands))
+
+    def test_pointer_window_bounds_and_continuous_xwayland_preflight(self):
+        self.client_size = [100, 100]
+        f = self.frame()
+        self.error("PointerOutsideTarget", "click", "--session", "host", "--frame", f["frame_id"],
+                   "--x", "300", "--y", "300", "--window", self.address, "--dry-run")
+        self.xwayland = True
+        f = self.frame()
+        self.error("ContinuousScrollUnavailable", "scroll", "--session", "host", "--frame", f["frame_id"],
+                   "--x", "10", "--y", "10", "--scroll-mode", "continuous", "--dry-run")
         self.assertFalse(any("dispatch" in cmd for cmd in self.commands))
 
     def test_pointer_approach_duration_options_without_input(self):

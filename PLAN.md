@@ -1,4 +1,4 @@
-# deskctl 0.3 delivery
+# deskctl delivery ledger
 
 Scope: CLI only, no MCP. Preserve host configuration and user applications.
 
@@ -40,7 +40,38 @@ Scope: CLI only, no MCP. Preserve host configuration and user applications.
   the child compositor. NVIDIA 1920x1080 capture/click verified; Hyprlang/Lua
   lifecycle, private environment and cleanup tested.
 
+## 0.4 reliability delivery
+
+- [x] Revalidate scoped geometry/focus during pointer actions, excluding only
+  the current action's PID-owned aura; explicit pointer --window bounds.
+- [x] Abort on external cursor displacement before a subsequent warp. Live
+  geometry change prevented a pending click; injected drag interference
+  aborted and released the held button in the receiver.
+- [x] Native modifier key events plus resolved XKB masks, self-contained maps,
+  reverse-order cleanup and fake-wire cancellation/Unicode regressions.
+- [x] Independent --scroll-mode auto/wheel/continuous and duration; reject
+  unsupported explicit continuous XWayland input.
+- [x] Doctor separates prerequisites from operational verification; no default
+  claim that managed headless GPU creation or AT-SPI discovery was tested.
+- [x] PID/start/uid/pidfd-validated descendant teardown, bounded TERM/KILL,
+  launch/destroy lifecycle lock, Firefox profile override checks.
+- [x] Dependency manifest, local checksummed release archives, manual private
+  Actions artifacts workflow, Ubuntu build matrix, portable Blender output.
+- [x] Opt-in managed-only GTK modifier/scroll observer and reviewed live runner.
+- [x] Experimental bridge hardening: cursor invalidation/GL resource cleanup,
+  initialization rollback, ABI guards and installed checksum metadata. Compiled
+  and mock-tested; real long-running/animated GPU coverage remains below.
+
+- [x] Optional host PiP (`zig build pip`, `preview --session NAME`): native
+  Zig/GTK4 read-only viewer, cursor-inclusive in-memory capture, instance pinning,
+  bounded workers, stop without closing apps, viewer-only close, stale-frame
+  clearing, host floating/pinned/no-initial-focus rules. Worker regressions and
+  live Hyprlang 0.56.2 / GTK4 4.22.4 checks; see docs/preview.md.
+
 ## Explicit limitations, not claimed complete
+
+- [ ] PiP follow-ups: host Lua window-rule support, PipeWire/zero-copy higher-fps
+  streaming, high-DPI/fullscreen stacking and sustained performance coverage.
 
 - [ ] Outline production hardening: long-running/animated cursor coverage,
   all scales/rotations and Lua activation; host loading is deliberately manual.
@@ -58,9 +89,14 @@ Scope: CLI only, no MCP. Preserve host configuration and user applications.
 - Native capture remains deferred after measurement: grim observation median
   25.23 ms including CLI overhead. Native keyboard was worthwhile (40.36 ms
   versus helper 750.24 ms for the same 180-codepoint input in ReleaseSafe).
-- Remote CI execution requires publishing the repository; configuration is
-  supplied, but no remote run or passing badge is claimed.
+- Private repository created; initial 0.3 CI passed (run 34063137675).
+  The new 0.4 matrix and packaging workflow are not remotely verified yet.
 - Isolation is input/session isolation, not a filesystem or credential sandbox.
   Portals/systemd user services are not activated from the private bus.
+- Reparented unrecorded processes cannot safely be attributed after their
+  recorded parent has exited. No process-group-wide or username-wide killing.
+- AT-SPI remains read-only in the CLI; the experimental semantic background
+  probe is not a general-purpose automation backend.
+- No project license is selected; the repository owner must choose it.
 - Native owned-input cleanup cannot promise recovery from SIGKILL or compositor
   failure. X11 helpers remain external and lack the same cleanup guarantee.

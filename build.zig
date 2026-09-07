@@ -9,6 +9,18 @@ comptime {
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const pip_module = b.createModule(.{
+        .root_source_file = b.path("src/pip.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    pip_module.linkSystemLibrary("gtk4", .{});
+    pip_module.addIncludePath(b.path("src"));
+    pip_module.addCSourceFile(.{ .file = b.path("src/pip_gtk_check.c"), .flags = &.{"-std=c11"} });
+    const pip = b.addExecutable(.{ .name = "deskctl-pip", .root_module = pip_module });
+    const install_pip = b.addInstallArtifact(pip, .{});
+    b.step("pip", "Build optional read-only GTK4 session preview").dependOn(&install_pip.step);
     const plugin = b.addSystemCommand(&.{"sh"});
     // System headers/ABI may change outside Zig's dependency graph. Always
     // rerun these explicit optional builds, including the version checks.
@@ -17,6 +29,8 @@ pub fn build(b: *std.Build) void {
     plugin.addFileArg(b.path("experimental/cursor-outline/plugin.cpp"));
     const so = plugin.addOutputFileArg("deskctl-outline.so");
     const install_plugin = b.addInstallFileWithDir(so, .lib, "deskctl-outline.so");
+    const install_plugin_metadata = b.addInstallFileWithDir(so.dirname().path(b, "deskctl-outline.so.build-metadata"), .lib, "deskctl-outline.so.build-metadata");
+    install_plugin.step.dependOn(&install_plugin_metadata.step);
     b.step("cursor-plugin", "Build optional experimental Hyprland 0.56.2 outline bridge (never loads it)").dependOn(&install_plugin.step);
     const headless = b.addSystemCommand(&.{"sh"});
     headless.has_side_effects = true;
@@ -24,6 +38,8 @@ pub fn build(b: *std.Build) void {
     headless.addFileArg(b.path("experimental/headless-formats/bridge.cpp"));
     const headless_so = headless.addOutputFileArg("deskctl-headless-formats.so");
     const install_headless = b.addInstallFileWithDir(headless_so, .lib, "deskctl-headless-formats.so");
+    const install_headless_metadata = b.addInstallFileWithDir(headless_so.dirname().path(b, "deskctl-headless-formats.so.build-metadata"), .lib, "deskctl-headless-formats.so.build-metadata");
+    install_headless.step.dependOn(&install_headless_metadata.step);
     b.step("headless-bridge", "Build optional Aquamarine 0.15.0 format bridge (never loads it)").dependOn(&install_headless.step);
     const header = b.addSystemCommand(&.{ "wayland-scanner", "client-header" });
     header.addFileArg(b.path("protocols/wlr-virtual-pointer-unstable-v1.xml"));

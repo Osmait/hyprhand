@@ -1,9 +1,11 @@
 const std = @import("std");
-pub const Command = enum { doctor, state, monitors, windows, workspaces, sessions, session, launch, observe, focus, workspace, move, click, doubleclick, drag, scroll, type, key, stop, enable, wait, events, logs, gc, accessibility, _a11y, _cursor_probe };
+pub const Command = enum { doctor, state, monitors, windows, workspaces, sessions, session, launch, observe, preview, focus, workspace, move, click, doubleclick, drag, scroll, type, key, stop, enable, wait, events, logs, gc, accessibility, _a11y, _cursor_probe, _preview_frame, _preview_stop };
 pub const Args = struct {
     command: Command,
     session: []const u8 = "host",
     explicit_session: bool = false,
+    fps: u32 = 5,
+    expected_instance: ?[]const u8 = null,
     monitor: ?[]const u8 = null,
     window: ?[]const u8 = null,
     frame: ?[]const u8 = null,
@@ -24,6 +26,7 @@ pub const Args = struct {
     timeout_ms: u32 = 5000,
     stable_ms: u32 = 300,
     duration_ms: u32 = 500,
+    scroll_mode: []const u8 = "auto",
     move_duration_ms: ?u32 = null,
     no_aura: bool = false,
     indicator: []const u8 = "none",
@@ -63,9 +66,12 @@ fn allowed(a: Args, option: []const u8) bool {
     if (eq(option, "--indicator")) return cmd == .enable;
     if (eq(option, "--headless-bridge")) return cmd == .session;
     if (eq(option, "--dry-run")) return a.mutates() or cmd == .gc;
-    if (eq(option, "--monitor")) return cmd == .observe or cmd == .wait;
+    if (eq(option, "--monitor")) return cmd == .observe or cmd == .wait or cmd == .preview or cmd == ._preview_frame;
+    if (eq(option, "--fps")) return cmd == .preview;
+    if (eq(option, "--expected-instance")) return cmd == ._preview_frame or cmd == ._preview_stop;
     if (eq(option, "--scale")) return cmd == .observe;
-    if (eq(option, "--window")) return cmd == .type or cmd == .key or cmd == .wait or (cmd == .accessibility or cmd == ._a11y);
+    if (eq(option, "--window")) return a.pointer() or cmd == .type or cmd == .key or cmd == .wait or (cmd == .accessibility or cmd == ._a11y);
+    if (eq(option, "--scroll-mode")) return cmd == .scroll;
     if (eq(option, "--class") or eq(option, "--workspace")) return cmd == .wait;
     if (eq(option, "--frame") or eq(option, "--x") or eq(option, "--y")) return a.pointer();
     if (eq(option, "--move-duration-ms")) return a.pointer();
@@ -132,6 +138,18 @@ pub fn parse(argv: []const []const u8) !Args {
         i += 1;
         if (i >= argv.len) return error.MissingOptionValue;
         const v = argv[i];
+        if (eq(arg, "--fps")) {
+            a.fps = try std.fmt.parseInt(u32, v, 10);
+            continue;
+        }
+        if (eq(arg, "--expected-instance")) {
+            a.expected_instance = v;
+            continue;
+        }
+        if (eq(arg, "--scroll-mode")) {
+            a.scroll_mode = v;
+            continue;
+        }
         if (eq(arg, "--headless-bridge")) {
             a.headless_bridge = v;
             continue;
@@ -150,11 +168,19 @@ pub fn parse(argv: []const []const u8) !Args {
         } else if (eq(arg, "--monitor")) a.monitor = v else if (eq(arg, "--window")) a.window = v else if (eq(arg, "--class")) a.class = v else if (eq(arg, "--workspace")) a.workspace_id = try std.fmt.parseInt(i64, v, 10) else if (eq(arg, "--frame")) a.frame = v else if (eq(arg, "--text")) a.text = v else if (eq(arg, "--backend")) a.backend = v else if (eq(arg, "--x")) a.x = try std.fmt.parseFloat(f64, v) else if (eq(arg, "--y")) a.y = try std.fmt.parseFloat(f64, v) else if (eq(arg, "--to-x")) a.to_x = try std.fmt.parseFloat(f64, v) else if (eq(arg, "--to-y")) a.to_y = try std.fmt.parseFloat(f64, v) else if (eq(arg, "--scale")) a.scale = try std.fmt.parseFloat(f64, v) else if (eq(arg, "--dx")) a.dx = try std.fmt.parseInt(i32, v, 10) else if (eq(arg, "--dy")) a.dy = try std.fmt.parseInt(i32, v, 10) else if (eq(arg, "--timeout-ms")) a.timeout_ms = try std.fmt.parseInt(u32, v, 10) else if (eq(arg, "--stable-ms")) a.stable_ms = try std.fmt.parseInt(u32, v, 10) else if (eq(arg, "--duration-ms")) a.duration_ms = try std.fmt.parseInt(u32, v, 10) else if (eq(arg, "--limit")) a.limit = try std.fmt.parseInt(u32, v, 10) else if (eq(arg, "--depth")) a.depth = try std.fmt.parseInt(u32, v, 10) else if (eq(arg, "--older-than-ms")) a.older_than_ms = try std.fmt.parseInt(u32, v, 10) else if (eq(arg, "--button")) a.button = if (eq(v, "left")) 272 else if (eq(v, "right")) 273 else if (eq(v, "middle")) 274 else return error.InvalidButton;
     }
     if (!validName(a.session)) return error.InvalidSessionName;
+    if (!eq(a.scroll_mode, "auto") and !eq(a.scroll_mode, "wheel") and !eq(a.scroll_mode, "continuous")) return error.InvalidScrollMode;
     if (!eq(a.indicator, "none") and !eq(a.indicator, "outline")) return error.InvalidIndicator;
     if (a.headless_bridge) |path| {
         if (!std.fs.path.isAbsolute(path) or std.mem.indexOfAny(u8, path, " :\t\r\n\x00") != null or a.nested) return error.InvalidHeadlessBridge;
     }
     if (a.mutates() and !a.explicit_session) return error.SessionRequired;
+    if (a.command == .preview or a.command == ._preview_frame or a.command == ._preview_stop) {
+        if (!a.explicit_session) return error.SessionRequired;
+        if (eq(a.session, "host")) return error.PreviewManagedSessionRequired;
+        if (a.command != .preview and (a.expected_instance == null or a.expected_instance.?.len == 0)) return error.PreviewIdentityRequired;
+        if (a.command == ._preview_frame and a.monitor == null) return error.MonitorRequired;
+    }
+    if (a.fps < 1 or a.fps > 15) return error.InvalidPreviewFps;
     if (!std.math.isFinite(a.scale) or a.scale < 0.1 or a.scale > 2) return error.InvalidScale;
     if (a.dx < -100 or a.dx > 100 or a.dy < -100 or a.dy > 100) return error.InvalidScroll;
     if (a.timeout_ms < 1 or a.timeout_ms > 300_000 or a.stable_ms < 50 or a.stable_ms > 30_000 or (a.duration_ms < 50 and !(a.command == .scroll and a.duration_ms == 0)) or a.duration_ms > 10_000) return error.InvalidDuration;
@@ -192,4 +218,16 @@ test "strict options, sessions, and action arguments" {
     try std.testing.expectEqualStrings("--help", a.text.?);
     const launch = try parse(&.{ "launch", "--session", "agent", "--", "brave", "--incognito" });
     try std.testing.expectEqual(@as(usize, 2), launch.program.len);
+}
+
+test "preview is explicit, managed, bounded, and workers pin identity" {
+    try std.testing.expectError(error.SessionRequired, parse(&.{"preview"}));
+    try std.testing.expectError(error.PreviewManagedSessionRequired, parse(&.{ "preview", "--session", "host" }));
+    try std.testing.expectError(error.InvalidPreviewFps, parse(&.{ "preview", "--session", "agent", "--fps", "16" }));
+    try std.testing.expectError(error.PreviewIdentityRequired, parse(&.{ "_preview_stop", "--session", "agent" }));
+    try std.testing.expectError(error.MonitorRequired, parse(&.{ "_preview_frame", "--session", "agent", "--expected-instance", "one" }));
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "preview", "--session", "agent", "--expected-instance", "one" }));
+    const a = try parse(&.{ "preview", "--session", "agent", "--fps", "10", "--monitor", "HEADLESS-1" });
+    try std.testing.expectEqual(@as(u32, 10), a.fps);
+    try std.testing.expect(!a.mutates());
 }

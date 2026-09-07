@@ -101,6 +101,13 @@ pub const Pointer = struct {
     }
 
     pub fn click(self: *Pointer, button: u32) !void {
+        if (self.runtime) |rt| try rt.guard();
+        // The click itself may intentionally focus/open/close a window. Check
+        // immediately before dispatch, then finish its release/roundtrip even
+        // when that expected application action changes the snapshot.
+        const runtime = self.runtime;
+        self.runtime = null;
+        defer self.runtime = runtime;
         c.zwlr_virtual_pointer_v1_button(self.device, timestamp(), button, 1);
         c.zwlr_virtual_pointer_v1_frame(self.device);
         c.zwlr_virtual_pointer_v1_button(self.device, timestamp(), button, 0);

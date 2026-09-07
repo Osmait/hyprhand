@@ -1,15 +1,34 @@
 """Style the deskctl GUI-built room, preserving the original .blend file.
 
 Run in Blender's Python console using exec(compile(...)). No external assets.
+Outputs go beside the open .blend, or to the existing absolute directory in
+DESKCTL_BLENDER_OUTPUT_DIR. An unsaved scene requires that explicit directory.
+This script saves habitacion-realista.blend and configures the PNG output path;
+it does not render. Existing styled outputs may be replaced on reruns.
 Principled shader reference: https://docs.blender.org/api/main/bpy.types.ShaderNodeBsdfPrincipled.html
 """
 import bpy
 import math
+import os
 import random
 from pathlib import Path
 from mathutils import Vector
 
-ROOT = Path('/home/osmait/Projects/computer-use-hyperland')
+output_dir = os.environ.get('DESKCTL_BLENDER_OUTPUT_DIR')
+if output_dir:
+    ROOT = Path(output_dir).expanduser()
+    if not ROOT.is_absolute():
+        raise ValueError('DESKCTL_BLENDER_OUTPUT_DIR must be an absolute directory')
+    ROOT = ROOT.resolve()
+elif bpy.data.filepath:
+    ROOT = Path(bpy.data.filepath).resolve().parent
+else:
+    raise RuntimeError('Save the room first or set DESKCTL_BLENDER_OUTPUT_DIR')
+if not ROOT.is_dir():
+    raise ValueError('The Blender output directory must already exist')
+OUTPUT_BLEND = ROOT / 'habitacion-realista.blend'
+if bpy.data.filepath and OUTPUT_BLEND.resolve() == Path(bpy.data.filepath).resolve():
+    raise RuntimeError('Choose a different output directory to preserve the open .blend')
 random.seed(19)
 scene = bpy.context.scene
 assert '01 Suelo' in bpy.data.objects, 'Open the deskctl room first'
@@ -288,5 +307,5 @@ for screen in bpy.data.screens:
             a.spaces.active.region_3d.view_perspective='CAMERA'
             a.spaces.active.shading.color_type='MATERIAL'
             a.spaces.active.overlay.show_overlays=False
-bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/'habitacion-realista.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(OUTPUT_BLEND))
 print('DESKCTL_STYLE_READY',len(scene.objects),'objects',scene.cycles.device)

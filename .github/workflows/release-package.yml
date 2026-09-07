@@ -1,0 +1,61 @@
+name: Package Linux archives (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Build and upload private-repository Actions artifacts (no release or tag)
+        type: boolean
+        required: true
+        default: false
+      version:
+        description: Exact binary version, without v (for example 0.4.0)
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  package:
+    if: ${{ inputs.package == true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libwayland-bin libxkbcommon-dev libatspi2.0-dev libglib2.0-dev pkg-config libc6-dev python3 binutils curl xz-utils
+      - name: Zig 0.16.0 (pinned x86_64 checksum)
+        run: |
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz --output zig.tar.xz
+          echo '70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  zig.tar.xz' | sha256sum --check
+          zig_install=$(mktemp -d "$RUNNER_TEMP/zig-0.16.0.XXXXXX")
+          tar -xf zig.tar.xz --strip-components=1 -C "$zig_install"
+          echo "$zig_install" >> "$GITHUB_PATH"
+      - name: Packaging checks
+        run: python3 -m unittest discover -s packaging -p 'test_*.py' -v
+      - name: Build and validate archive
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+        run: |
+          python3 scripts/package-release.py --version "$PACKAGE_VERSION" --output "$RUNNER_TEMP/deskctl-release"
+          python3 scripts/verify-release.py "$RUNNER_TEMP"/deskctl-release/*.tar.gz
+      - name: Upload only archives and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: deskctl-${{ matrix.os }}-x86_64
+          path: |
+            ${{ runner.temp }}/deskctl-release/*.tar.gz
+            ${{ runner.temp }}/deskctl-release/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

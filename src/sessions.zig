@@ -37,12 +37,17 @@ fn named(rt: *Runtime, name: []const u8) ![]const u8 {
     if (!@import("args.zig").validName(name) or eq(u8, name, "host")) return error.InvalidSessionName;
     return std.fmt.allocPrint(rt.a, "{s}/{s}", .{ try root(rt), name });
 }
-fn startTime(rt: *Runtime, pid: c_int) ![]const u8 {
+const ProcStat = struct { start: u64, parent: c_int, state: u8, uid: c.uid_t };
+
+fn processStat(pid: c_int) !ProcStat {
     if (pid <= 1) return error.InvalidProcessIdentity;
-    const path = try std.fmt.allocPrintSentinel(rt.a, "/proc/{d}/stat", .{pid}, 0);
+    var path_buffer: [64]u8 = undefined;
+    const path = try std.fmt.bufPrintZ(&path_buffer, "/proc/{d}/stat", .{pid});
     const fd = c.open(path, c.O_RDONLY | c.O_CLOEXEC);
     if (fd < 0) return error.ProcessNotFound;
     defer _ = c.close(fd);
+    var st: c.struct_stat = undefined;
+    if (c.fstat(fd, &st) < 0) return error.InvalidProcessIdentity;
     var buffer: [8192]u8 = undefined;
     const n = c.read(fd, &buffer, buffer.len);
     if (n <= 0) return error.InvalidProcessIdentity;
@@ -50,29 +55,169 @@ fn startTime(rt: *Runtime, pid: c_int) ![]const u8 {
     const end = std.mem.lastIndexOfScalar(u8, data, ')') orelse return error.InvalidProcessIdentity;
     var fields = std.mem.tokenizeScalar(u8, data[end + 1 ..], ' ');
     const state = fields.next() orelse return error.InvalidProcessIdentity;
-    if (eq(u8, state, "Z") or eq(u8, state, "X")) return error.ProcessNotFound;
-    for (0..18) |_| _ = fields.next() orelse return error.InvalidProcessIdentity;
-    return rt.a.dupe(u8, fields.next() orelse return error.InvalidProcessIdentity);
+    if (state.len != 1) return error.InvalidProcessIdentity;
+    if (state[0] == 'Z' or state[0] == 'X') return error.ProcessNotFound;
+    const parent = try std.fmt.parseInt(c_int, fields.next() orelse return error.InvalidProcessIdentity, 10);
+    for (0..17) |_| _ = fields.next() orelse return error.InvalidProcessIdentity;
+    return .{ .start = try std.fmt.parseInt(u64, fields.next() orelse return error.InvalidProcessIdentity, 10), .parent = parent, .state = state[0], .uid = st.st_uid };
+}
+fn startTime(rt: *Runtime, pid: c_int) ![]const u8 {
+    return std.fmt.allocPrint(rt.a, "{d}", .{(try processStat(pid)).start});
 }
 fn alive(rt: *Runtime, process: Process) bool {
-    const actual = startTime(rt, process.pid) catch return false;
-    return eq(u8, actual, process.start);
+    _ = rt;
+    const actual = processStat(process.pid) catch return false;
+    const expected = std.fmt.parseInt(u64, process.start, 10) catch return false;
+    return actual.start == expected;
 }
-fn terminate(rt: *Runtime, process: Process) !void {
-    const fd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, process.pid, @as(c_uint, 0)));
+fn running(rt: *Runtime, session: Session) bool {
+    return !session.destroyed and alive(rt, session.compositor) and alive(rt, session.bus);
+}
+
+const Tracked = struct {
+    pid: c_int,
+    start: u64,
+    fd: c_int,
+    needs_resume: bool = false,
+
+    fn exited(self: Tracked) bool {
+        var pfd = c.struct_pollfd{ .fd = self.fd, .events = c.POLLIN, .revents = 0 };
+        return c.poll(&pfd, 1, 0) > 0 and (pfd.revents & c.POLLIN) != 0;
+    }
+
+    fn signal(self: Tracked, sig: c_int) !void {
+        if (c.syscall(c.SYS_pidfd_send_signal, self.fd, sig, @as(?*anyopaque, null), @as(c_uint, 0)) < 0 and c.__errno_location().* != c.ESRCH) return error.SessionStopFailed;
+    }
+
+    fn stat(self: Tracked) ?ProcStat {
+        if (self.exited()) return null;
+        const current = processStat(self.pid) catch return null;
+        if (current.start != self.start or current.uid != c.getuid()) return null;
+        return current;
+    }
+
+    fn freeze(self: *Tracked) !void {
+        const current = self.stat() orelse return;
+        if (current.state == 'T') return;
+        // Restore processes we stopped if collection fails partway through.
+        self.needs_resume = true;
+        try self.signal(c.SIGSTOP);
+        const deadline = native.nowMs() + 500;
+        while (native.nowMs() < deadline) {
+            const actual = self.stat() orelse return;
+            if (actual.state == 'T') return;
+            native.sleepMs(5);
+        }
+        return error.ProcessStopTimeout;
+    }
+};
+
+fn track(a: std.mem.Allocator, tree: *std.ArrayList(Tracked), pid: c_int, start: u64, parent: ?Tracked) !void {
+    for (tree.items) |item| if (item.pid == pid and item.start == start) return;
+    if (pid <= 1 or pid == c.getpid()) return error.UnsafeProcessTarget;
+    if (tree.items.len >= 4096) return error.ProcessTreeTooLarge;
+    const fd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, pid, @as(c_uint, 0)));
     if (fd < 0) {
         if (c.__errno_location().* == c.ESRCH) return;
         return error.ProcessMonitorFailed;
     }
-    defer _ = c.close(fd);
-    if (!alive(rt, process)) return error.ProcessIdentityMismatch;
-    if (c.syscall(c.SYS_pidfd_send_signal, fd, @as(c_int, c.SIGTERM), @as(?*anyopaque, null), @as(c_uint, 0)) < 0 and c.__errno_location().* != c.ESRCH) return error.SessionStopFailed;
-    var pfd = c.struct_pollfd{ .fd = fd, .events = c.POLLIN, .revents = 0 };
-    const end = native.nowMs() + 1500;
-    while (native.nowMs() < end) {
-        if (c.poll(&pfd, 1, 25) > 0) return;
+    var retained = false;
+    defer if (!retained) {
+        _ = c.close(fd);
+    };
+    const item = Tracked{ .pid = pid, .start = start, .fd = fd };
+    const actual = item.stat() orelse return;
+    if (parent) |p| {
+        // Both identities must still exist and the edge must still be true
+        // after opening the pidfd. A recycled PID is never a signal target.
+        if (actual.parent != p.pid or p.stat() == null) return;
     }
-    if (c.syscall(c.SYS_pidfd_send_signal, fd, @as(c_int, c.SIGKILL), @as(?*anyopaque, null), @as(c_uint, 0)) < 0 and c.__errno_location().* != c.ESRCH) return error.SessionStopFailed;
+    try tree.append(a, item);
+    retained = true;
+}
+
+fn collectTree(a: std.mem.Allocator, tree: *std.ArrayList(Tracked)) !void {
+    var index: usize = 0;
+    while (index < tree.items.len) : (index += 1) {
+        try tree.items[index].freeze();
+        const parent = tree.items[index];
+        if (parent.stat() == null) continue;
+        // Scan PPIDs, including children created by non-leader threads. No
+        // process-group, environment, executable-name, or UID-wide kills.
+        const proc = c.opendir("/proc") orelse return error.ProcessScanFailed;
+        defer _ = c.closedir(proc);
+        while (true) {
+            c.__errno_location().* = 0;
+            const entry = c.readdir(proc) orelse {
+                if (c.__errno_location().* != 0) return error.ProcessScanFailed;
+                break;
+            };
+            const name = std.mem.span(@as([*:0]const u8, @ptrCast(&entry.*.d_name)));
+            const pid = std.fmt.parseInt(c_int, name, 10) catch continue;
+            const stat = processStat(pid) catch continue;
+            if (stat.parent == parent.pid and stat.uid == c.getuid()) try track(a, tree, pid, stat.start, parent);
+        }
+    }
+}
+
+fn waitTree(tree: []const Tracked, timeout: i64) bool {
+    const deadline = native.nowMs() + timeout;
+    while (true) {
+        var all_exited = true;
+        for (tree) |item| if (!item.exited()) {
+            all_exited = false;
+            break;
+        };
+        if (all_exited) return true;
+        if (native.nowMs() >= deadline) return false;
+        native.sleepMs(10);
+    }
+}
+
+fn terminateTree(rt: *Runtime, roots: []const Process) !void {
+    var tree: std.ArrayList(Tracked) = .empty;
+    defer {
+        for (tree.items) |item| {
+            if (item.needs_resume) item.signal(c.SIGCONT) catch {};
+            _ = c.close(item.fd);
+        }
+        tree.deinit(rt.a);
+    }
+    for (roots) |process| {
+        if (!alive(rt, process)) continue;
+        // Even corrupted metadata must not stop the caller or its ancestors.
+        var ancestor = c.getpid();
+        while (ancestor > 1) {
+            if (ancestor == process.pid) return error.UnsafeProcessTarget;
+            ancestor = (try processStat(ancestor)).parent;
+        }
+        try track(rt.a, &tree, process.pid, try std.fmt.parseInt(u64, process.start, 10), null);
+    }
+    // Freeze and pin all roots and descendants before any parent can exit in
+    // response to TERM and orphan children. Holding pidfds protects escalation.
+    try collectTree(rt.a, &tree);
+    var index = tree.items.len;
+    while (index > 0) {
+        index -= 1;
+        try tree.items[index].signal(c.SIGTERM);
+        try tree.items[index].signal(c.SIGCONT);
+        tree.items[index].needs_resume = false;
+    }
+    if (waitTree(tree.items, 1500)) return;
+    // Also capture children forked during graceful shutdown when a validated
+    // parent is still alive. Already-reparented, unrecorded daemons cannot be
+    // safely attributed here; full containment requires a persistent supervisor.
+    try collectTree(rt.a, &tree);
+    index = tree.items.len;
+    while (index > 0) {
+        index -= 1;
+        try tree.items[index].signal(c.SIGKILL);
+    }
+    if (!waitTree(tree.items, 1500)) return error.SessionStopTimeout;
+}
+
+fn terminate(rt: *Runtime, process: Process) !void {
+    try terminateTree(rt, &.{process});
 }
 fn spawn(rt: *Runtime, env: *std.process.Environ.Map, argv: []const []const u8, output: []const u8) !Process {
     const fd = c.open(try rt.a.dupeZ(u8, output), c.O_WRONLY | c.O_APPEND | c.O_CREAT | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c_uint, 0o600));
@@ -106,7 +251,7 @@ pub fn load(rt: *Runtime, name: []const u8) !Session {
 pub fn route(rt: *Runtime, name: []const u8) !void {
     if (eq(u8, name, "host")) return;
     const session = try load(rt, name);
-    if (session.destroyed or !alive(rt, session.compositor) or !alive(rt, session.bus)) return error.SessionNotRunning;
+    if (!running(rt, session)) return error.SessionNotRunning;
     const env = try rt.a.create(std.process.Environ.Map);
     env.* = try rt.env.clone(rt.a);
     try env.put("XDG_RUNTIME_DIR", session.runtime);
@@ -259,6 +404,7 @@ fn create(rt: *Runtime, opt: Args) !void {
     // bar for direct Hyprland launch). No applications have been launched yet.
     _ = try ipc.request(rt.a, socket, "/dismissnotify -1");
     const session = Session{ .name = opt.name.?, .compositor = compositor, .bus = bus, .runtime = runtime, .instance = instance.?, .display = display, .dbus = dbus, .directory = dir, .nested = opt.nested, .registry = registry, .headless_bridge = opt.headless_bridge };
+    if (!running(rt, session)) return error.SessionStartupFailed;
     try save(rt, session);
     try rt.emit(.{ .ok = true, .session = session, .shared_cursor = false, .filesystem_sandbox = false, .control_enabled = false });
 }
@@ -266,22 +412,35 @@ fn create(rt: *Runtime, opt: Args) !void {
 pub fn command(rt: *Runtime, opt: Args) !void {
     if (eq(u8, opt.value.?, "create")) return create(rt, opt);
     var session = try load(rt, opt.name.?);
-    if (eq(u8, opt.value.?, "inspect")) return rt.emit(.{ .ok = true, .session = session, .running = !session.destroyed and alive(rt, session.compositor), .filesystem_sandbox = false });
+    if (eq(u8, opt.value.?, "inspect")) return rt.emit(.{ .ok = true, .session = session, .running = running(rt, session), .filesystem_sandbox = false });
     var scoped = rt.*;
     scoped.directory = session.directory;
     const lock = try scoped.lock();
     defer _ = c.close(lock);
-    const dir = c.opendir(try rt.a.dupeZ(u8, session.directory)) orelse return error.StateDirectoryFailed;
-    defer _ = c.closedir(dir);
-    while (c.readdir(dir)) |entry| {
-        const name = std.mem.span(@as([*:0]const u8, @ptrCast(&entry.*.d_name)));
-        if (!std.mem.startsWith(u8, name, "app-") or !std.mem.endsWith(u8, name, ".json")) continue;
-        const process = try rt.json(Process, try rt.read(try scoped.path(name), 4096));
-        if (alive(rt, process)) try terminate(rt, process);
+    // Creation and launch share this lock; metadata loaded before acquiring it
+    // may refer to an earlier incarnation of the same session name.
+    session = try load(rt, opt.name.?);
+    var roots: std.ArrayList(Process) = .empty;
+    defer roots.deinit(rt.a);
+    if (!session.destroyed) {
+        const dir = c.opendir(try rt.a.dupeZ(u8, session.directory)) orelse return error.StateDirectoryFailed;
+        defer _ = c.closedir(dir);
+        while (true) {
+            c.__errno_location().* = 0;
+            const entry = c.readdir(dir) orelse {
+                if (c.__errno_location().* != 0) return error.ProcessScanFailed;
+                break;
+            };
+            const name = std.mem.span(@as([*:0]const u8, @ptrCast(&entry.*.d_name)));
+            if (!std.mem.startsWith(u8, name, "app-") or !std.mem.endsWith(u8, name, ".json")) continue;
+            const process = try rt.json(Process, try rt.read(try scoped.path(name), 4096));
+            try roots.append(rt.a, process);
+        }
+        try roots.append(rt.a, session.compositor);
+        if (session.registry) |registry| try roots.append(rt.a, registry);
+        try roots.append(rt.a, session.bus);
+        try terminateTree(rt, roots.items);
     }
-    if (alive(rt, session.compositor)) try terminate(rt, session.compositor);
-    if (session.registry) |registry| if (alive(rt, registry)) try terminate(rt, registry);
-    if (alive(rt, session.bus)) try terminate(rt, session.bus);
     session.destroyed = true;
     try save(rt, session);
     try rt.emit(.{ .ok = true, .session_id = session.name, .status = "destroyed", .profiles_and_logs_retained = session.directory });
@@ -298,7 +457,7 @@ pub fn list(rt: *Runtime) !void {
         const name = std.mem.span(@as([*:0]const u8, @ptrCast(&item.*.d_name)));
         if (!@import("args.zig").validName(name)) continue;
         const session = load(rt, name) catch continue;
-        try entries.append(rt.a, .{ .id = session.name, .running = !session.destroyed and alive(rt, session.compositor), .shared_cursor = false, .nested = session.nested });
+        try entries.append(rt.a, .{ .id = session.name, .running = running(rt, session), .shared_cursor = false, .nested = session.nested });
     }
     try rt.emit(.{ .ok = true, .sessions = entries.items });
 }
@@ -311,10 +470,19 @@ pub fn launch(rt: *Runtime, opt: Args) !void {
     try argv.append(rt.a, opt.program[0]);
     const program = std.fs.path.basename(opt.program[0]);
     const dir = std.fs.path.dirname(rt.env.get("XDG_CONFIG_HOME").?).?;
+    var scoped = rt.*;
+    scoped.directory = dir;
+    const lock = try scoped.lock();
+    defer _ = c.close(lock);
+    const session = try rt.json(Session, try rt.read(try scoped.path("session.json"), 16384));
+    if (!eq(u8, session.name, opt.session) or !eq(u8, session.directory, dir) or
+        !eq(u8, session.runtime, rt.env.get("XDG_RUNTIME_DIR").?) or !eq(u8, session.instance, rt.instance) or
+        !running(rt, session)) return error.SessionNotRunning;
     if (std.mem.indexOf(u8, program, "brave") != null or std.mem.indexOf(u8, program, "chrom") != null) {
         for (opt.program[1..]) |arg| if (std.mem.startsWith(u8, arg, "--user-data-dir")) return error.ProfileOverrideDenied;
         try argv.appendSlice(rt.a, &.{ try std.fmt.allocPrint(rt.a, "--user-data-dir={s}/browser-profile", .{dir}), "--ozone-platform=wayland", "--no-first-run" });
     } else if (std.mem.indexOf(u8, program, "firefox") != null) {
+        for (opt.program[1..]) |arg| if (firefoxProfileOverride(arg)) return error.ProfileOverrideDenied;
         const profile = try std.fmt.allocPrint(rt.a, "{s}/firefox-profile", .{dir});
         try directory(rt, profile);
         try argv.appendSlice(rt.a, &.{ "--no-remote", "--profile", profile });
@@ -325,4 +493,23 @@ pub fn launch(rt: *Runtime, opt: Args) !void {
     errdefer terminate(rt, process) catch {};
     try std.Io.Dir.cwd().writeFile(rt.io, .{ .sub_path = try std.fmt.allocPrint(rt.a, "{s}/app-{s}.json", .{ dir, try rt.id() }), .data = try std.json.Stringify.valueAlloc(rt.a, process, .{}), .flags = .{ .exclusive = true } });
     try rt.emit(.{ .ok = true, .session_id = opt.session, .action = "launch", .process = process, .status = "started" });
+}
+
+fn firefoxProfileOverride(arg: []const u8) bool {
+    if (!std.mem.startsWith(u8, arg, "-")) return false;
+    const flag = std.mem.trimStart(u8, arg, "-");
+    const key = flag[0 .. std.mem.indexOfScalar(u8, flag, '=') orelse flag.len];
+    for ([_][]const u8{ "p", "profile", "profilemanager", "createprofile" }) |denied| {
+        if (std.ascii.eqlIgnoreCase(key, denied)) return true;
+    }
+    return false;
+}
+
+test "Firefox profile override aliases" {
+    for ([_][]const u8{ "-P", "--P=default", "-profile", "--profile=/tmp/shared", "--PROFILE", "-ProfileManager", "--CreateProfile=test" }) |arg| {
+        try std.testing.expect(firefoxProfileOverride(arg));
+    }
+    for ([_][]const u8{ "https://example.org/profile", "--private-window", "--", "-", "--new-window" }) |arg| {
+        try std.testing.expect(!firefoxProfileOverride(arg));
+    }
 }

@@ -4,20 +4,54 @@ permissions:
   contents: read
 jobs:
   linux:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: System dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwayland-dev libxkbcommon-dev libatspi2.0-dev libglib2.0-dev pkg-config
-      - name: Zig 0.16.0
         run: |
-          curl --fail --location https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz --output zig.tar.xz
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libwayland-bin libxkbcommon-dev libatspi2.0-dev libglib2.0-dev pkg-config libc6-dev python3 binutils curl xz-utils
+      - name: Zig 0.16.0 (pinned x86_64 checksum)
+        run: |
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz --output zig.tar.xz
           echo '70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  zig.tar.xz' | sha256sum --check
-          tar -xf zig.tar.xz
-          echo "$GITHUB_WORKSPACE/zig-x86_64-linux-0.16.0" >> "$GITHUB_PATH"
+          zig_install=$(mktemp -d "$RUNNER_TEMP/zig-0.16.0.XXXXXX")
+          tar -xf zig.tar.xz --strip-components=1 -C "$zig_install"
+          echo "$zig_install" >> "$GITHUB_PATH"
+      - name: Check toolchain pin
+        run: test "$(zig version)" = "$(tr -d '\n' < .zigversion)"
+      - name: Reliability contract tests (offline, no GUI)
+        run: python3 -B tests/fixtures/test_reliability_contract.py
       - run: zig fmt --check build.zig src
       - run: zig build test
-      - run: zig build -Doptimize=ReleaseSafe
+      - name: Keyboard unit tests (no Wayland connection)
+        run: python3 tests/keyboard_unit.py
+      - run: zig build -Doptimize=ReleaseSafe -Dcpu=baseline
+      - run: strip --strip-all zig-out/bin/deskctl
       - run: python3 tests/integration.py
-      - run: python3 -m py_compile tests/*.py
+      - name: Keyboard protocol tests (private fake Wayland socket)
+        run: python3 tests/keyboard_protocol.py
+      - name: Session lifecycle tests (private fixtures, no desktop)
+        run: python3 tests/session_lifecycle.py
+      - name: Preview worker tests (private fixtures, no GTK or desktop)
+        run: python3 tests/preview.py
+      - name: Optional GTK4 preview build and ABI check
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo apt-get install -y libgtk-4-dev
+          zig build pip -Doptimize=ReleaseSafe -Dcpu=baseline
+      - name: Packaging and Blender path checks (no Blender import or execution)
+        run: python3 -m unittest discover -s packaging -p 'test_*.py' -v
+      - run: python3 -m py_compile tests/*.py tests/fixtures/*.py scripts/*.py examples/blender/style_room.py
       - run: bash -n completions/deskctl.bash

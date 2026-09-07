@@ -1,4 +1,4 @@
-# deskctl 0.3
+# deskctl 0.4
 
 CLI local de **computer use para Linux/Hyprland**, desarrollada en Zig 0.16.
 Entrega JSON para agentes y scripts. Sin MCP, modelo de IA, portapapeles ni
@@ -16,6 +16,13 @@ general de un editor de video. [Evidencia y prueba reproducible](docs/background
 
 ## Estado de esta entrega
 
+La entrega 0.4 refuerza las acciones en curso: vuelve a validar el frame durante
+el movimiento, aborta ante interferencias con el cursor, envía teclas físicas de
+modificadores además de sus máscaras XKB, separa el tipo de scroll de su duración
+y destruye árboles de procesos propios con identidades verificadas.
+[Dependencias](docs/dependencies.md), [compatibilidad](docs/compatibility.md) y
+[empaquetado verificable](packaging/README.md).
+
 | Área | Implementado |
 | --- | --- |
 | Observación | Estado, ventanas, monitores, workspaces, PNG con contrato de coordenadas |
@@ -23,6 +30,7 @@ general de un editor de video. [Evidencia y prueba reproducible](docs/background
 | Robustez | Frames caducables, bloqueo entre acciones, control habilitable, parada, señales y verificación continua de foco/bloqueo |
 | Sincronización | Esperas por foco, ventana, workspace, estabilidad geométrica o de píxeles; eventos NDJSON |
 | Sesiones | Crear, inspeccionar, listar, lanzar apps y destruir; modo anidado y headless con detección de incompatibilidad |
+| PiP opcional | Visor GTK4 flotante del background, solo lectura, cursor visible y parada de entrada sin cerrar apps |
 | Accesibilidad | Árbol AT-SPI de solo lectura, límites de profundidad/nodos/tiempo y omisión de campos de contraseña |
 | Mantenimiento | Auditoría sin texto escrito, rotación, limpieza de capturas, instalación, Bash/Fish, CI y skill |
 
@@ -59,8 +67,29 @@ skills, solo si el destino todavía no existe:
 ln -s "$HOME/.local/share/deskctl/skills/deskctl" "$HOME/.codex/skills/deskctl"
 ```
 
-No se modifica tu configuración de Hyprland ni se necesitan credenciales de IA.
+No se editan archivos de configuración de Hyprland ni se necesitan credenciales de IA.
 El agente externo necesita una herramienta para visualizar las imágenes.
+
+## Ver al agente en segundo plano
+
+```sh
+# Componente opcional: requiere GTK4 >= 4.8 y sus headers.
+zig build pip -Doptimize=ReleaseSafe
+./zig-out/bin/deskctl preview --session agent --fps 5
+```
+
+La sesión `agent` debe estar creada y en ejecución. El PiP aparece en el host,
+sin bordes ni barras separadas: imagen completa y controles superpuestos.
+Arrastra la imagen para moverlo y su esquina inferior derecha para redimensionar.
+Es flotante y queda fijado entre workspaces. No envía clics ni
+teclado al agente y no solicita el foco al abrirse. **Cerrar el visor no detiene
+al agente**; **Detener agente** deshabilita la entrada de deskctl, sin cerrar apps
+ni cancelar procesos externos. Una sesión bloqueada o perdida borra la imagen.
+
+Primera versión: host Hyprlang (probado en 0.56.2), capturas de hasta 960×540 a
+1–15 fps, 5 por defecto. Añade reglas temporales solo para su ventana, sin editar
+tu configuración. GTK no se añade como dependencia de la CLI principal.
+[Uso, arquitectura, pruebas y límites](docs/preview.md).
 
 ## Flujo básico en el escritorio actual
 
@@ -81,6 +110,15 @@ deskctl stop --session host
 
 La dirección se descubre en `windows` o `state`; no es un título de ventana.
 `type` y `key` requieren que esa ventana siga enfocada.
+Los comandos de puntero también aceptan `--window DIRECCION_REAL`: el punto
+inicial debe estar dentro de esa ventana enfocada. Sin esta opción se protege
+el foco observado inicialmente. Enfoca el destino **antes** de capturar: si el
+foco o la geometría relevante cambian durante la aproximación, se aborta.
+Esto puede cancelar recorridos con foco al pasar el mouse; no se ignora esa
+interrupción de seguridad. Una nueva acción requiere una observación nueva.
+Un arrastre que mueva o redimensione la ventana del compositor puede invalidar
+su propio frame y abortar. Los arrastres dentro del contenido no cambian por sí
+solos esa geometría; no se promete arrastre libre de ventanas con esta guarda.
 `--dry-run` valida sin inyectar entrada, incluso con el control detenido.
 Una respuesta `status: sent` no demuestra el resultado de la aplicación:
 **observar → actuar → observar y verificar**.
@@ -105,8 +143,10 @@ deskctl move --session host --frame FRAME_ID --x 620 --y 340 --move-duration-ms 
 solo la aproximación sin pulsar; `--duration-ms` (500 por defecto) controla el
 recorrido suave con el botón pulsado. Las duraciones son objetivos, no garantías
 de tiempo real. Cada paso mantiene las comprobaciones de parada/señal/bloqueo y
-verifica la posición recibida; una posición restringida por el compositor (por
-ejemplo, en un hueco entre monitores) aborta con `CursorPositionMismatch`.
+verifica la posición antes y después del movimiento. Si otro dispositivo mueve
+el cursor, una aplicación lo recentra o el compositor restringe la posición,
+se aborta con `CursorPositionMismatch`; no se intenta luchar por el cursor.
+No es una garantía de exclusión atómica frente a entrada simultánea.
 
 El movimiento pasa por las superficies intermedias y puede activar efectos
 hover o foco al pasar el mouse, según tu configuración. Sigue compartiendo
@@ -115,20 +155,25 @@ mouse/foco en `host`: no implica aislamiento ni arbitraje con el mouse humano.
 ## Scroll progresivo
 
 El scroll nativo reparte el desplazamiento con aceleración y frenado durante
-500 ms por defecto. `--duration-ms` acepta `0` (rueda discreta anterior) o
-`50..10000`; `--move-duration-ms` sigue controlando solo la aproximación.
+500 ms por defecto. `--duration-ms` acepta `0` o `50..10000`;
+`--move-duration-ms` sigue controlando solo la aproximación.
+`--scroll-mode auto` conserva el comportamiento anterior: continuo con duración,
+rueda con duración cero. `wheel` permite rueda discreta pausada y `continuous`
+mantiene distancias continuas incluso con duración cero.
 
 ```sh
 deskctl scroll --session host --frame FRAME_ID --x 620 --y 340 --dy 5 --duration-ms 800
 deskctl scroll --session host --frame FRAME_ID --x 620 --y 340 --dy -5 --duration-ms 0
+deskctl scroll --session host --frame FRAME_ID --x 620 --y 340 --dy 5 --scroll-mode wheel --duration-ms 800
 ```
 
 Conserva el desplazamiento acumulado y comprueba parada, señal, bloqueo,
 foco y posición del cursor entre eventos. La cancelación nativa emite fin de
 eje; no deshace lo ya desplazado. Las apps deciden su escala e inercia, por lo
 que no se promete la misma distancia visual que con la rueda discreta.
-XWayland distribuye botones XTEST enteros: no ofrece subpíxeles ni la misma
-garantía de limpieza que el backend nativo.
+XWayland distribuye botones XTEST enteros en `auto`/`wheel`: no ofrece subpíxeles
+ni la misma garantía de limpieza que el backend nativo. Rechaza `continuous`
+explícito con `ContinuousScrollUnavailable`.
 
 ## Aura continua sobre el cursor real (experimental)
 
@@ -219,7 +264,9 @@ El bus privado no activa servicios/portales del usuario; algunas funciones de
 portales, integración de escritorio y selectores de archivos pueden no funcionar.
 
 `destroy` termina las aplicaciones registradas, el compositor y su registro
-AT-SPI/bus, verificando PID y tiempo de inicio mediante pidfd. Conserva perfiles
+AT-SPI/bus, junto con descendientes todavía atribuibles. Verifica UID, PID y
+tiempo de inicio mediante pidfd; coordina lanzamientos y destrucción con un
+bloqueo de ciclo de vida y confirma la salida tras TERM/KILL acotados. Conserva perfiles
 y logs en la ruta indicada, normalmente hasta cerrar la sesión Linux.
 Los descendientes que deliberadamente se independicen de su aplicación no
 constituyen una frontera de procesos controlada por deskctl.
@@ -328,6 +375,10 @@ bind = SUPER SHIFT, Escape, exec, /ruta/absoluta/deskctl stop --session host
 ```sh
 zig build test
 zig build integration -Doptimize=ReleaseSafe
+python3 tests/keyboard_unit.py
+python3 tests/keyboard_protocol.py
+python3 tests/session_lifecycle.py
+python3 -m unittest discover -s packaging -p 'test_*.py'
 python3 tests/benchmark.py --session host
 
 # Opt-in: crean ventanas temporales y emiten entrada real.
@@ -347,10 +398,16 @@ deskctl session destroy prueba
 ```
 
 Las gráficas requieren Python GObject/GTK4. La suite simulada no emite entrada.
-CI compila ReleaseSafe y ejecuta las pruebas sin escritorio; su ejecución remota
-queda pendiente de subir el repositorio.
+`tests/live_reliability.py` verifica eventos nativos en un fixture ya abierto en
+una sesión gestionada explícita; no habilita control. Su modo puntero exige
+revisar una captura nueva antes de cada acción. Consulta las instrucciones en
+`tests/fixtures/reliability.py`.
+CI compila ReleaseSafe y ejecuta pruebas sin escritorio en una matriz Ubuntu
+22.04/24.04. El primer CI remoto de 0.3 pasó; la nueva matriz 0.4 necesita su
+propia ejecución remota y no se considera validada por aquel resultado.
+[Registro de fiabilidad 0.4](docs/reliability-040.md).
 
-Verificación local: 16 pruebas unitarias, 33 de integración; fixtures reales
+Verificación histórica de 0.3: 16 pruebas unitarias, 33 de integración; fixtures reales
 Wayland, XWayland y Lua; arrastre/doble clic, cancelación y liberación observable,
 AT-SPI, ciclo de vida sin procesos propios vivos tras destruir, y aislamiento
 del cursor/foco del host durante entrada en la sesión anidada. La skill fue

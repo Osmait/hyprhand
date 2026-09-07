@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "title": "Design System: deskctl borderless PiP",
+  "extensions": {
+    "native": {
+      "platform": "Linux / Hyprland",
+      "toolkit": "GTK4",
+      "sources": ["src/pip.zig", "src/pip.css", "src/pip_gtk.h", "src/preview.zig"],
+      "surfaceContract": ".impeccable/surfaces/src-pip-zig.md",
+      "geometry": {
+        "defaultSize": [640, 360],
+        "minimumSizeRequest": [360, 203],
+        "unit": "GTK logical pixel",
+        "image": "Full-window contain-fit, no allocation reserved for controls",
+        "top": "Session identity and close over a contrast-protecting scrim",
+        "bottom": "Status, stop and 32px resize grip over a contrast-protecting scrim"
+      },
+      "decoration": "No window border, rounding, shadow, title bar or allocated footer",
+      "interaction": {
+        "move": "Drag non-control image content using GtkWindowHandle",
+        "resize": "Drag southeast grip; compositor move/resize shortcuts remain available",
+        "close": "Viewer only; agent continues",
+        "stop": "Disable source deskctl input without closing applications",
+        "keyboard": "Focusable close/stop with explicit visible outline",
+        "forwardInput": false
+      },
+      "typography": "Native font family, 12px labels; bounded text with full tooltips",
+      "freshness": "Unchanged protocol age checks and stale-image clearing",
+      "evidence": [
+        ".impeccable/review/borderless-wide.png",
+        ".impeccable/review/borderless-small.png"
+      ]
+    }
+  }
+}

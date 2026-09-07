@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "distribution": "Linux binary linked against system libraries; not a universal portable or static binary",
+  "bundled_system_libraries": false,
+  "build": {
+    "zig": "0.16.0",
+    "tools": ["pkg-config", "wayland-scanner", "C headers and libc development files"],
+    "pkg_config_modules": ["wayland-client", "xkbcommon", "atspi-2", "gobject-2.0"]
+  },
+  "packaging_tools": ["python3 >= 3.11 (CI uses 3.12)", "git", "readelf and strip (binutils)"],
+  "runtime": {
+    "platform": "Linux with pidfd support (kernel 5.3+), matching ELF loader and library ABIs",
+    "compositor": "Hyprland with the required IPC and Wayland protocols; see docs/compatibility.md",
+    "system_libraries": ["libc", "libwayland-client", "libxkbcommon", "libatspi", "GLib/GObject", "D-Bus and other transitive system dependencies"],
+    "native_keyboard_keymaps": "Self-contained maps require libxkbcommon, but not xkeyboard-config data files or /usr/share/X11/xkb; external helpers may have their own requirements",
+    "helpers": [
+      {"command": "grim", "required_for": "screenshots"},
+      {"command": "xdotool", "required_for": "XWayland keyboard and scroll; matching X11 DISPLAY and XWayland server"},
+      {"command": "wtype", "required_for": "explicit helper keyboard backend on Wayland"},
+      {"command": "Hyprland", "required_for": "creating managed sessions"},
+      {"command": "dbus-daemon", "required_for": "private D-Bus in managed sessions"},
+      {"command": "at-spi2-registryd", "required_for": "AT-SPI in managed sessions; accessible application widgets also required"}
+    ]
+  },
+  "optional_components_not_bundled": {
+    "session_preview": "zig build pip: deskctl-pip beside deskctl; GTK4 >= 4.8 development/runtime libraries, grim; host Hyprlang window rules (tested on Hyprland 0.56.2). Not included in the default CLI archive",
+    "headless_bridge": "Local C++23 build against Aquamarine 0.15.0, pixman and libdrm; restricted Hyprland 0.56.2 stack; parent Wayland renderer required",
+    "cursor_outline": "Local C++23 build with exact Hyprland 0.56.2 headers and matching ABI; OpenGL and Hyprlang activation only",
+    "live_test_fixtures": "Python GI, GTK4 and AT-SPI; opt-in, never run by packaging or CI",
+    "blender_example": "Blender with the original deskctl room open; not bundled or executed by packaging"
+  }
+}

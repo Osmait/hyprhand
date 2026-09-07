@@ -1,0 +1,104 @@
+# Host Picture-in-Picture
+
+Build the CLI and the optional native Zig/GTK4 viewer:
+
+```sh
+zig build -Doptimize=ReleaseSafe
+zig build pip -Doptimize=ReleaseSafe
+zig-out/bin/deskctl preview --session agent
+# Explicit output and maximum frame frequency:
+zig-out/bin/deskctl preview --session agent --monitor HEADLESS-1 --fps 10
+```
+
+Requires an **existing, running managed session**, GTK4 >= 4.8 (headers and
+pkg-config for building), and grim. Keep `deskctl-pip` beside the matching
+`deskctl` binary. The default CLI build/archive does not depend on or include
+GTK4. The optional build verifies its narrow FFI declarations against the
+installed GTK headers; application and viewer logic remain Zig.
+
+This first version requires **Hyprlang on the host**; floating/pinned rules were
+tested on Hyprland 0.56.2. It fails explicitly on Lua rather than opening an
+unconfigured window. The source session may use either supported provider.
+
+## Behavior
+
+- A borderless, movable, resizable GTK window lives on the host. Its image fills
+  the window with status and controls overlaid on contrast-protecting scrims.
+  Drag the image to move, drag the lower-right grip to resize, or use the
+  compositor's normal move/resize bindings. It is floating and pinned across
+  workspaces; fullscreen stacking remains subject to the compositor.
+- No title bar, footer allocation, window border or shadow surrounds the image.
+  Default size is 640 × 360, minimum 360 × 203. The source aspect ratio is
+  preserved; mismatched window/source proportions can still cause letterboxing.
+  Close and stop stay visible and keyboard-focusable. Truncated session/status
+  text has its full description in a tooltip. Styles affect only this viewer.
+- It does not request activation on opening or follow pointer hover. Clicking
+  its controls can focus the viewer normally, but never forwards input to the
+  source. The host's input authorization token is never enabled or changed.
+- The image includes the source cursor, preserves aspect ratio and updates at
+  up to 5 fps by default (configurable 1–15). Captures fit within 960 × 540;
+  resizing the viewer does not increase source resolution. This is a monitoring
+  preview, not full-frame-rate video streaming or a precise editing viewport.
+- **Detener agente** disables deskctl input in that source. It cancels guarded
+  deskctl actions, not the model, shell jobs, rendering, or other automation
+  that bypasses deskctl. Applications remain open. There is no resume button.
+- Closing the PiP or interrupting its foreground CLI closes **only the viewer**.
+  Source applications and the input token remain unchanged. A stop already
+  requested is allowed to complete during normal close.
+- `Control habilitado` describes permission, not proof that an agent is busy.
+  Stop is acknowledged only after its worker succeeds. External authorized
+  re-enabling is reflected by subsequent fresh frames; the viewer never enables.
+- Disconnection, a locked source, invalid frames, or capture failure clear the
+  image and show `Sin señal`. A two-second freshness limit prevents a frozen
+  screenshot being labeled live. Retries are serialized, at most one per second
+  after failure. A viewer never attaches to a recreated session of the same name:
+  close it and explicitly open a new preview.
+
+## Implementation and limits
+
+The GTK process keeps the host environment. Separate bounded CLI workers route
+to the managed session and validate its original compositor instance. Frames
+use a memfd and pipes, not screenshot/history files. Each grim invocation has
+a 1.5-second deadline and is reaped on cancellation. Headers, PNG dimensions,
+byte size and monotonic timestamps are checked before GTK decodes an image.
+There is no image input handler, virtual keyboard or pointer device in the viewer.
+
+This implementation uses repeated compressed screenshots, not PipeWire or GPU
+zero-copy streaming. Expect latency, GTK memory overhead and CPU usage that
+increase with frame rate. Capture authorization and privacy obey the existing
+session-lock checks; this is not a filesystem/credential sandbox.
+
+The launcher adds a uniquely named, exact-class host rule for its own window.
+It disables that rule on normal exit/failure without editing configuration files
+or reloading the user's config. The inactive named entry lasts until the next
+normal compositor config reload. SIGKILL/crashes of the launcher can leave its
+rule enabled; it only matches that launcher's unique viewer class. Rules are not
+a substitute for a compositor-level security boundary.
+
+## Verification
+
+```sh
+zig build test integration
+python3 tests/preview.py
+zig build pip -Doptimize=ReleaseSafe
+```
+
+Worker tests use fake IPC, managed metadata and disposable processes, without a
+desktop: identity mismatch, missing outputs, lock-before/after capture, bounded
+PNG, memory-only capture, timeout/cancel reaping, and stop-with-apps-alive.
+
+Manual native checks on Hyprland 0.56.2 / GTK 4.22.4: live source text and cursor,
+floating/pinned flags, unchanged Brave focus, 640 × 360 and 360 × 203 layouts,
+viewer termination leaving source enabled, accessible stop disabling source
+input with its application alive, and source destruction clearing the preview.
+No claim of cross-distro GUI, high-DPI, fullscreen or sustained performance
+coverage is made by these checks.
+
+Borderless revision: verified over a room-image application at both new sizes,
+with accessible close/stop labels and scoped border/shadow suppression. In a
+separate disposable compositor, dragging the image changed the window position
+and dragging the grip began resizing. The deskctl frame guard then aborted each
+automated drag when geometry changed, as intended; it was not weakened. Stop
+through the overlay disabled only the source, left its two applications alive,
+and left host authorization disabled. Closing the isolated viewer left the
+source applications alive. The source and test compositor were then cleaned up.

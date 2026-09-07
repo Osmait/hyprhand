@@ -9,10 +9,11 @@ const motion = @import("motion.zig");
 const Aura = @import("aura.zig").Aura;
 const operations = @import("operations.zig");
 const sessions = @import("sessions.zig");
+const preview = @import("preview.zig");
 const Keyboard = @import("keyboard.zig").Keyboard;
 
 const help =
-    \\deskctl 0.3.0 — computer use for Hyprland (Zig 0.16, Linux)
+    \\deskctl 0.4.0 — computer use for Hyprland (Zig 0.16, Linux)
     \\
     \\All commands accept --session NAME (default host). Input REQUIRES it.
     \\JSON output; events emits NDJSON. No MCP server or AI model.
@@ -34,7 +35,8 @@ const help =
     \\  move --frame ID --x X --y Y
     \\  click|doubleclick --frame ID --x X --y Y [--button left|right|middle]
     \\  drag --frame ID --x X --y Y --to-x X --to-y Y [--duration-ms 500]
-    \\  scroll --frame ID --x X --y Y [--dy STEPS] [--dx STEPS] [--duration-ms 500]
+    \\  scroll --frame ID --x X --y Y [--dy STEPS] [--dx STEPS]
+    \\    [--scroll-mode auto|wheel|continuous] [--duration-ms 500]
     \\  type --window ADDRESS --text TEXT [--backend auto|native|helper]
     \\  key CHORD --window ADDRESS [--backend auto|native|helper]
     \\
@@ -44,12 +46,17 @@ const help =
     \\  session inspect NAME
     \\  session destroy NAME       Closes tracked apps; retains profiles and logs
     \\  launch --session NAME -- PROGRAM ARGUMENTS...
+    \\  preview --session NAME [--monitor NAME] [--fps 1..15]
+    \\    Optional GTK4 host PiP; read-only, close leaves agent running.
     \\
     \\Input accepts --dry-run. Coordinates are screenshot pixels, not desktop pixels.
     \\Pointer approach is smooth (auto 200..600ms); --move-duration-ms 50..10000
     \\overrides it for move/click/doubleclick/scroll/drag. Use 0 for instant approach.
     \\Drag --duration-ms controls the separate, smooth button-held segment.
-    \\Scroll is progressive; --duration-ms 0 restores discrete wheel input.
+    \\Scroll mode and pacing are independent; auto keeps legacy behavior.
+    \\Wheel supports smooth pacing; continuous is unavailable on XWayland.
+    \\Pointer actions accept --window ADDRESS and guard initial focus/layout.
+    \\Focus the destination window before observing; changes during approach abort.
     \\Outline requires the optional Hyprland plugin, never auto-loaded.
     \\Pointer actions show a blue, click-through halo; --no-aura disables it.
     \\Frames expire after 30s or layout/focus changes. Observe again after each action.
@@ -85,10 +92,41 @@ const Snapshot = struct {
 };
 
 fn snapshot(rt: *Runtime, scope: ?[]const u8) !Snapshot {
+    return snapshotForAction(rt, scope, false);
+}
+
+// Do not trust a namespace alone: only our own PID's input-transparent aura
+// is excluded during input. Other overlays remain safety dependencies.
+fn stripOwnedAura(a: std.mem.Allocator, value: std.json.Value, pid: i64) !std.json.Value {
+    var result = value;
+    switch (result) {
+        .array => |*items| {
+            var filtered: std.array_list.Managed(std.json.Value) = .init(a);
+            for (items.items) |item| {
+                if (item == .object) {
+                    const owner = item.object.get("pid") orelse .null;
+                    const ns = item.object.get("namespace") orelse .null;
+                    if (owner == .integer and owner.integer == pid and ns == .string and eq(ns.string, @import("aura.zig").namespace)) continue;
+                }
+                try filtered.append(try stripOwnedAura(a, item, pid));
+            }
+            items.* = filtered;
+        },
+        .object => |*obj| {
+            var it = obj.iterator();
+            while (it.next()) |entry| entry.value_ptr.* = try stripOwnedAura(a, entry.value_ptr.*, pid);
+        },
+        else => {},
+    }
+    return result;
+}
+
+fn snapshotForAction(rt: *Runtime, scope: ?[]const u8, owned_aura: bool) !Snapshot {
     const monitors = try rt.json([]geometry.Monitor, try rt.query("monitors"));
     const clients = try rt.json([]Client, try rt.query("clients"));
     const active = try rt.json(struct { address: []const u8 = "" }, try rt.query("activewindow"));
     var layers = try rt.json(std.json.Value, try rt.query("layers"));
+    if (owned_aura) layers = try stripOwnedAura(rt.a, layers, c.getpid());
     var relevant: std.ArrayList(Client) = .empty;
     if (scope) |name| {
         var target: ?geometry.Monitor = null;
@@ -281,13 +319,14 @@ fn x11Chord(rt: *Runtime, chord: []const u8) ![]const u8 {
     return result.toOwnedSlice(rt.a);
 }
 
-fn scroll(rt: *Runtime, pointer: *Pointer, point: geometry.Point, dx: i32, dy: i32, ms: u32) !void {
+fn scroll(rt: *Runtime, pointer: *Pointer, point: geometry.Point, dx: i32, dy: i32, ms: u32, mode: []const u8) !void {
     const active = try rt.json(struct { address: []const u8 = "" }, try rt.query("activewindow"));
     rt.target_window = active.address;
-    defer rt.target_window = null;
+    const wheel = eq(mode, "wheel") or (eq(mode, "auto") and ms == 0);
     const clients = try rt.json([]Client, try rt.query("clients"));
     for (clients) |client| {
         if (!eq(client.address, active.address) or !client.xwayland) continue;
+        if (eq(mode, "continuous")) return error.ContinuousScrollUnavailable;
         // XWayland does not consistently translate virtual Wayland axis events.
         // XTEST wheel buttons are used only inside the verified focused client.
         if (point.x < client.at[0] or point.y < client.at[1] or
@@ -305,10 +344,13 @@ fn scroll(rt: *Runtime, pointer: *Pointer, point: geometry.Point, dx: i32, dy: i
         }
         return;
     }
-    if (ms == 0) return pointer.scroll(dx, dy);
-    var driver = ScrollDriver{ .rt = rt, .pointer = pointer, .point = point };
-    defer pointer.endScroll(dx, dy);
-    try @import("scroll.zig").run(&driver, .{ .x = dx * 15 * 256, .y = dy * 15 * 256 }, ms);
+    if (wheel and ms == 0) return pointer.scroll(dx, dy);
+    var driver = ScrollDriver{ .rt = rt, .pointer = pointer, .point = point, .wheel = wheel };
+    // Wheel detents are independent steps, not a continuous gesture. Sending
+    // axis_stop for them can flush a spurious surface-distance event in GTK.
+    defer if (!wheel) pointer.endScroll(dx, dy);
+    const unit: i32 = if (wheel) 1 else 15 * 256;
+    try @import("scroll.zig").run(&driver, .{ .x = dx * unit, .y = dy * unit }, ms);
 }
 
 const ScrollDriver = struct {
@@ -316,6 +358,7 @@ const ScrollDriver = struct {
     pointer: *Pointer,
     point: geometry.Point,
     x11: bool = false,
+    wheel: bool = false,
     pub fn now(_: *@This()) i64 {
         return native.nowMs();
     }
@@ -330,7 +373,7 @@ const ScrollDriver = struct {
         scratch.a = arena.allocator();
         const actual = try scratch.json(geometry.Point, try scratch.query("cursorpos"));
         if (@abs(@as(i64, actual.x) - self.point.x) > 1 or @abs(@as(i64, actual.y) - self.point.y) > 1) return error.CursorPositionMismatch;
-        if (!self.x11) return self.pointer.scrollContinuous(delta.x, delta.y);
+        if (!self.x11) return if (self.wheel) self.pointer.scroll(delta.x, delta.y) else self.pointer.scrollContinuous(delta.x, delta.y);
         _ = try x11Keyboard(&scratch, self.rt.target_window.?);
         for ([_]i32{ delta.y, delta.x }, 0..) |amount, axis| {
             if (amount == 0) continue;
@@ -344,6 +387,7 @@ const MotionDriver = struct {
     rt: *Runtime,
     pointer: *Pointer,
     aura: ?*Aura = null,
+    expected_position: ?geometry.Point = null,
     pub fn now(_: *@This()) i64 {
         return native.nowMs();
     }
@@ -351,12 +395,30 @@ const MotionDriver = struct {
         try self.rt.pause(ms);
     }
     pub fn move(self: *@This(), p: geometry.Point) !void {
+        if (self.expected_position) |expected| {
+            const before = try self.rt.json(geometry.Point, try self.rt.query("cursorpos"));
+            if (@abs(@as(i64, before.x) - expected.x) > 1 or @abs(@as(i64, before.y) - expected.y) > 1) return error.CursorPositionMismatch;
+        }
         // Each sample preserves the existing stop/signal/session-lock guards.
         try self.rt.dispatch("movecursor", try std.fmt.allocPrint(self.rt.a, "{d} {d}", .{ p.x, p.y }));
         try self.pointer.refreshPosition();
         const actual = try self.rt.json(geometry.Point, try self.rt.query("cursorpos"));
         if (@abs(@as(i64, actual.x) - p.x) > 1 or @abs(@as(i64, actual.y) - p.y) > 1) return error.CursorPositionMismatch;
+        self.expected_position = actual;
         if (self.aura) |aura| try aura.place(actual);
+    }
+};
+
+const PointerGuard = struct {
+    frame: geometry.Frame,
+    fn check(rt: *Runtime, context: *anyopaque) !void {
+        const self: *PointerGuard = @ptrCast(@alignCast(context));
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        var scratch = rt.*;
+        scratch.a = arena.allocator();
+        const current = try snapshotForAction(&scratch, self.frame.monitor_id, true);
+        try self.frame.validate(rt.instance, rt.display, current.revision, native.nowMs());
     }
 };
 
@@ -369,11 +431,32 @@ fn action(rt: *Runtime, opt: args.Args) !void {
     if (!opt.dry_run) rt.control_token = try rt.token();
     var point: ?geometry.Point = null;
     var frame: ?geometry.Frame = null;
+    var pointer_guard: PointerGuard = undefined;
     if (opt.frame) |id| {
         frame = try loadFrame(rt, id);
         const s = try snapshot(rt, frame.?.monitor_id);
         try frame.?.validate(rt.instance, rt.display, s.revision, native.nowMs());
         point = try frame.?.point(opt.x.?, opt.y.?);
+        if (opt.window) |window| {
+            try checkWindow(rt, window, true);
+            var inside = false;
+            for (s.clients) |client| {
+                if (!eq(client.address, window)) continue;
+                const p = point.?;
+                inside = p.x >= client.at[0] and p.y >= client.at[1] and
+                    @as(i64, p.x) < @as(i64, client.at[0]) + client.size[0] and
+                    @as(i64, p.y) < @as(i64, client.at[1]) + client.size[1];
+            }
+            if (!inside) return error.PointerOutsideTarget;
+            rt.target_window = window;
+        } else rt.target_window = s.active;
+        if (opt.command == .scroll and eq(opt.scroll_mode, "continuous")) {
+            for (s.clients) |client| {
+                if (eq(client.address, rt.target_window.?) and client.xwayland)
+                    return error.ContinuousScrollUnavailable;
+            }
+        }
+        pointer_guard = .{ .frame = frame.? };
         if (opt.command == .drag) _ = try frame.?.point(opt.to_x.?, opt.to_y.?);
     }
     var key_argv: ?[]const []const u8 = null;
@@ -407,8 +490,14 @@ fn action(rt: *Runtime, opt: args.Args) !void {
         pointer.runtime = rt;
         // Recheck after connecting the input device, before moving the cursor.
         try frame.?.validate(rt.instance, rt.display, (try snapshot(rt, frame.?.monitor_id)).revision, native.nowMs());
+        rt.extra_guard = PointerGuard.check;
+        rt.guard_context = &pointer_guard;
+        defer {
+            rt.extra_guard = null;
+            rt.guard_context = null;
+        }
         const start = try rt.json(geometry.Point, try rt.query("cursorpos"));
-        var driver = MotionDriver{ .rt = rt, .pointer = &pointer };
+        var driver = MotionDriver{ .rt = rt, .pointer = &pointer, .expected_position = start };
         var aura: Aura = undefined;
         const aura_started = native.nowMs();
         if (!opt.no_aura and !try rt.outlineEnabled()) {
@@ -434,14 +523,14 @@ fn action(rt: *Runtime, opt: args.Args) !void {
                 defer pointer.release();
                 try motion.run(&driver, p, destination, opt.duration_ms);
             },
-            .scroll => try scroll(rt, &pointer, p, opt.dx, opt.dy, opt.duration_ms),
+            .scroll => try scroll(rt, &pointer, p, opt.dx, opt.dy, opt.duration_ms, opt.scroll_mode),
             .move => {},
             else => unreachable,
         }
-        // A stationary click otherwise ends before a single display refresh.
-        // This remains part of the cancelable action, not a background daemon.
+        // Keep stationary move feedback visible; do not revalidate after a
+        // completed click that intentionally changed application focus/layout.
         const aura_elapsed = native.nowMs() - aura_started;
-        if (driver.aura != null and aura_elapsed < 100)
+        if (opt.command == .move and driver.aura != null and aura_elapsed < 100)
             try rt.pause(@intCast(100 - aura_elapsed));
     } else switch (opt.command) {
         .focus => {
@@ -484,7 +573,7 @@ fn action(rt: *Runtime, opt: args.Args) !void {
         .launch => return sessions.launch(rt, opt),
         else => unreachable,
     }
-    try rt.emit(.{ .ok = true, .action = @tagName(opt.command), .session_id = rt.session_id, .status = "sent", .desktop_point = point });
+    try rt.emit(.{ .ok = true, .action = @tagName(opt.command), .session_id = rt.session_id, .status = "sent", .desktop_point = point, .scroll_mode_requested = if (opt.command == .scroll) opt.scroll_mode else null });
 }
 
 fn waitFor(rt: *Runtime, opt: args.Args) !void {
@@ -566,17 +655,60 @@ fn doctor(rt: *Runtime) !void {
     const grim = try rt.executable("grim");
     const wtype = try rt.executable("wtype");
     const xdotool = try rt.executable("xdotool");
+    const hyprland = try rt.executable("Hyprland");
+    const dbus_daemon = try rt.executable("dbus-daemon");
+    const registry = c.access("/usr/lib/at-spi2-registryd", c.X_OK) == 0 or c.access("/usr/libexec/at-spi2-registryd", c.X_OK) == 0;
+    const bus_configured = if (rt.env.get("DBUS_SESSION_BUS_ADDRESS")) |address| address.len != 0 else false;
+    const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, c.getpid(), @as(c_uint, 0)));
+    const pidfd_available = pidfd >= 0;
+    if (pidfd >= 0) _ = c.close(pidfd);
+    const xkb_context = c.xkb_context_new(c.XKB_CONTEXT_NO_FLAGS);
+    const xkb_data = blk: {
+        if (xkb_context == null) break :blk false;
+        defer c.xkb_context_unref(xkb_context);
+        const map = c.xkb_keymap_new_from_names(xkb_context, null, c.XKB_KEYMAP_COMPILE_NO_FLAGS);
+        if (map == null) break :blk false;
+        c.xkb_keymap_unref(map);
+        break :blk true;
+    };
     const enabled = blk: {
         _ = rt.token() catch break :blk false;
         break :blk true;
     };
-    try rt.emit(.{ .ok = true, .version = "0.3.0", .hyprland = version, .config_provider = status.configProvider, .session_id = rt.session_id, .instance = rt.instance, .wayland_display = rt.display, .display_matches = display_matches, .dependencies = .{ .grim = grim, .wtype = wtype, .xdotool = xdotool }, .capabilities = .{ .state = true, .capture = grim and display_matches, .virtual_pointer = pointer_available and display_matches, .virtual_keyboard = keyboard_available and display_matches, .text_helper_installed = wtype, .dispatch = eq(status.configProvider, "hyprlang") or eq(status.configProvider, "lua"), .managed_sessions = true, .accessibility = true }, .control_enabled = enabled, .shared_cursor = eq(rt.session_id, "host"), .state_directory = rt.directory });
+    try rt.emit(.{
+        .ok = true,
+        .version = "0.4.0",
+        .hyprland = version,
+        .config_provider = status.configProvider,
+        .session_id = rt.session_id,
+        .instance = rt.instance,
+        .wayland_display = rt.display,
+        .display_matches = display_matches,
+        .dependencies = .{ .grim = grim, .wtype = wtype, .xdotool = xdotool, .Hyprland = hyprland, .dbus_daemon = dbus_daemon, .at_spi_registry = registry, .dbus_address_configured = bus_configured, .xkb_data = xkb_data, .pidfd = pidfd_available },
+        .capabilities = .{ .state = true, .capture = grim and display_matches, .virtual_pointer = pointer_available and display_matches, .virtual_keyboard = keyboard_available and display_matches, .text_helper_installed = wtype, .dispatch = eq(status.configProvider, "hyprlang") or eq(status.configProvider, "lua"), .managed_sessions = hyprland and dbus_daemon and pidfd_available and display_matches, .accessibility = bus_configured },
+        .checks = .{
+            .capture = .{ .implemented = true, .prerequisites_available = grim and display_matches, .operation_verified = false },
+            .managed_sessions = .{ .implemented = true, .prerequisites_available = hyprland and dbus_daemon and pidfd_available and display_matches, .operation_verified = false, .headless_gpu_verified = false },
+            .accessibility = .{ .implemented = true, .prerequisites_available = bus_configured, .operation_verified = false, .note = "Bus configuration does not prove AT-SPI service availability or application support." },
+            .input = .{ .pointer_protocol_available = pointer_available, .keyboard_protocol_available = keyboard_available, .operation_verified = false },
+        },
+        .verification_note = "Read-only prerequisite/protocol probes; no input, capture, accessibility request or compositor startup performed. operation_verified=false means not tested, not a demonstrated failure.",
+        .control_enabled = enabled,
+        .shared_cursor = eq(rt.session_id, "host"),
+        .state_directory = rt.directory,
+    });
 }
 
 fn execute(init: std.process.Init, opt: args.Args) !void {
+    if (opt.command == ._preview_frame or opt.command == ._preview_stop) {
+        // If a viewer is killed unexpectedly, cancel its worker and let the
+        // existing child cleanup reap grim. No detached capture loop remains.
+        if (c.prctl(c.PR_SET_PDEATHSIG, c.SIGTERM, @as(c_ulong, 0), @as(c_ulong, 0), @as(c_ulong, 0)) < 0 or c.getppid() == 1) return error.Cancelled;
+    }
     var rt = try Runtime.init(init);
     if (opt.command == .session) return sessions.command(&rt, opt);
     if (opt.command == .sessions) return sessions.list(&rt);
+    if (opt.command == .preview) return preview.launch(&rt, opt);
     try sessions.route(&rt, opt.session);
     if (opt.mutates()) {
         try operations.log(&rt, @tagName(opt.command), if (opt.dry_run) "dry_run" else "started");
@@ -609,15 +741,24 @@ fn execute(init: std.process.Init, opt: args.Args) !void {
         .accessibility => try @import("accessibility.zig").tree(&rt, opt),
         ._a11y => try @import("accessibility.zig").worker(&rt, opt),
         ._cursor_probe => try @import("cursor_capture.zig").probe(&rt),
+        ._preview_frame, ._preview_stop => try preview.worker(&rt, opt),
         else => return error.CommandNotImplemented,
     }
 }
 
 fn report(init: std.process.Init, err: anyerror) void {
     const hint: []const u8 = switch (err) {
+        error.PreviewHelperMissing => "Build the optional viewer with zig build pip; keep deskctl-pip beside deskctl.",
+        error.PreviewManagedSessionRequired => "Preview requires an explicit managed session, never host.",
+        error.PreviewRequiresHyprlang => "This PiP version requires the host Hyprlang config provider; no window or rules were created.",
+        error.PreviewIdentityMismatch => "The original preview session ended or changed. Close the viewer and explicitly open a new one.",
         error.ControlStopped => "Input is disabled. Run deskctl enable to enable it.",
         error.StaleObservation => "The frame expired or desktop layout/focus changed. Observe again.",
         error.WindowNotFocused => "Focus the target window first, then verify it before typing.",
+        error.CursorPositionMismatch => "Cursor diverged from the expected path: human movement, pointer locking/recentering or compositor constraints are possible. Input was aborted; observe again. No safety tolerance was relaxed.",
+        error.PointerOutsideTarget => "The pointer start/click coordinate is outside --window. Observe the target window and choose coordinates inside it.",
+        error.InvalidScrollMode => "Use --scroll-mode auto, wheel or continuous. Duration controls pacing separately.",
+        error.ContinuousScrollUnavailable => "XWayland fallback only supports wheel events. Choose --scroll-mode wheel (optionally paced). No continuous-to-wheel substitution was performed.",
         error.SessionRequired => "Input commands require an explicit --session NAME.",
         error.UnsupportedConfigProvider => "Dispatch supports Hyprlang and Lua providers only.",
         error.FileNotFound => "A helper or required file is missing. Check deskctl doctor and install grim/wtype.",
@@ -653,7 +794,7 @@ pub fn main(init: std.process.Init) void {
         return;
     }
     if (argv.len == 2 and eq(argv[1], "--version")) {
-        std.Io.File.stdout().writeStreamingAll(init.io, "deskctl 0.3.0\n") catch {};
+        std.Io.File.stdout().writeStreamingAll(init.io, "deskctl 0.4.0\n") catch {};
         return;
     }
     const opt = args.parse(argv[1..]) catch |err| {
@@ -670,6 +811,7 @@ test {
     _ = @import("geometry.zig");
     _ = @import("args.zig");
     _ = @import("operations.zig");
+    _ = @import("preview_protocol.zig");
 }
 test "key chords emit explicit modifier releases and reject malformed input" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -682,8 +824,24 @@ test "key chords emit explicit modifier releases and reject malformed input" {
     try std.testing.expectError(error.InvalidWindowAddress, validateAddress("0x123,exec,evil"));
 }
 
+test "pointer snapshot excludes only the current process aura, never arbitrary overlays" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const parsed = try std.json.parseFromSlice(std.json.Value, a,
+        \\{"levels":{"3":[{"namespace":"deskctl-aura","pid":42},{"namespace":"deskctl-aura","pid":43},{"namespace":"dialog","pid":42},{"namespace":"deskctl-aura"} ]}}
+    , .{});
+    const filtered = try stripOwnedAura(a, parsed.value, 42);
+    const items = filtered.object.get("levels").?.object.get("3").?.array.items;
+    try std.testing.expectEqual(@as(usize, 3), items.len);
+    try std.testing.expectEqual(@as(i64, 43), items[0].object.get("pid").?.integer);
+    try std.testing.expectEqualStrings("dialog", items[1].object.get("namespace").?.string);
+}
+
 test {
     std.testing.refAllDecls(motion);
+    std.testing.refAllDecls(@import("keyboard.zig"));
+    std.testing.refAllDecls(sessions);
     std.testing.refAllDecls(@import("scroll.zig"));
     std.testing.refAllDecls(@import("aura.zig"));
     std.testing.refAllDecls(@import("cursor_capture.zig"));

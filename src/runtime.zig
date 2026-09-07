@@ -14,6 +14,8 @@ pub const Runtime = struct {
     control_token: ?[]const u8 = null,
     session_id: []const u8 = "host",
     target_window: ?[]const u8 = null,
+    extra_guard: ?*const fn (*Runtime, *anyopaque) anyerror!void = null,
+    guard_context: ?*anyopaque = null,
 
     pub fn init(context: std.process.Init) !Runtime {
         const a = context.arena.allocator();
@@ -133,6 +135,7 @@ pub const Runtime = struct {
             const active = try scratch.json(struct { address: []const u8 = "" }, try scratch.query("activewindow"));
             if (!std.mem.eql(u8, target, active.address)) return error.WindowNotFocused;
         }
+        if (self.extra_guard) |check| try check(self, self.guard_context.?);
     }
 
     pub fn pause(self: *Runtime, ms: u32) !void {

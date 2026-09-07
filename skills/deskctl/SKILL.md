@@ -20,6 +20,18 @@ in its repository. Read `--help`, `doctor`, and `sessions` before acting.
   `launch --session agent -- brave-browser` uses a separate browser profile.
   Do not copy the user's browser profile or bypass login/security challenges.
 
+## Optional owner preview
+
+`preview --session NAME [--monitor NAME] [--fps 1..15]` opens a read-only host
+PiP for an existing managed session. It needs the optional `deskctl-pip` sibling
+binary (`zig build pip`), GTK4 >= 4.8 and a Hyprlang host. The command stays in the
+foreground while the viewer is open; use an ongoing terminal session when needed.
+It never authorizes input. Closing it leaves the agent and applications running;
+its stop button disables deskctl input, and must be respected like any human stop.
+Do not automatically reopen a viewer the owner closed. It cannot watch `host`
+or reconnect to a recreated session. Its scaled images are not actionable frames:
+continue using `observe` and the normal frame contract for all agent input.
+
 ## Observe → act → verify
 
 1. Read `state --session SESSION`. Discover the exact window address, class,
