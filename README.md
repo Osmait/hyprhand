@@ -297,6 +297,8 @@ at up to 1–15 fps (5 by default), backing off to 1 fps when unchanged.
 
 - **Stop input** revokes hyprhand input permission in the source session. It leaves
   applications and external agent processes running.
+- Controls and status appear on hover or Tab navigation; at rest, only the
+  session image is shown.
 - **Close** closes only the viewer. It does not stop input or terminate the agent.
 - **No signal** clears stale or unavailable imagery. The viewer never forwards
   clicks or keys into the source and never enables control.

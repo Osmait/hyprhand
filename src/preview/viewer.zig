@@ -14,6 +14,10 @@ const State = struct {
     session: [:0]const u8,
     instance: [:0]const u8,
     monitor: [:0]const u8,
+    window: *c.GtkWindow,
+    motion: *c.GtkEventControllerMotion,
+    controls_visible: bool = false,
+    keyboard_controls: bool = false,
     loop: *c.GMainLoop,
     picture: *c.GtkPicture,
     status: *c.GtkLabel,
@@ -55,6 +59,32 @@ fn now() i64 {
 fn label(text: [*:0]const u8) void {
     c.gtk_label_set_text(state.status, text);
     c.gtk_widget_set_tooltip_text(@ptrCast(state.status), text);
+}
+
+// Observe the whole window, including controls, so crossing an overlay does not
+// flicker. Reveal before GTK moves keyboard focus: transparent containers may
+// otherwise be skipped during Tab navigation.
+fn updateControls() void {
+    const visible = c.gtk_event_controller_motion_contains_pointer(state.motion) != 0 or state.keyboard_controls;
+    if (visible == state.controls_visible) return;
+    state.controls_visible = visible;
+    const widget: *c.GtkWidget = @ptrCast(state.window);
+    if (visible) c.gtk_widget_add_css_class(widget, "controls-visible") else c.gtk_widget_remove_css_class(widget, "controls-visible");
+}
+fn pointerChanged(_: ?*c.GObject, _: ?*c.GParamSpec, _: ?*anyopaque) callconv(.c) void {
+    state.keyboard_controls = false;
+    updateControls();
+}
+fn activeChanged(_: ?*c.GObject, _: ?*c.GParamSpec, _: ?*anyopaque) callconv(.c) void {
+    if (c.gtk_window_is_active(state.window) == 0) state.keyboard_controls = false;
+    updateControls();
+}
+fn keyPressed(_: ?*c.GtkEventControllerKey, keyval: c_uint, _: c_uint, _: c.GdkModifierType, _: ?*anyopaque) callconv(.c) c_int {
+    if (keyval == c.GDK_KEY_Tab or keyval == c.GDK_KEY_ISO_Left_Tab) {
+        state.keyboard_controls = true;
+        updateControls();
+    }
+    return 0; // GTK still handles native focus traversal; no input forwarding.
 }
 fn lost() void {
     c.gtk_picture_set_paintable(state.picture, null);
@@ -186,6 +216,7 @@ fn metrics() void {
         .presentation_latency_total_ms = state.present_latency_ms,
         .presentation_feedback_available = state.presented > 0,
         .signal_live = state.last_frame != 0,
+        .controls_visible = state.controls_visible,
     }, .{}) catch return;
     defer std.heap.c_allocator.free(encoded);
     var buffer: [1024]u8 = undefined;
@@ -353,11 +384,15 @@ pub fn main(init: std.process.Init) !void {
     c.gtk_overlay_add_overlay(overlay, @ptrCast(footer));
     c.gtk_window_handle_set_child(handle, @ptrCast(overlay));
     c.gtk_window_set_child(window, @ptrCast(handle));
+    const motion = c.gtk_event_controller_motion_new();
+    c.gtk_widget_add_controller(@ptrCast(window), motion);
     state = .{
         .cli = try a.dupeZ(u8, argv[1]),
         .session = try a.dupeZ(u8, argv[2]),
         .instance = try a.dupeZ(u8, argv[3]),
         .monitor = try a.dupeZ(u8, argv[4]),
+        .window = window,
+        .motion = @ptrCast(motion),
         .loop = c.g_main_loop_new(null, 0).?,
         .picture = picture,
         .status = status,
@@ -367,6 +402,12 @@ pub fn main(init: std.process.Init) !void {
         .metrics_started = now(),
         .metrics_emitted = now(),
     };
+    _ = c.g_signal_connect_data(motion, "notify::contains-pointer", @ptrCast(&pointerChanged), null, null, 0);
+    _ = c.g_signal_connect_data(window, "notify::is-active", @ptrCast(&activeChanged), null, null, 0);
+    const keys = c.gtk_event_controller_key_new();
+    c.gtk_event_controller_set_propagation_phase(keys, c.GTK_PHASE_CAPTURE);
+    _ = c.g_signal_connect_data(keys, "key-pressed", @ptrCast(&keyPressed), null, null, 0);
+    c.gtk_widget_add_controller(@ptrCast(window), keys);
     _ = c.g_signal_connect_data(window, "close-request", @ptrCast(&closeRequested), null, null, 0);
     _ = c.g_signal_connect_data(stop, "clicked", @ptrCast(&stopClicked), null, null, 0);
     _ = c.g_signal_connect_data(close, "clicked", @ptrCast(&closeClicked), null, null, 0);

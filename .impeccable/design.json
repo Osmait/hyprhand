@@ -33,7 +33,8 @@
         "close": "Viewer only; agent continues",
         "stop": "Disable source hyprhand input without closing applications",
         "keyboard": "Focusable close/stop with explicit visible outline",
-        "forwardInput": false
+        "forwardInput": false,
+        "controls": "Image only at rest; reveal all chrome on whole-window hover or Tab navigation; pointer crossing and deactivation reset keyboard reveal"
       },
       "typography": "Native font family, 12px labels; bounded text with full tooltips",
       "freshness": "Unchanged protocol age checks and stale-image clearing",

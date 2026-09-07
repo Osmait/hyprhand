@@ -9,7 +9,10 @@ No separate title/footer bars, compositor border, rounding or shadow. Full-windo
 contain-fit image, top session identity and close, bottom status/stop plus a
 resize grip. Dark gradient scrims protect white labels over arbitrary imagery.
 Default 640 × 360, minimum 360 × 203; dragging the image moves the window.
-Keep close/stop permanently reachable and keyboard focus visible. No input relay.
+Hide all header/footer chrome at rest. Reveal it while the pointer is over the
+window or Tab navigation is active. Pointer crossing or deactivation ends keyboard
+reveal. Preserve
+close/stop Tab access and visible keyboard focus. No input relay.
 
 States: connecting, live/control enabled, live/control stopped, stopping,
 stop failed, disconnected/locked. Clear stale pixels; retry without reconnecting

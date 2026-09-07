@@ -35,3 +35,6 @@ Preview remains an optional dependency, not a requirement for CLI automation.
 Borderless image-first window, with controls integrated over the image instead
 of separate title and footer bars. Preserve the established read-only, close
 and stop semantics, movement and resizing.
+
+Controls, session identity and status appear on pointer hover or active keyboard
+navigation. At rest, show only the session image.

@@ -6,12 +6,20 @@ window.hyprhand-pip {
   box-shadow: none;
 }
 .hyprhand-pip .pip-top {
+  opacity: 0;
   padding: 10px 12px 24px;
   background: linear-gradient(to bottom, rgba(8,12,18,0.94), rgba(8,12,18,0));
 }
 .hyprhand-pip .pip-bottom {
+  opacity: 0;
   padding: 26px 10px 10px 14px;
   background: linear-gradient(to top, rgba(8,12,18,0.96), rgba(8,12,18,0.80) 60%, rgba(8,12,18,0));
+}
+/* Retain native controls and accessibility. Reveal on pointer entry or in
+ * the capture-phase Tab handler before GTK traverses keyboard focus. */
+.hyprhand-pip.controls-visible .pip-top,
+.hyprhand-pip.controls-visible .pip-bottom {
+  opacity: 1;
 }
 .hyprhand-pip label {
   color: #ffffff;

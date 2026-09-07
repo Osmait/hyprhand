@@ -32,7 +32,11 @@ See the compositor's [window-rule API](https://wiki.hypr.land/configuring/core/r
 - No title bar, footer allocation, window border or shadow surrounds the image.
   Default size is 640 × 360, minimum 360 × 203. The source aspect ratio is
   preserved; mismatched window/source proportions can still cause letterboxing.
-  Close and stop stay visible and keyboard-focusable. Truncated session/status
+  The session label, status, close/stop controls and resize grip appear while
+  the pointer is anywhere over the viewer, and hide when it leaves. Keyboard
+  navigation also reveals them while the window is active, preserving Tab access
+  and visible focus. The idle viewer displays only the session image.
+  Truncated session/status
   text has its full description in a tooltip. Styles affect only this viewer.
 - It does not request activation on opening or follow pointer hover. Clicking
   its controls can focus the viewer normally, but never forwards input to the
@@ -159,3 +163,12 @@ automated drag when geometry changed, as intended; it was not weakened. Stop
 through the overlay disabled only the source, left its two applications alive,
 and left host authorization disabled. Closing the isolated viewer left the
 source applications alive. The source and test compositor were then cleaned up.
+
+### Hover controls verification
+
+The hover update was checked against a real GTK viewer showing the Blender
+session in a separate managed test desktop: pointer entry reveals both overlays,
+pointer exit hides them, and Tab with the pointer outside reveals the close
+button with its native focus ring. Enter closes that test viewer. The Blender
+source remains open with input stopped. Optional GTK build/ABI checks, preview
+unit tests and the private Broadway lifecycle tests passed.

@@ -19,6 +19,8 @@ OPAQUE(GtkNative); OPAQUE(GdkSurface); OPAQUE(GdkToplevel); OPAQUE(GdkDevice);
 OPAQUE(GdkEvent);
 OPAQUE(GTask); OPAQUE(GInputStream); OPAQUE(GOutputStream);
 OPAQUE(GdkFrameClock); OPAQUE(GdkFrameTimings);
+OPAQUE(GtkEventControllerMotion); OPAQUE(GParamSpec);
+OPAQUE(GtkEventControllerKey);
 typedef struct _cairo cairo_t;
 #undef OPAQUE
 typedef int gboolean;
@@ -34,6 +36,8 @@ typedef unsigned int GtkAlign;
 typedef unsigned int PangoEllipsizeMode;
 typedef unsigned int GdkSurfaceEdge;
 typedef unsigned int GtkEventSequenceState;
+typedef unsigned int GtkPropagationPhase;
+typedef unsigned int GdkModifierType;
 typedef void (*GDestroyNotify)(void *);
 typedef void (*GtkDrawingAreaDrawFunc)(GtkDrawingArea *, cairo_t *, int, int, void *);
 typedef void (*GCallback)(void);
@@ -56,12 +60,16 @@ typedef void (*GTaskThreadFunc)(GTask *, void *, void *, GCancellable *);
 #define PANGO_ELLIPSIZE_END 3
 #define GDK_SURFACE_EDGE_SOUTH_EAST 7
 #define GTK_EVENT_SEQUENCE_CLAIMED 1
+#define GTK_PHASE_CAPTURE 1
+#define GDK_KEY_Tab 0xff09
+#define GDK_KEY_ISO_Left_Tab 0xfe20
 #else
 _Static_assert(GTK_ORIENTATION_HORIZONTAL == 0 && GTK_ORIENTATION_VERTICAL == 1, "orientation ABI");
 _Static_assert(GTK_CONTENT_FIT_CONTAIN == 1, "fit ABI");
 _Static_assert(G_SUBPROCESS_FLAGS_STDOUT_PIPE == 4 && G_SUBPROCESS_FLAGS_STDERR_SILENCE == 32, "subprocess ABI");
 _Static_assert(GTK_ALIGN_END == 2 && GTK_ALIGN_START == 1 && PANGO_ELLIPSIZE_END == 3, "layout ABI");
 _Static_assert(GDK_SURFACE_EDGE_SOUTH_EAST == 7 && GTK_EVENT_SEQUENCE_CLAIMED == 1, "resize ABI");
+_Static_assert(GTK_PHASE_CAPTURE == 1 && GDK_KEY_Tab == 0xff09 && GDK_KEY_ISO_Left_Tab == 0xfe20, "keyboard controller ABI");
 #endif
 gboolean gtk_init_check(void);
 GtkWidget *gtk_window_new(void);
@@ -70,6 +78,7 @@ void gtk_window_set_default_size(GtkWindow *, int, int);
 void gtk_window_set_decorated(GtkWindow *, gboolean);
 void gtk_window_set_child(GtkWindow *, GtkWidget *);
 void gtk_window_destroy(GtkWindow *);
+gboolean gtk_window_is_active(GtkWindow *);
 GtkWidget *gtk_label_new(const char *);
 void gtk_label_set_text(GtkLabel *, const char *);
 void gtk_label_set_xalign(GtkLabel *, float);
@@ -107,6 +116,10 @@ void cairo_stroke(cairo_t *);
 GtkGesture *gtk_gesture_click_new(void);
 gboolean gtk_gesture_set_state(GtkGesture *, GtkEventSequenceState);
 void gtk_widget_add_controller(GtkWidget *, GtkEventController *);
+GtkEventController *gtk_event_controller_motion_new(void);
+gboolean gtk_event_controller_motion_contains_pointer(GtkEventControllerMotion *);
+GtkEventController *gtk_event_controller_key_new(void);
+void gtk_event_controller_set_propagation_phase(GtkEventController *, GtkPropagationPhase);
 GdkEvent *gtk_event_controller_get_current_event(GtkEventController *);
 GdkDevice *gtk_event_controller_get_current_event_device(GtkEventController *);
 uint32_t gtk_event_controller_get_current_event_time(GtkEventController *);
@@ -120,6 +133,7 @@ void gtk_widget_set_sensitive(GtkWidget *, gboolean);
 void gtk_widget_set_visible(GtkWidget *, gboolean);
 void gtk_widget_set_tooltip_text(GtkWidget *, const char *);
 void gtk_widget_add_css_class(GtkWidget *, const char *);
+void gtk_widget_remove_css_class(GtkWidget *, const char *);
 void gtk_widget_set_margin_start(GtkWidget *, int);
 void gtk_widget_set_margin_end(GtkWidget *, int);
 void gtk_widget_set_margin_top(GtkWidget *, int);

@@ -52,7 +52,12 @@ grip is two diagonal Cairo strokes, not a text character masquerading as an icon
 - The image is wrapped in `GtkWindowHandle`: drag non-control content to move
   the viewer. The lower-right 32px grip begins a native southeast resize.
   Compositor move/resize shortcuts remain available.
-- Close and stop are permanently visible GTK buttons with tooltips and a visible
+- Header/footer chrome is hidden at rest and revealed while the pointer is
+  anywhere over the window or Tab navigation is active. Pointer crossing or
+  window deactivation ends keyboard reveal.
+  This includes the session label, status, close/stop and resize grip. Opacity
+  changes preserve native hit targets, accessibility and Tab order.
+- Close and stop are GTK buttons with tooltips and a visible
   keyboard focus outline. Close exits only the viewer; stop disables hyprhand
   input while leaving applications open. No resume or input-forwarding path.
 - States remain connecting, live/enabled, live/stopped, stopping, failed and
@@ -62,7 +67,8 @@ grip is two diagonal Cairo strokes, not a text character masquerading as an icon
 ## Do's and Don'ts
 
 - Do keep controls integrated into the image and readable over arbitrary content.
-- Do preserve visible close/stop, native movement, resizing and keyboard focus.
+- Do reveal close/stop for pointer hover and keyboard navigation; preserve
+  native movement, resizing and keyboard focus.
 - Don't restore separate title/footer bars or compositor borders and shadows.
 - Don't crop the source just to hide aspect-ratio letterboxing.
 - Don't relay clicks or key events into the captured session.
