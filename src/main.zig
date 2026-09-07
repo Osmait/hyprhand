@@ -95,7 +95,7 @@ fn execute(init: std.process.Init, opt: args.Args) !void {
         ._preview_frame => native.limitCommand(2000, error.HelperTimeout),
         else => {},
     }
-    if (opt.command == ._preview_frame or opt.command == ._preview_stop) {
+    if (opt.command == ._preview_frame or opt.command == ._preview_stop or opt.command == ._preview_stream) {
         // If a viewer is killed unexpectedly, cancel its worker and let the
         // existing child cleanup reap grim. No detached capture loop remains.
         if (c.prctl(c.PR_SET_PDEATHSIG, c.SIGTERM, @as(c_ulong, 0), @as(c_ulong, 0), @as(c_ulong, 0)) < 0 or c.getppid() == 1) return error.Cancelled;
@@ -104,6 +104,7 @@ fn execute(init: std.process.Init, opt: args.Args) !void {
     if (opt.command == .session) return sessions.command(&rt, opt);
     if (opt.command == .sessions) return sessions.list(&rt);
     if (opt.command == .preview) return preview.launch(&rt, opt);
+    if (opt.command == ._preview_stream) return preview.stream(&rt, opt);
     try sessions.route(&rt, opt.session);
     if (opt.mutates()) {
         try operations.log(&rt, @tagName(opt.command), if (opt.dry_run) "dry_run" else "started");
@@ -207,6 +208,7 @@ test {
     _ = @import("cli/args.zig");
     _ = @import("runtime/operations.zig");
     _ = @import("preview/protocol.zig");
+    _ = @import("preview/cadence.zig");
     _ = @import("input/actions.zig");
 }
 

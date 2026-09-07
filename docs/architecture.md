@@ -14,7 +14,7 @@ src/
   input/                 coordinación de acciones, teclado, puntero, movimiento, scroll y aura
   capture/               observación, revisión de layout y captura de cursor
   accessibility/         recorrido AT-SPI y puente C
-  preview/               controlador, protocolo, visor GTK, CSS y ABI C
+  preview/               controlador, transporte acotado, cadencia, protocolo, GTK y ABI C
 tests/                   pruebas offline y live explícitamente separadas por runner
 protocols/               XML Wayland; C y headers se generan en la caché
 scripts/                 verificación y empaquetado local
@@ -25,8 +25,9 @@ docs/                    contratos, compatibilidad, decisiones y evidencias
 La extracción de observación, ayuda, acciones y esperas reduce `main.zig`
 de 848 a unas 220 líneas.
 El build raíz pasa de 111 a 48 líneas; generación Wayland y variantes opcionales
-viven en módulos específicos. No se han alterado nombres de comandos, rutas
-instaladas, formato JSON, frame v2 ni protocolo DCP1.
+viven en módulos específicos. Los comandos públicos, rutas instaladas, frame v2
+y DCP1 se mantienen. El seguimiento de rendimiento añade `_preview_stream`
+interno (longitud + DCP1) y el indicador aditivo `incomplete_tail` en `logs`.
 
 ## Límites entre componentes
 
@@ -49,10 +50,23 @@ biblioteca nativa. Sesiones, eventos, AT-SPI y visor conservan límites específ
 `stop` y la publicación de `enable` comparten un cerrojo local corto separado
 del cerrojo de acciones. La generación de parada invalida un `enable` anterior
 que aún estuviera esperando al compositor; el cerrojo no se retiene durante IPC.
+`enable` crea esa generación antes de consultar al compositor. `stop` elimina
+generación y autorización bajo el cerrojo: no necesita escribir datos nuevos
+para revocar. Un error al eliminar un marcador no omite intentar los demás.
+
+La memoria temporal de las guardas se reutiliza con retención máxima de 256 KiB.
+Las comprobaciones no se cachean entre caracteres: solo se omite la validación
+duplicada inmediatamente anterior a una sincronización de texto. La lectura
+Wayland usa prepare/read/cancel y sondeo de escritura para EAGAIN, no dispatch
+bloqueante después de poll. Eventos serializa JSON con un buffer fijo; la
+limpieza automática de capturas recorre el directorio como máximo cada 30 s.
+El comando explícito `gc` sigue ejecutándose siempre.
 
 El visor GTK es otro ejecutable y otra raíz de módulo: no enlaza la entrada ni
 sesiones. Solicita capturas y parada mediante workers de la CLI con la identidad
-de sesión fijada. La CLI no adquiere GTK como dependencia por reorganizar carpetas.
+de sesión fijada. `transport.zig` hace E/S y decodificación fuera del hilo GTK;
+`cadence.zig` planifica sin acumular solicitudes y reduce la frecuencia en reposo.
+La CLI no adquiere GTK como dependencia por reorganizar carpetas.
 La observación sí conoce el namespace del aura para excluir exclusivamente la
 superficie propiedad del proceso actual; no elimina overlays ajenos.
 

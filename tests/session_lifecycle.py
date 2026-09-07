@@ -128,7 +128,8 @@ class SessionLifecycle(unittest.TestCase):
         return process
 
     def sleeper(self, **kwargs):
-        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], **kwargs)
+        seconds = getattr(self, "sleeper_seconds", 60)
+        child = subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({int(seconds)})"], **kwargs)
         self.children.append(child)
         return self.pin(identity(child.pid))
 

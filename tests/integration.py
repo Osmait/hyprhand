@@ -1,5 +1,6 @@
 """CLI contract tests using a fake compositor and helpers; never inject input."""
 import json
+import resource
 import os
 from pathlib import Path
 import socket
@@ -270,6 +271,35 @@ else:
                 process.kill()
             process.communicate(timeout=2)
 
+    def test_stop_needs_no_file_writes_and_invalidates_inflight_enable(self):
+        def no_writes():
+            resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
+            signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+
+        self.cli("enable")
+        result = subprocess.run([str(BIN), "stop", "--session", "host"], env=self.env,
+                                preexec_fn=no_writes, capture_output=True, text=True, timeout=2)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.error("ControlStopped", "type", "--session", "host", "--window", self.address, "--text", "blocked")
+        self.assertFalse((self.root / "input.json").exists())
+        self.hold_locked.set()
+        self.locked_requested.clear()
+        process = subprocess.Popen([str(BIN), "enable", "--session", "host"], env=self.env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.assertTrue(self.locked_requested.wait(2))
+            result = subprocess.run([str(BIN), "stop", "--session", "host"], env=self.env,
+                                    preexec_fn=no_writes, capture_output=True, text=True, timeout=2)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.hold_locked.clear()
+            out, _ = process.communicate(timeout=2)
+            self.assertEqual(json.loads(out)["err"]["code"], "ControlStopped")
+            self.cli("enable")
+        finally:
+            self.hold_locked.clear()
+            if process.poll() is None: process.kill()
+            process.communicate(timeout=2)
+
     def test_wait_budget_spans_multiple_queries(self):
         self.query_delay = 0.08
         started = time.monotonic()
@@ -426,6 +456,44 @@ else:
         self.assertTrue((root / "actions.previous.jsonl").exists())
         self.assertLess(log.stat().st_size, 4096)
 
+    def test_logs_recover_partial_writes_and_truncated_tail(self):
+        self.cli("enable")
+        def short_write():
+            resource.setrlimit(resource.RLIMIT_FSIZE, (128, 128))
+            signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+        result = subprocess.run([str(BIN), "type", "--session", "host", "--window", self.address,
+                                 "--backend", "helper", "--text", "x"], env=self.env,
+                                preexec_fn=short_write, capture_output=True, text=True, timeout=3)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertTrue((self.root / "input.json").exists())
+        self.assertEqual(self.cli("logs")["entries"][-1]["status"], "started")
+        path = next(self.root.glob("deskctl-*/actions.jsonl"))
+        with path.open("ab") as out: out.write(b'{"interrupted":')
+        logs = self.cli("logs")
+        self.assertTrue(logs["incomplete_tail"])
+        self.assertEqual(len(logs["entries"]), 1)
+        self.cli("focus", self.address, "--session", "host", "--dry-run")
+        logs = self.cli("logs", "--limit", "1")
+        self.assertFalse(logs["incomplete_tail"])
+        self.assertEqual(len(logs["entries"]), 1)
+        self.assertEqual(logs["entries"][0]["status"], "completed")
+
+    def test_observe_amortizes_gc_but_explicit_gc_never_skips(self):
+        frame = self.frame()
+        root = Path(frame["image_path"]).parent
+        stale = root / ("b" * 32 + ".png")
+        stale.write_bytes(b"old")
+        os.utime(stale, (time.time() - 600,) * 2)
+        self.frame()
+        self.assertTrue(stale.exists())
+        self.assertEqual(self.cli("gc")["files"], 1)
+        self.assertFalse(stale.exists())
+        stale.write_bytes(b"old")
+        os.utime(stale, (time.time() - 600,) * 2)
+        os.utime(root / "gc.stamp", (time.time() - 31,) * 2)
+        self.frame()
+        self.assertFalse(stale.exists())
+
     def test_gc_preserves_live_frames_unrelated_files_and_symlinks(self):
         f = self.frame()
         root = Path(f["image_path"]).parent
@@ -485,6 +553,55 @@ else:
             self.assertFalse(rows[-1]["timed_out"])
         finally:
             thread.join(timeout=2)
+            server.close()
+
+    def test_event_serialization_memory_is_bounded(self):
+        server = socket.socket(socket.AF_UNIX)
+        server.bind(str(self.session / ".socket2.sock"))
+        server.listen()
+        server.settimeout(5)
+        def emit():
+            try:
+                with server.accept()[0] as conn:
+                    conn.settimeout(5)
+                    for _ in range(4096): conn.sendall(b"activewindow>>" + b"x" * 60000 + b"\n")
+            except (BrokenPipeError, ConnectionResetError, socket.timeout):
+                pass
+        thread = threading.Thread(target=emit)
+        thread.start()
+        def bounded(): resource.setrlimit(resource.RLIMIT_AS, (128 * 1024**2,) * 2)
+        try:
+            result = subprocess.run([str(BIN), "events", "--limit", "4096", "--timeout-ms", "5000"],
+                                    env=self.env, preexec_fn=bounded, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE, timeout=7)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        finally:
+            thread.join(timeout=6)
+            server.close()
+
+    def test_large_adjacent_events_are_limited_per_record(self):
+        server = socket.socket(socket.AF_UNIX)
+        server.bind(str(self.session / ".socket2.sock"))
+        server.listen()
+        server.settimeout(3)
+        line = b"activewindow>>" + b"x" * (65535 - len(b"activewindow>>\n")) + b"\n"
+        def emit():
+            try:
+                with server.accept()[0] as conn:
+                    conn.settimeout(3)
+                    conn.sendall(line * 3)
+            except (BrokenPipeError, socket.timeout):
+                pass
+        thread = threading.Thread(target=emit)
+        thread.start()
+        try:
+            result = subprocess.run([str(BIN), "events", "--limit", "3", "--timeout-ms", "2000"],
+                                    env=self.env, capture_output=True, text=True, timeout=3)
+            self.assertEqual(result.returncode, 0, result.stdout[-500:])
+            rows = [json.loads(line) for line in result.stdout.splitlines()]
+            self.assertEqual(rows[-1]["events"], 3)
+        finally:
+            thread.join(timeout=3)
             server.close()
 
     def test_native_backend_does_not_fall_back_to_helpers(self):

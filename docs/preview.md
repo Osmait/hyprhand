@@ -41,6 +41,9 @@ See the compositor's [window-rule API](https://wiki.hypr.land/configuring/core/r
   up to 5 fps by default (configurable 1–15). Captures fit within 960 × 540;
   resizing the viewer does not increase source resolution. This is a monitoring
   preview, not full-frame-rate video streaming or a precise editing viewport.
+  The configured rate is a maximum: repeated identical images progressively
+  back off to one capture per second. Changed pixels restore the target rate;
+  detecting activity after an idle period can therefore take up to one second.
 - **Detener agente** disables deskctl input in that source. It cancels guarded
   deskctl actions, not the model, shell jobs, rendering, or other automation
   that bypasses deskctl. Applications remain open. There is no resume button.
@@ -58,14 +61,25 @@ See the compositor's [window-rule API](https://wiki.hypr.land/configuring/core/r
 
 ## Implementation and limits
 
-The GTK process keeps the host environment. Separate bounded CLI workers route
-to the managed session and validate its original compositor instance. Frames
+The GTK process keeps the host environment. A persistent, demand-driven CLI
+capture worker routes from the original owner environment on every request and
+checks the original compositor identity both before and after capture. A separate
+short-lived stop worker remains independent of capture. Frames
 use bounded pipes, not screenshot/history files. Output is drained incrementally
 and rejected at 8 MiB, before a faulty helper can grow an unbounded memory file.
 Each grim invocation has a 1.5-second deadline and is reaped on cancellation.
-The complete capture worker also has a two-second cooperative budget. Headers, PNG dimensions,
+Each complete capture request has a two-second cooperative budget. Headers, PNG dimensions,
 byte size and monotonic timestamps are checked before GTK decodes an image.
 There is no image input handler, virtual keyboard or pointer device in the viewer.
+
+The private `_preview_stream` protocol accepts one `F` byte per request and
+returns a little-endian u32 length followed by the existing DCP1 frame. Only one
+request is in flight. The viewer validates the length before allocating memory,
+and uses cancellable I/O and texture decoding in a GLib task, not the GTK main
+loop. PNG slices share `GBytes` storage; identical PNGs reuse the previous
+texture. The persistent worker releases per-request memory, exits on stdin EOF,
+and stops after 30 seconds without requests. `grim` is still launched per capture.
+See [GDK's thread-safe texture loading contract](https://docs.gtk.org/gdk4/class.Texture.html).
 
 This implementation uses repeated compressed screenshots, not PipeWire or GPU
 zero-copy streaming. Expect latency, GTK memory overhead and CPU usage that
@@ -85,6 +99,9 @@ a substitute for a compositor-level security boundary.
 zig build test integration
 python3 tests/preview.py
 zig build pip -Doptimize=ReleaseSafe
+zig build pip-test -Doptimize=ReleaseSafe
+# Optional real GTK callbacks on a private Broadway display, never the host:
+python3 tests/viewer_broadway.py
 ```
 
 Worker tests use fake IPC, managed metadata and disposable processes, without a
@@ -115,9 +132,24 @@ python3 scripts/benchmark_preview.py --live --session agent --seconds 120 --fps 
 
 This opt-in script opens/closes only its own host preview, never enables input,
 and requires an existing managed source. It reports 30 standalone worker latency
-samples, viewer RSS and viewer/reaped-worker CPU. It does **not** measure presented
-FPS, GPU/compositor CPU, or total memory of the process tree. See
+samples, viewer RSS and CPU including live/reaped workers. Optional JSON telemetry
+(`DESKCTL_PIP_METRICS=1`) distinguishes received frames, new textures, GTK paints
+and updates with confirmed GDK presentation timestamps. Unsupported presentation
+feedback is reported as null, not zero FPS. An unchanged scene intentionally
+has few visual updates. GPU/compositor CPU and total tree memory remain outside
+this benchmark; /proc tree sampling has process-exit boundary noise. See
 [the measured follow-up](audit-followup-2026-09.md) for results and remaining limits.
+
+For a reproducible software-path soak without accessing any desktop:
+
+```sh
+python3 scripts/benchmark_viewer_offline.py --seconds 300
+```
+
+It requires `gtk4-broadwayd`, uses private Unix sockets and a synthetic static
+PNG, and accepts up to 3600 seconds. Its results are **not** Hyprland/GPU latency
+measurements. Current changes and offline comparisons are documented in
+[the performance follow-up](performance-2026-09.md).
 
 Borderless revision: verified over a room-image application at both new sizes,
 with accessible close/stop labels and scoped border/shadow suppression. In a

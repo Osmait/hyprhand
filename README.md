@@ -93,7 +93,9 @@ al agente**; **Detener agente** deshabilita la entrada de deskctl, sin cerrar ap
 ni cancelar procesos externos. Una sesión bloqueada o perdida borra la imagen.
 
 Host Hyprlang o Lua (reglas probadas en 0.56.2), capturas de hasta 960×540 a
-1–15 fps, 5 por defecto. Añade reglas temporales solo para su ventana, sin editar
+un máximo de 1–15 fps, 5 por defecto; baja hasta 1 fps si la imagen no cambia.
+Usa un worker persistente y decodifica fuera del hilo GTK.
+Añade reglas temporales solo para su ventana, sin editar
 tu configuración. GTK no se añade como dependencia de la CLI principal.
 [Uso, arquitectura, pruebas y límites](docs/preview.md).
 
@@ -384,6 +386,11 @@ zig build integration -Doptimize=ReleaseSafe
 python3 tests/keyboard_unit.py
 python3 tests/keyboard_protocol.py
 python3 tests/session_lifecycle.py
+python3 scripts/benchmark_offline.py
+# Opcional, GTK privado sin utilizar el escritorio:
+zig build pip pip-test -Doptimize=ReleaseSafe
+python3 tests/viewer_broadway.py
+python3 scripts/benchmark_viewer_offline.py --seconds 300
 python3 -m unittest discover -s packaging -p 'test_*.py'
 python3 tests/benchmark.py --session host
 

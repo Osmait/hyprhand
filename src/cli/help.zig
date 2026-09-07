@@ -33,6 +33,7 @@ pub const text =
     \\  session destroy NAME       Closes tracked apps; retains profiles and logs
     \\  launch --session NAME -- PROGRAM ARGUMENTS...
     \\  preview --session NAME [--monitor NAME] [--fps 1..15]
+    \\    Maximum capture rate; unchanged images back off to 1 fps.
     \\    Optional GTK4 host PiP; read-only, close leaves agent running.
     \\
     \\Input accepts --dry-run. Coordinates are screenshot pixels, not desktop pixels.

@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import select
 import shutil
 import socket
 import struct
@@ -67,7 +68,7 @@ class Preview(unittest.TestCase):
         self.servers.append((stop, thread, server))
         helper = self.root / "grim"
         helper.write_text(f"#!{sys.executable}\n" + r'''
-import json, os, pathlib, signal, struct, sys, time
+import json, os, pathlib, signal, struct, sys, time, zlib, binascii
 root = pathlib.Path(os.environ['DESKCTL_PREVIEW_TEST_ROOT'])
 if (root / 'ignore-term').exists(): signal.signal(signal.SIGTERM, signal.SIG_IGN)
 (root / 'capture.json').write_text(json.dumps({'argv': sys.argv, 'pid': os.getpid(),
@@ -77,7 +78,15 @@ if (root / 'flood').exists():
     while True: os.write(1, b'x' * 65536)
 if (root / 'lock-after').exists(): (root / 'locked').touch()
 width = 9999 if (root / 'oversize').exists() else 960
-sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' + struct.pack('>II', width, 540))
+if (root / 'valid-png').exists():
+    def chunk(kind, data):
+        return struct.pack('>I',len(data))+kind+data+struct.pack('>I',binascii.crc32(kind+data)&0xffffffff)
+    image = b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',width,540,8,2,0,0,0))
+    color = b'\x1b\x36\x56' if not (root / 'changed').exists() else b'\x65\x36\x56'
+    image += chunk(b'IDAT',zlib.compress((b'\0'+color*width)*540))+chunk(b'IEND',b'')
+    sys.stdout.buffer.write(image)
+else:
+    sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' + struct.pack('>II', width, 540))
 ''')
         helper.chmod(0o700)
         self.env.update(PATH=f"{self.root}:{os.environ['PATH']}", DESKCTL_PREVIEW_TEST_ROOT=str(self.root))
@@ -91,6 +100,83 @@ sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' +
 
     def worker(self, **kwargs):
         return subprocess.run(self.argv(**kwargs), env=self.env, capture_output=True, timeout=8)
+
+    def stream(self):
+        argv = self.argv()
+        argv[1] = "_preview_stream"
+        process = subprocess.Popen(argv, env=self.env, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+        def cleanup():
+            if process.poll() is None: process.terminate()
+            try: process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+                self.fail("stream ignored cancellation")
+        self.addCleanup(cleanup)
+        return process
+
+    def stream_frame(self, process):
+        process.stdin.write(b"F")
+        def read(length):
+            data = b""
+            deadline = time.monotonic() + 4
+            while len(data) < length:
+                self.assertLess(time.monotonic(), deadline)
+                self.assertTrue(select.select([process.stdout], [], [], max(0, deadline - time.monotonic()))[0])
+                part = os.read(process.stdout.fileno(), length - len(data))
+                self.assertTrue(part, "unexpected EOF")
+                data += part
+            return data
+        length, = struct.unpack("<I", read(4))
+        self.assertLessEqual(length, 8 * 1024**2 + 13)
+        return read(length)
+
+    def test_stream_is_demand_driven_and_observes_stop(self):
+        process = self.stream()
+        self.assertFalse(select.select([process.stdout], [], [], 0.1)[0])
+        self.assertFalse((self.root / "capture.json").exists())
+        for _ in range(3):
+            self.assertEqual(self.stream_frame(process)[:5], b"DCP1\1")
+        self.assertFalse(select.select([process.stdout], [], [], 0.1)[0])
+        self.cli("stop", "--session", "check")
+        self.assertEqual(self.stream_frame(process)[:5], b"DCP1\0")
+        process.stdin.close()
+        process.stdin = None
+        process.communicate(timeout=2)
+        self.assertEqual(process.returncode, 0)
+
+    def test_stream_revalidates_identity_and_lock_each_request(self):
+        process = self.stream()
+        self.stream_frame(process)
+        self.metadata["instance"] = "replacement"
+        self.save()
+        process.stdin.write(b"F")
+        out, _ = process.communicate(timeout=3)
+        self.assertNotEqual(process.returncode, 0)
+        self.assertNotIn(b"DCP1", out)
+        self.metadata["instance"] = "test"
+        self.save()
+        process = self.stream()
+        self.stream_frame(process)
+        (self.root / "locked").touch()
+        process.stdin.write(b"F")
+        out, _ = process.communicate(timeout=3)
+        self.assertEqual(json.loads(out)["err"]["code"], "SessionLocked")
+
+    def test_stream_cancel_during_capture_reaps_grim(self):
+        process = self.stream()
+        (self.root / "slow").touch()
+        process.stdin.write(b"F")
+        deadline = time.monotonic() + 3
+        while not (self.root / "capture.json").exists():
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.01)
+        pid = json.loads((self.root / "capture.json").read_text())["pid"]
+        process.terminate()
+        out, _ = process.communicate(timeout=3)
+        self.assertEqual(json.loads(out)["err"]["code"], "Cancelled")
+        self.assertFalse(Path(f"/proc/{pid}").exists())
 
     def error(self, code, **kwargs):
         result = self.worker(**kwargs)

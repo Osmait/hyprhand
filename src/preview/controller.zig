@@ -182,10 +182,11 @@ fn capture(rt: *Runtime, argv: []const []const u8) ![]const u8 {
     return bytes.toOwnedSlice(rt.a);
 }
 
-pub fn worker(rt: *Runtime, opt: Args) !void {
+const Frame = struct { header: [protocol.header_len]u8, png: []const u8 };
+
+fn frame(rt: *Runtime, opt: Args) !Frame {
     if (std.mem.eql(u8, rt.session_id, "host")) return error.PreviewManagedSessionRequired;
     if (!std.mem.eql(u8, rt.instance, opt.expected_instance.?)) return error.PreviewIdentityMismatch;
-    if (opt.command == ._preview_stop) return rt.stop();
     try rt.prepare();
     try rt.validateDisplay();
     try rt.unlocked();
@@ -200,7 +201,77 @@ pub fn worker(rt: *Runtime, opt: Args) !void {
         error.ControlStopped => false,
         else => return err,
     };
-    const header = protocol.header(started, enabled);
-    try std.Io.File.stdout().writeStreamingAll(rt.io, &header);
-    try std.Io.File.stdout().writeStreamingAll(rt.io, png);
+    return .{ .header = protocol.header(started, enabled), .png = png };
+}
+
+pub fn worker(rt: *Runtime, opt: Args) !void {
+    if (opt.command == ._preview_stop) {
+        if (std.mem.eql(u8, rt.session_id, "host")) return error.PreviewManagedSessionRequired;
+        if (!std.mem.eql(u8, rt.instance, opt.expected_instance.?)) return error.PreviewIdentityMismatch;
+        return rt.stop();
+    }
+    const result = try frame(rt, opt);
+    try std.Io.File.stdout().writeStreamingAll(rt.io, &result.header);
+    try std.Io.File.stdout().writeStreamingAll(rt.io, result.png);
+}
+
+fn writeStream(bytes: []const u8) !void {
+    var offset: usize = 0;
+    while (offset < bytes.len) {
+        try native.checkCancelled();
+        const n = c.write(c.STDOUT_FILENO, bytes.ptr + offset, bytes.len - offset);
+        if (n > 0) {
+            offset += @intCast(n);
+            continue;
+        }
+        if (n < 0 and c.__errno_location().* == c.EINTR) continue;
+        if (n >= 0 or c.__errno_location().* != c.EAGAIN) return error.PreviewStreamClosed;
+        var pfd = c.struct_pollfd{ .fd = c.STDOUT_FILENO, .events = c.POLLOUT, .revents = 0 };
+        if (c.poll(&pfd, 1, 25) < 0 and c.__errno_location().* != c.EINTR) return error.PreviewStreamClosed;
+    }
+}
+
+/// Demand-driven, one bounded response per 'F'. No unsolicited capture queue.
+/// Re-route from the original owner environment each frame so a replaced or
+/// destroyed session never inherits a persistent worker's authorization.
+pub fn stream(owner: *Runtime, opt: Args) !void {
+    if (std.mem.eql(u8, opt.session, "host")) return error.PreviewManagedSessionRequired;
+    const flags = c.fcntl(c.STDOUT_FILENO, c.F_GETFL);
+    if (flags < 0 or c.fcntl(c.STDOUT_FILENO, c.F_SETFL, flags | c.O_NONBLOCK) < 0) return error.PreviewBufferFailed;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    while (true) {
+        native.clearCommandLimit();
+        const idle_deadline = native.nowMs() + 30_000;
+        while (true) {
+            try native.checkCancelled();
+            if (native.nowMs() >= idle_deadline) return;
+            var pfd = c.struct_pollfd{ .fd = c.STDIN_FILENO, .events = c.POLLIN, .revents = 0 };
+            const ready = c.poll(&pfd, 1, 50);
+            if (ready < 0 and c.__errno_location().* != c.EINTR) return error.PreviewStreamClosed;
+            if (ready <= 0) continue;
+            var request: u8 = 0;
+            const n = c.read(c.STDIN_FILENO, &request, 1);
+            if (n < 0 and c.__errno_location().* == c.EINTR) continue;
+            if (n == 0) return;
+            if (n != 1 or request != 'F') return error.InvalidPreviewRequest;
+            break;
+        }
+        native.limitCommand(2000, error.HelperTimeout);
+        defer _ = arena.reset(.{ .retain_with_limit = 4 * 1024 * 1024 });
+        var source = owner.*;
+        source.a = arena.allocator();
+        try sessions.route(&source, opt.session);
+        const result = try frame(&source, opt);
+        // Recheck identity after capture as well, before publishing any bytes.
+        var current = owner.*;
+        current.a = arena.allocator();
+        try sessions.route(&current, opt.session);
+        if (!std.mem.eql(u8, current.instance, opt.expected_instance.?)) return error.PreviewIdentityMismatch;
+        var length: [4]u8 = undefined;
+        std.mem.writeInt(u32, &length, @intCast(result.header.len + result.png.len), .little);
+        try writeStream(&length);
+        try writeStream(&result.header);
+        try writeStream(result.png);
+    }
 }

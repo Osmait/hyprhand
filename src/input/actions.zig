@@ -169,6 +169,7 @@ const MotionDriver = struct {
     pointer: *Pointer,
     aura: ?*Aura = null,
     expected_position: ?geometry.Point = null,
+    arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator),
     pub fn now(_: *@This()) i64 {
         return native.nowMs();
     }
@@ -176,14 +177,17 @@ const MotionDriver = struct {
         try self.rt.pause(ms);
     }
     pub fn move(self: *@This(), p: geometry.Point) !void {
+        defer _ = self.arena.reset(.{ .retain_with_limit = 64 * 1024 });
+        var scratch = self.rt.*;
+        scratch.a = self.arena.allocator();
         if (self.expected_position) |expected| {
-            const before = try self.rt.json(geometry.Point, try self.rt.query("cursorpos"));
+            const before = try scratch.json(geometry.Point, try scratch.query("cursorpos"));
             if (@abs(@as(i64, before.x) - expected.x) > 1 or @abs(@as(i64, before.y) - expected.y) > 1) return error.CursorPositionMismatch;
         }
         // Each sample preserves the existing stop/signal/session-lock guards.
-        try self.rt.dispatch("movecursor", try std.fmt.allocPrint(self.rt.a, "{d} {d}", .{ p.x, p.y }));
+        try scratch.dispatch("movecursor", try std.fmt.allocPrint(scratch.a, "{d} {d}", .{ p.x, p.y }));
         try self.pointer.refreshPosition();
-        const actual = try self.rt.json(geometry.Point, try self.rt.query("cursorpos"));
+        const actual = try scratch.json(geometry.Point, try scratch.query("cursorpos"));
         if (@abs(@as(i64, actual.x) - p.x) > 1 or @abs(@as(i64, actual.y) - p.y) > 1) return error.CursorPositionMismatch;
         self.expected_position = actual;
         if (self.aura) |aura| try aura.place(actual);
@@ -194,16 +198,17 @@ const PointerGuard = struct {
     frame: geometry.Frame,
     fn check(rt: *Runtime, context: *anyopaque) !void {
         const self: *PointerGuard = @ptrCast(@alignCast(context));
-        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        defer arena.deinit();
-        var scratch = rt.*;
-        scratch.a = arena.allocator();
-        const current = try observation.snapshotForAction(&scratch, self.frame.monitor_id, true);
+        // Runtime.guard supplies scratch storage scoped to this check.
+        const current = try observation.snapshotForAction(rt, self.frame.monitor_id, true);
         try self.frame.validate(rt.instance, rt.display, current.revision, native.nowMs());
     }
 };
 
 pub fn run(rt: *Runtime, opt: args.Args) !void {
+    var guard_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer guard_arena.deinit();
+    rt.guard_arena = &guard_arena;
+    defer rt.guard_arena = null;
     if (opt.command == .launch and eq(rt.session_id, "host")) return error.ManagedSessionRequired;
     const lock_fd = try rt.lock();
     defer _ = c.close(lock_fd);
@@ -279,6 +284,7 @@ pub fn run(rt: *Runtime, opt: args.Args) !void {
         }
         const start = try rt.json(geometry.Point, try rt.query("cursorpos"));
         var driver = MotionDriver{ .rt = rt, .pointer = &pointer, .expected_position = start };
+        defer driver.arena.deinit();
         var aura: Aura = undefined;
         const aura_started = native.nowMs();
         if (!opt.no_aura and !try rt.outlineEnabled()) {

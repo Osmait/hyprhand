@@ -1,12 +1,9 @@
 //! Optional GTK viewer. No virtual input devices, IPC dispatchers or enable path.
 const std = @import("std");
 const protocol = @import("protocol.zig");
-const c = @cImport({
-    @cUndef("_FORTIFY_SOURCE");
-    @cDefine("_FORTIFY_SOURCE", "0");
-    @cInclude("pip_gtk.h");
-    @cInclude("signal.h");
-});
+const c = @import("gtk.zig").c;
+const Job = @import("transport.zig").Job;
+const Cadence = @import("cadence.zig").Cadence;
 
 // Scoped to this process/window, independent of the owner's GTK theme.
 // Scrims protect controls over both bright and dark captured applications.
@@ -30,6 +27,26 @@ const State = struct {
     stop_failed: bool = false,
     stop_confirmed: bool = false,
     stopped_at: i64 = 0,
+    frame_busy: bool = false,
+    frame_cancel: ?*c.GCancellable = null,
+    retiring_at: i64 = 0,
+    close_started: i64 = 0,
+    stop_started: i64 = 0,
+    png: ?*c.GBytes = null,
+    texture: ?*c.GdkTexture = null,
+    cadence: Cadence,
+    metrics: bool = false,
+    metrics_started: i64 = 0,
+    metrics_emitted: i64 = 0,
+    received: u64 = 0,
+    updates: u64 = 0,
+    painted: u64 = 0,
+    presented: u64 = 0,
+    paint_pending: ?i64 = null,
+    paint_latency_ms: i64 = 0,
+    present_latency_ms: i64 = 0,
+    feedback: [64]?struct { counter: i64, captured: i64 } = @splat(null),
+    clock: ?*c.GdkFrameClock = null,
 };
 var state: State = undefined;
 fn now() i64 {
@@ -42,61 +59,161 @@ fn label(text: [*:0]const u8) void {
 fn lost() void {
     c.gtk_picture_set_paintable(state.picture, null);
     state.last_frame = 0;
+    state.paint_pending = null;
     label(if (state.stop_failed) "Sin señal · No se pudo detener. Reintenta." else if (state.stop_confirmed) "Sin señal · Control detenido" else "Sin señal · Sesión cerrada, bloqueada o no disponible");
 }
 
 fn spawn(command: [*:0]const u8, frame: bool) ?*c.GSubprocess {
     const argv = [_:null]?[*:0]const u8{ state.cli, command, "--session", state.session, "--expected-instance", state.instance, if (frame) "--monitor" else null, if (frame) state.monitor.ptr else null };
     var err: ?*c.GError = null;
-    const process = c.g_subprocess_newv(@ptrCast(&argv), c.G_SUBPROCESS_FLAGS_STDOUT_PIPE | c.G_SUBPROCESS_FLAGS_STDERR_SILENCE, &err);
+    const flags: c.GSubprocessFlags = @intCast(c.G_SUBPROCESS_FLAGS_STDERR_SILENCE | (if (frame) c.G_SUBPROCESS_FLAGS_STDIN_PIPE | c.G_SUBPROCESS_FLAGS_STDOUT_PIPE else c.G_SUBPROCESS_FLAGS_STDOUT_SILENCE));
+    const process = c.g_subprocess_newv(@ptrCast(&argv), flags, &err);
     if (err) |e| c.g_error_free(e);
     return process;
 }
 
-fn frameDone(object: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callconv(.c) void {
+fn reaped(object: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callconv(.c) void {
     const process: *c.GSubprocess = @ptrCast(object.?);
-    defer c.g_object_unref(process);
-    state.frame_process = null;
-    var bytes: ?*c.GBytes = null;
     var err: ?*c.GError = null;
-    const ok = c.g_subprocess_communicate_finish(process, result, &bytes, null, &err);
-    defer if (err) |e| c.g_error_free(e);
-    defer if (bytes) |b| c.g_bytes_unref(b);
+    _ = c.g_subprocess_wait_finish(process, result, &err);
+    if (err) |e| c.g_error_free(e);
+    state.frame_process = null;
+    state.retiring_at = 0;
+    c.g_object_unref(process);
+}
+
+fn retire() void {
+    if (state.frame_cancel) |cancel| c.g_cancellable_cancel(cancel);
+    if (state.frame_process) |process| {
+        if (state.retiring_at == 0) {
+            state.retiring_at = now();
+            c.g_subprocess_send_signal(process, c.SIGTERM);
+            c.g_subprocess_wait_async(process, null, reaped, null);
+        }
+    }
+}
+
+fn frameDone(_: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callconv(.c) void {
+    const job: *Job = @ptrCast(@alignCast(c.g_task_get_task_data(@ptrCast(result.?)).?));
+    state.frame_busy = false;
+    c.g_object_unref(state.frame_cancel.?);
+    state.frame_cancel = null;
     if (state.closing) return;
-    state.retry_after = now() + 1000;
-    if (ok == 0 or c.g_subprocess_get_successful(process) == 0 or bytes == null) return lost();
-    var length: usize = 0;
-    const data: [*]const u8 = @ptrCast(c.g_bytes_get_data(bytes.?, &length));
-    const frame = protocol.decode(data[0..length], now()) catch return lost();
-    const png = c.g_bytes_new(frame.png.ptr, frame.png.len);
-    defer c.g_bytes_unref(png);
-    const texture = c.gdk_texture_new_from_bytes(png, &err) orelse return lost();
-    defer c.g_object_unref(texture);
-    c.gtk_picture_set_paintable(state.picture, @ptrCast(texture));
-    state.last_frame = frame.captured_ms;
-    state.retry_after = 0;
-    if (state.stop_confirmed and frame.captured_ms > state.stopped_at) state.stop_confirmed = !frame.enabled;
-    // Frames that started before a successful stop must not overwrite its ack.
-    const enabled = frame.enabled and !state.stop_confirmed;
+    if (!job.ok or now() - job.captured_ms > protocol.max_age_ms or state.retiring_at != 0) {
+        retire();
+        state.retry_after = now() + 1000;
+        return lost();
+    }
+    const changed = job.texture != null;
+    state.received += 1;
+    if (job.texture) |texture| {
+        if (state.texture) |previous| c.g_object_unref(previous);
+        state.texture = @ptrCast(c.g_object_ref(texture));
+        if (state.png) |previous| c.g_bytes_unref(previous);
+        state.png = c.g_bytes_ref(job.png.?);
+        state.updates += 1;
+    }
+    // A lost signal clears only the widget. Fresh identical pixels may safely
+    // reuse the cached texture after lock/identity/time validation succeeds.
+    if (changed or state.last_frame == 0) {
+        c.gtk_picture_set_paintable(state.picture, @ptrCast(state.texture.?));
+        state.paint_pending = job.captured_ms;
+    }
+    state.last_frame = job.captured_ms;
+    state.retry_after = state.cadence.completed(state.capture_started, now(), changed);
+    if (state.stop_confirmed and job.captured_ms > state.stopped_at) state.stop_confirmed = !job.enabled;
+    const enabled = job.enabled and !state.stop_confirmed;
     c.gtk_widget_set_sensitive(state.stop, @intFromBool(state.stop_process == null and enabled));
     label(if (state.stop_process != null) "Deteniendo control…" else if (state.stop_failed) "No se pudo detener · Reintenta" else if (enabled) "● En vivo · Control habilitado" else "● En vivo · Control detenido");
 }
 
-fn tick(_: ?*anyopaque) callconv(.c) c_int {
-    if (state.closing) return c.G_SOURCE_REMOVE;
-    if (state.last_frame != 0 and now() - state.last_frame > protocol.max_age_ms) lost();
+fn requestFrame() void {
+    if (state.frame_process == null) state.frame_process = spawn("_preview_stream", true);
     if (state.frame_process) |process| {
-        if (now() - state.capture_started > 5000) c.g_subprocess_send_signal(process, c.SIGTERM);
-    } else if (now() >= state.retry_after) {
         state.capture_started = now();
-        state.frame_process = spawn("_preview_frame", true);
-        if (state.frame_process) |process| {
-            c.g_subprocess_communicate_async(process, null, null, frameDone, null);
-        } else {
+        state.frame_cancel = c.g_cancellable_new();
+        Job.start(process, state.png, state.frame_cancel.?, frameDone) catch {
+            c.g_object_unref(state.frame_cancel.?);
+            state.frame_cancel = null;
+            retire();
             state.retry_after = now() + 1000;
-            lost();
-        }
+            return lost();
+        };
+        state.frame_busy = true;
+    } else {
+        state.retry_after = now() + 1000;
+        lost();
     }
+}
+
+fn afterPaint(clock: ?*c.GdkFrameClock, _: ?*anyopaque) callconv(.c) void {
+    if (state.paint_pending) |captured| {
+        state.paint_pending = null;
+        state.painted += 1;
+        state.paint_latency_ms += @max(0, now() - captured);
+        const counter = c.gdk_frame_clock_get_frame_counter(clock);
+        state.feedback[@as(u64, @intCast(counter)) % state.feedback.len] = .{ .counter = counter, .captured = captured };
+    }
+}
+
+fn metrics() void {
+    if (!state.metrics) return;
+    if (state.clock) |clock| for (&state.feedback) |*entry| {
+        const sample = entry.* orelse continue;
+        const timings = c.gdk_frame_clock_get_timings(clock, sample.counter) orelse {
+            entry.* = null;
+            continue;
+        };
+        if (c.gdk_frame_timings_get_complete(timings) != 0) {
+            const timestamp = c.gdk_frame_timings_get_presentation_time(timings);
+            if (timestamp > 0) {
+                state.presented += 1;
+                state.present_latency_ms += @max(0, @divTrunc(timestamp, 1000) - sample.captured);
+            }
+            entry.* = null;
+        }
+    };
+    if (now() - state.metrics_emitted < 5000) return;
+    state.metrics_emitted = now();
+    const encoded = std.json.Stringify.valueAlloc(std.heap.c_allocator, .{
+        .event = "preview_metrics",
+        .elapsed_ms = now() - state.metrics_started,
+        .received_frames = state.received,
+        .texture_updates = state.updates,
+        .painted_updates = state.painted,
+        .presented_updates = state.presented,
+        .paint_latency_total_ms = state.paint_latency_ms,
+        .presentation_latency_total_ms = state.present_latency_ms,
+        .presentation_feedback_available = state.presented > 0,
+        .signal_live = state.last_frame != 0,
+    }, .{}) catch return;
+    defer std.heap.c_allocator.free(encoded);
+    var buffer: [1024]u8 = undefined;
+    const line = std.fmt.bufPrint(&buffer, "{s}\n", .{encoded}) catch return;
+    // Optional telemetry must never block GTK when its consumer stops reading.
+    _ = c.write(c.STDOUT_FILENO, line.ptr, line.len);
+}
+
+fn tick(_: ?*anyopaque) callconv(.c) c_int {
+    metrics();
+    if (state.retiring_at != 0 and now() - state.retiring_at > 500) if (state.frame_process) |process| c.g_subprocess_force_exit(process);
+    if (state.closing) {
+        retire();
+        if (state.stop_process) |process| {
+            if (now() - state.close_started > 750) c.g_subprocess_force_exit(process);
+        }
+        if (state.frame_process == null and !state.frame_busy and state.stop_process == null) c.g_main_loop_quit(state.loop);
+        // A native decoder that ignores cancellation must not hang shutdown.
+        if (now() - state.close_started > 1500) c._exit(1);
+        return c.G_SOURCE_CONTINUE;
+    }
+    if (state.stop_process) |process| {
+        if (now() - state.stop_started > 2500) c.g_subprocess_force_exit(process) else if (now() - state.stop_started > 2000) c.g_subprocess_send_signal(process, c.SIGTERM);
+    }
+    if (state.last_frame != 0 and now() - state.last_frame > protocol.max_age_ms) lost();
+    if (state.frame_busy) {
+        if (now() - state.capture_started > 2500) retire();
+    } else if (state.retiring_at == 0 and now() >= state.retry_after) requestFrame();
     return c.G_SOURCE_CONTINUE;
 }
 
@@ -105,10 +222,8 @@ fn stopDone(object: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callc
     defer c.g_object_unref(process);
     state.stop_process = null;
     var err: ?*c.GError = null;
-    var bytes: ?*c.GBytes = null;
-    const ok = c.g_subprocess_communicate_finish(process, result, &bytes, null, &err);
+    const ok = c.g_subprocess_wait_finish(process, result, &err);
     defer if (err) |e| c.g_error_free(e);
-    defer if (bytes) |b| c.g_bytes_unref(b);
     if (state.closing) return;
     state.stop_confirmed = ok != 0 and c.g_subprocess_get_successful(process) != 0;
     if (state.stop_confirmed) state.stopped_at = now();
@@ -124,8 +239,9 @@ fn stopClicked(_: ?*c.GtkButton, _: ?*anyopaque) callconv(.c) void {
     label("Deteniendo control…");
     c.gtk_widget_set_sensitive(state.stop, 0);
     state.stop_process = spawn("_preview_stop", false);
+    state.stop_started = now();
     if (state.stop_process) |process| {
-        c.g_subprocess_communicate_async(process, null, null, stopDone, null);
+        c.g_subprocess_wait_async(process, null, stopDone, null);
     } else {
         state.stop_failed = true;
         label("No se pudo detener · Reintenta");
@@ -134,8 +250,10 @@ fn stopClicked(_: ?*c.GtkButton, _: ?*anyopaque) callconv(.c) void {
 }
 
 fn quit(_: ?*anyopaque) callconv(.c) c_int {
+    if (state.closing) return c.G_SOURCE_CONTINUE;
     state.closing = true;
-    c.g_main_loop_quit(state.loop);
+    state.close_started = now();
+    retire();
     return c.G_SOURCE_CONTINUE;
 }
 fn closeRequested(_: ?*c.GtkWindow, _: ?*anyopaque) callconv(.c) c_int {
@@ -244,30 +362,32 @@ pub fn main(init: std.process.Init) !void {
         .picture = picture,
         .status = status,
         .stop = stop,
+        .cadence = .{ .interval_ms = @intCast((1000 + fps - 1) / fps) },
+        .metrics = if (init.environ_map.get("DESKCTL_PIP_METRICS")) |v| std.mem.eql(u8, v, "1") else false,
+        .metrics_started = now(),
+        .metrics_emitted = now(),
     };
     _ = c.g_signal_connect_data(window, "close-request", @ptrCast(&closeRequested), null, null, 0);
     _ = c.g_signal_connect_data(stop, "clicked", @ptrCast(&stopClicked), null, null, 0);
     _ = c.g_signal_connect_data(close, "clicked", @ptrCast(&closeClicked), null, null, 0);
     const interrupt = c.g_unix_signal_add(c.SIGINT, quit, null);
     const terminate = c.g_unix_signal_add(c.SIGTERM, quit, null);
-    const timer = c.g_timeout_add(@max(66, 1000 / fps), tick, null);
+    const timer = c.g_timeout_add(25, tick, null);
     // Mapping respects no_initial_focus; present() would request activation.
     c.gtk_widget_set_visible(@ptrCast(window), 1);
+    if (state.metrics) {
+        const flags = c.fcntl(c.STDOUT_FILENO, c.F_GETFL);
+        if (flags < 0 or c.fcntl(c.STDOUT_FILENO, c.F_SETFL, flags | c.O_NONBLOCK) < 0) state.metrics = false;
+        state.clock = c.gtk_widget_get_frame_clock(@ptrCast(window));
+        if (state.clock) |clock| _ = c.g_signal_connect_data(clock, "after-paint", @ptrCast(&afterPaint), null, null, 0);
+    }
     _ = tick(null);
     c.g_main_loop_run(state.loop);
     _ = c.g_source_remove(timer);
     _ = c.g_source_remove(interrupt);
     _ = c.g_source_remove(terminate);
     c.gtk_window_destroy(window);
-    if (state.frame_process) |process| {
-        c.g_subprocess_send_signal(process, c.SIGTERM);
-        _ = c.g_subprocess_wait(process, null, null);
-        c.g_object_unref(process);
-    }
-    // A stop already requested must finish even when the owner closes the PiP.
-    if (state.stop_process) |process| {
-        _ = c.g_subprocess_wait(process, null, null);
-        c.g_object_unref(process);
-    }
+    if (state.png) |png| c.g_bytes_unref(png);
+    if (state.texture) |texture| c.g_object_unref(texture);
     c.g_main_loop_unref(state.loop);
 }

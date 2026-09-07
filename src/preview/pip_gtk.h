@@ -17,6 +17,8 @@ OPAQUE(GtkStyleProvider); OPAQUE(GdkDisplay); OPAQUE(GtkDrawingArea);
 OPAQUE(GtkGesture); OPAQUE(GtkGestureClick); OPAQUE(GtkEventController);
 OPAQUE(GtkNative); OPAQUE(GdkSurface); OPAQUE(GdkToplevel); OPAQUE(GdkDevice);
 OPAQUE(GdkEvent);
+OPAQUE(GTask); OPAQUE(GInputStream); OPAQUE(GOutputStream);
+OPAQUE(GdkFrameClock); OPAQUE(GdkFrameTimings);
 typedef struct _cairo cairo_t;
 #undef OPAQUE
 typedef int gboolean;
@@ -38,10 +40,13 @@ typedef void (*GCallback)(void);
 typedef void (*GClosureNotify)(void *, GClosure *);
 typedef gboolean (*GSourceFunc)(void *);
 typedef void (*GAsyncReadyCallback)(GObject *, GAsyncResult *, void *);
+typedef void (*GTaskThreadFunc)(GTask *, void *, void *, GCancellable *);
 #define GTK_ORIENTATION_HORIZONTAL 0
 #define GTK_ORIENTATION_VERTICAL 1
 #define GTK_CONTENT_FIT_CONTAIN 1
 #define G_SUBPROCESS_FLAGS_STDOUT_PIPE 4
+#define G_SUBPROCESS_FLAGS_STDOUT_SILENCE 8
+#define G_SUBPROCESS_FLAGS_STDIN_PIPE 1
 #define G_SUBPROCESS_FLAGS_STDERR_SILENCE 32
 #define G_SOURCE_CONTINUE 1
 #define G_SOURCE_REMOVE 0
@@ -132,13 +137,38 @@ gboolean g_source_remove(guint);
 gint64 g_get_monotonic_time(void);
 gulong g_signal_connect_data(void *, const char *, GCallback, void *, GClosureNotify, GConnectFlags);
 void g_object_unref(void *);
+void *(g_object_ref)(void *);
 void g_error_free(GError *);
 GBytes *g_bytes_new(const void *, gsize);
+GBytes *g_bytes_new_take(void *, gsize);
+GBytes *g_bytes_new_from_bytes(GBytes *, gsize, gsize);
+GBytes *g_bytes_ref(GBytes *);
+gboolean g_bytes_equal(const void *, const void *);
+void *g_try_malloc(gsize);
 const void *g_bytes_get_data(GBytes *, gsize *);
 void g_bytes_unref(GBytes *);
 GSubprocess *g_subprocess_newv(const char *const *, GSubprocessFlags, GError **);
 void g_subprocess_send_signal(GSubprocess *, int);
 gboolean g_subprocess_wait(GSubprocess *, GCancellable *, GError **);
+void g_subprocess_wait_async(GSubprocess *, GCancellable *, GAsyncReadyCallback, void *);
+gboolean g_subprocess_wait_finish(GSubprocess *, GAsyncResult *, GError **);
+void g_subprocess_force_exit(GSubprocess *);
+GInputStream *g_subprocess_get_stdout_pipe(GSubprocess *);
+GOutputStream *g_subprocess_get_stdin_pipe(GSubprocess *);
+gboolean g_input_stream_read_all(GInputStream *, void *, gsize, gsize *, GCancellable *, GError **);
+gboolean g_output_stream_write_all(GOutputStream *, const void *, gsize, gsize *, GCancellable *, GError **);
+GCancellable *g_cancellable_new(void);
+void g_cancellable_cancel(GCancellable *);
+GTask *g_task_new(void *, GCancellable *, GAsyncReadyCallback, void *);
+void g_task_set_task_data(GTask *, void *, GDestroyNotify);
+void *g_task_get_task_data(GTask *);
+void g_task_run_in_thread(GTask *, GTaskThreadFunc);
+void g_task_return_boolean(GTask *, gboolean);
+GdkFrameClock *gtk_widget_get_frame_clock(GtkWidget *);
+gint64 gdk_frame_clock_get_frame_counter(GdkFrameClock *);
+GdkFrameTimings *gdk_frame_clock_get_timings(GdkFrameClock *, gint64);
+gboolean gdk_frame_timings_get_complete(GdkFrameTimings *);
+gint64 gdk_frame_timings_get_presentation_time(GdkFrameTimings *);
 gboolean g_subprocess_get_successful(GSubprocess *);
 void g_subprocess_communicate_async(GSubprocess *, GBytes *, GCancellable *, GAsyncReadyCallback, void *);
 gboolean g_subprocess_communicate_finish(GSubprocess *, GAsyncResult *, GBytes **, GBytes **, GError **);

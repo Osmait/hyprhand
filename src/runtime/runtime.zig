@@ -16,6 +16,7 @@ pub const Runtime = struct {
     target_window: ?[]const u8 = null,
     extra_guard: ?*const fn (*Runtime, *anyopaque) anyerror!void = null,
     guard_context: ?*anyopaque = null,
+    guard_arena: ?*std.heap.ArenaAllocator = null,
 
     pub fn init(context: std.process.Init) !Runtime {
         const a = context.arena.allocator();
@@ -54,9 +55,12 @@ pub const Runtime = struct {
     }
 
     pub fn emit(self: *Runtime, data: anytype) !void {
-        const encoded = try std.json.Stringify.valueAlloc(self.a, data, .{});
-        try std.Io.File.stdout().writeStreamingAll(self.io, encoded);
-        try std.Io.File.stdout().writeStreamingAll(self.io, "\n");
+        // Bounded streaming output: no per-event serialization allocations.
+        var buffer: [4096]u8 = undefined;
+        var writer = std.Io.File.stdout().writer(self.io, &buffer);
+        try std.json.Stringify.value(data, .{}, &writer.interface);
+        try writer.interface.writeByte('\n');
+        try writer.interface.flush();
     }
 
     pub fn dispatch(self: *Runtime, name: []const u8, arg: []const u8) !void {
@@ -123,11 +127,13 @@ pub const Runtime = struct {
     pub fn guard(self: *Runtime) !void {
         try native.checkCancelled();
         const expected = self.control_token orelse return error.ControlStopped;
-        // Per-check arena avoids growth during long input/wait loops.
-        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        defer arena.deinit();
+        var local = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer local.deinit();
+        const arena = self.guard_arena orelse &local;
+        defer _ = arena.reset(.{ .retain_with_limit = 256 * 1024 });
         var scratch = self.*;
         scratch.a = arena.allocator();
+        scratch.guard_arena = null;
         const actual = try scratch.token();
         if (!std.mem.eql(u8, expected, actual)) return error.ControlStopped;
         try scratch.unlocked();
@@ -135,7 +141,7 @@ pub const Runtime = struct {
             const active = try scratch.json(struct { address: []const u8 = "" }, try scratch.query("activewindow"));
             if (!std.mem.eql(u8, target, active.address)) return error.WindowNotFocused;
         }
-        if (self.extra_guard) |check| try check(self, self.guard_context.?);
+        if (self.extra_guard) |check| try check(&scratch, self.guard_context.?);
     }
 
     pub fn pause(self: *Runtime, ms: u32) !void {
@@ -204,15 +210,16 @@ pub const Runtime = struct {
         try self.prepare();
         const authority = try self.authorityLock();
         defer _ = c.close(authority);
-        // Invalidate an enable that began before this stop but is still waiting
-        // for the compositor. New, explicitly requested enables may start later.
-        const epoch = try self.id();
-        const temp = try self.path(epoch);
-        defer _ = c.unlink(temp);
-        try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = temp, .data = epoch, .flags = .{ .exclusive = true } });
-        if (c.rename(temp, try self.path("stop-generation")) < 0) return error.StateWriteFailed;
-        if (c.unlink(try self.path("enabled")) < 0 and c.__errno_location().* != c.ENOENT) return error.StateWriteFailed;
-        if (c.unlink(try self.path("outline")) < 0 and c.__errno_location().* != c.ENOENT) return error.StateWriteFailed;
+        // Enable creates the epoch BEFORE IPC. Removing it invalidates every
+        // in-flight enable without allocating disk space or writing new data.
+        // Attempt all revocations even if one fails; never strand the token
+        // merely because publishing a new journal entry failed.
+        const paths = .{ try self.path("stop-generation"), try self.path("enabled"), try self.path("outline") };
+        var failed = false;
+        inline for (paths) |path_z| {
+            if (c.unlink(path_z) < 0 and c.__errno_location().* != c.ENOENT) failed = true;
+        }
+        if (failed) return error.StateWriteFailed;
         try self.emit(.{ .ok = true, .session_id = self.session_id, .control = "stopped" });
     }
 
@@ -226,7 +233,14 @@ pub const Runtime = struct {
     fn controlGeneration(self: *Runtime) ![]const u8 {
         const fd = try self.authorityLock();
         defer _ = c.close(fd);
-        return self.generation();
+        const current = try self.generation();
+        if (current.len != 0) return current;
+        const epoch = try self.id();
+        const temp = try self.path(epoch);
+        defer _ = c.unlink(temp);
+        try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = temp, .data = epoch, .flags = .{ .exclusive = true } });
+        if (c.rename(temp, try self.path("stop-generation")) < 0) return error.StateWriteFailed;
+        return epoch;
     }
 
     fn authorityLock(self: *Runtime) !c_int {

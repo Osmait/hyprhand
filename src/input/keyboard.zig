@@ -271,11 +271,15 @@ pub const Keyboard = struct {
     }
 
     fn sync(self: *Keyboard, rt: ?*Runtime) !void {
+        return self.syncChecked(rt, false);
+    }
+
+    fn syncChecked(self: *Keyboard, rt: ?*Runtime, already_guarded: bool) !void {
         const connection = if (self.connection) |*value| value else return error.VirtualKeyboardUnavailable;
         connection.runtime = rt;
         // Never retain a caller's runtime (in particular a stack-local scratch).
         defer connection.runtime = null;
-        try connection.syncWithCancellation(rt != null);
+        if (already_guarded) try connection.syncAfterGuard() else try connection.syncWithCancellation(rt != null);
         if (rt != null) try self.available();
     }
 
@@ -366,7 +370,7 @@ pub const Keyboard = struct {
                 try rt.guard();
                 self.held.press(self, .{ .code = key });
                 self.held.pop(self);
-                try self.sync(rt);
+                try self.syncChecked(rt, true);
             }
         }
     }

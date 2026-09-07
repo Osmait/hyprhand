@@ -43,6 +43,10 @@ pub fn limitCommand(ms: u32, err: anyerror) void {
     deadline_error = err;
 }
 
+pub fn clearCommandLimit() void {
+    command_deadline = null;
+}
+
 pub fn remainingMs(cap: u32) !u32 {
     try checkCancelled();
     const end = command_deadline orelse return cap;

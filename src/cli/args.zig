@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const Command = enum { doctor, state, monitors, windows, workspaces, sessions, session, launch, observe, preview, focus, workspace, move, click, doubleclick, drag, scroll, type, key, stop, enable, wait, events, logs, gc, accessibility, _a11y, _cursor_probe, _preview_frame, _preview_stop };
+pub const Command = enum { doctor, state, monitors, windows, workspaces, sessions, session, launch, observe, preview, focus, workspace, move, click, doubleclick, drag, scroll, type, key, stop, enable, wait, events, logs, gc, accessibility, _a11y, _cursor_probe, _preview_frame, _preview_stream, _preview_stop };
 pub const Args = struct {
     command: Command,
     session: []const u8 = "host",
@@ -66,9 +66,9 @@ fn allowed(a: Args, option: []const u8) bool {
     if (eq(option, "--indicator")) return cmd == .enable;
     if (eq(option, "--headless-bridge")) return cmd == .session;
     if (eq(option, "--dry-run")) return a.mutates() or cmd == .gc;
-    if (eq(option, "--monitor")) return cmd == .observe or cmd == .wait or cmd == .preview or cmd == ._preview_frame;
+    if (eq(option, "--monitor")) return cmd == .observe or cmd == .wait or cmd == .preview or cmd == ._preview_frame or cmd == ._preview_stream;
     if (eq(option, "--fps")) return cmd == .preview;
-    if (eq(option, "--expected-instance")) return cmd == ._preview_frame or cmd == ._preview_stop;
+    if (eq(option, "--expected-instance")) return cmd == ._preview_frame or cmd == ._preview_stop or cmd == ._preview_stream;
     if (eq(option, "--scale")) return cmd == .observe;
     if (eq(option, "--window")) return a.pointer() or cmd == .type or cmd == .key or cmd == .wait or (cmd == .accessibility or cmd == ._a11y);
     if (eq(option, "--scroll-mode")) return cmd == .scroll;
@@ -174,11 +174,11 @@ pub fn parse(argv: []const []const u8) !Args {
         if (!std.fs.path.isAbsolute(path) or std.mem.indexOfAny(u8, path, " :\t\r\n\x00") != null or a.nested) return error.InvalidHeadlessBridge;
     }
     if (a.mutates() and !a.explicit_session) return error.SessionRequired;
-    if (a.command == .preview or a.command == ._preview_frame or a.command == ._preview_stop) {
+    if (a.command == .preview or a.command == ._preview_frame or a.command == ._preview_stop or a.command == ._preview_stream) {
         if (!a.explicit_session) return error.SessionRequired;
         if (eq(a.session, "host")) return error.PreviewManagedSessionRequired;
         if (a.command != .preview and (a.expected_instance == null or a.expected_instance.?.len == 0)) return error.PreviewIdentityRequired;
-        if (a.command == ._preview_frame and a.monitor == null) return error.MonitorRequired;
+        if ((a.command == ._preview_frame or a.command == ._preview_stream) and a.monitor == null) return error.MonitorRequired;
     }
     if (a.fps < 1 or a.fps > 15) return error.InvalidPreviewFps;
     if (!std.math.isFinite(a.scale) or a.scale < 0.1 or a.scale > 2) return error.InvalidScale;

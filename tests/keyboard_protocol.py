@@ -14,6 +14,7 @@ https://xkbcommon.org/doc/current/group__state.html
 import array
 import ctypes
 import os
+from pathlib import Path
 import json
 import signal
 import socket
@@ -78,6 +79,16 @@ class FakeWayland:
 
     def handle(self, connection):
         connection.settimeout(0.05)
+        if self.mode == "partial_bootstrap":
+            connection.recv(65536)
+            connection.sendall(b'\x01')
+            self.sync_requested.set()
+            while self.running:
+                try:
+                    if not connection.recv(65536): return
+                except socket.timeout:
+                    continue
+            return
         objects = {1: "wl_display"}
         registry = None
         buffer = b""
@@ -269,6 +280,52 @@ class KeyboardProtocol(unittest.TestCase):
         expected.append(("destroy",))
         self.assertEqual(server.events, expected)
         self.assert_balanced(server.events)
+
+    def test_partial_packet_honors_timeout_and_cancel(self):
+        server = self.start("partial_bootstrap")
+        for cancel in (False, True):
+            with self.subTest(cancel=cancel):
+                server.sync_requested.clear()
+                process = subprocess.Popen([str(integration.BIN), "key", "ctrl+a", "--window",
+                                            self.fixture.address, "--session", "host", "--backend", "native"],
+                                           env=self.fixture.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                try:
+                    self.assertTrue(server.sync_requested.wait(2))
+                    start = time.monotonic()
+                    if cancel: process.send_signal(signal.SIGTERM)
+                    out, _ = process.communicate(timeout=1 if cancel else 4)
+                    self.assertEqual(json.loads(out)["err"]["code"], "Cancelled" if cancel else "WaylandTimeout")
+                    self.assertLess(time.monotonic() - start, 1 if cancel else 3.8)
+                    self.assertFalse(server.events)
+                finally:
+                    if process.poll() is None: process.kill()
+                    process.communicate()
+
+    def test_text_reuses_only_immediately_preceding_guard(self):
+        server = self.start()
+        self.fixture.cli("type", "--session", "host", "--window", self.fixture.address,
+                         "--backend", "native", "--text", "a" * 128)
+        # One lock/focus pair per character plus setup; an immediate ready
+        # callback must not trigger the same pair a second time before flush.
+        self.assertLess(len(self.fixture.commands), 320)
+        self.assertEqual(sum(e[0] == "key" and e[2] == 1 for e in server.events), 128)
+
+    def test_flush_eagain_waits_for_writable_socket(self):
+        self.start()
+        library = self.fixture.root / "flush-eagain.so"
+        source = Path(__file__).parent / "fixtures/wayland_flush_eagain.c"
+        subprocess.run(["zig", "cc", "-shared", "-fPIC", str(source), "-ldl", "-o", str(library)],
+                       check=True, capture_output=True, timeout=60)
+        env = dict(self.fixture.env, LD_PRELOAD=str(library))
+        self.fixture.cli("type", "--session", "host", "--window", self.fixture.address,
+                         "--backend", "native", "--text", "hello", env=env)
+
+    def test_optimized_text_stops_before_next_character_on_lock(self):
+        server = self.start("lock")
+        result = self.fixture.cli("type", "--session", "host", "--window", self.fixture.address,
+                                  "--backend", "native", "--text", "abc", ok=False)
+        self.assertEqual(result["err"]["code"], "SessionLocked")
+        self.assertEqual(sum(e[0] == "key" and e[2] == 1 for e in server.events), 1)
 
     def test_cancel_during_bootstrap_does_not_wait_for_wayland_timeout(self):
         server = self.start("stall_bootstrap")
