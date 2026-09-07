@@ -63,6 +63,31 @@ See the compositor's [window-rule API](https://wiki.hypr.land/configuring/core/r
   after failure. A viewer never attaches to a recreated session of the same name:
   close it and explicitly open a new preview.
 
+## UI maintenance
+
+The desktop owner monitors a managed session while continuing work on the host.
+Keep the session image as the full window surface and preserve one-action access
+to stop input. Close and stop must retain their distinct behavior described above.
+
+`src/preview/pip.css` defines the scoped palette: dark canvas `#080c12`, white
+labels, neutral controls `#121821`, muted red stop `#943546` and focus `#8ac4ff`.
+Use the native font family with 12px labels and 6px button corners. Status uses
+text as well as color. Session labels ellipsize; status wraps to at most two lines,
+with complete text available in tooltips.
+
+`GtkOverlay` places identity/close at the top and status/stop/resize at the bottom.
+The top overlay has 10px top, 12px side and 24px bottom padding; the bottom uses
+26px top, 10px right/bottom and 14px left padding with 10px control gaps. The resize
+target is 32px, with two Cairo strokes. `GtkWindowHandle` provides image dragging.
+Opacity changes reveal the overlays without changing image layout. Tab reveals
+controls before focus traversal; pointer crossing or deactivation ends keyboard
+reveal. Preserve native hit targets, accessibility and the visible focus outline.
+
+Validate changes against the native GTK viewer with both bright and dark source
+images, pointer entry/exit, keyboard navigation, move/resize, stop and close. Web
+previews do not establish native behavior. The repository's internal design
+metadata is maintained under `.impeccable/`.
+
 ## Implementation and limits
 
 The GTK process keeps the host environment. A persistent, demand-driven CLI
@@ -142,7 +167,7 @@ and updates with confirmed GDK presentation timestamps. Unsupported presentation
 feedback is reported as null, not zero FPS. An unchanged scene intentionally
 has few visual updates. GPU/compositor CPU and total tree memory remain outside
 this benchmark; /proc tree sampling has process-exit boundary noise. See
-[the measured follow-up](audit-followup-2026-09.md) for results and remaining limits.
+[the measured follow-up](archive/audit-followup-2026-09.md) for results and remaining limits.
 
 For a reproducible software-path soak without accessing any desktop:
 
@@ -153,7 +178,7 @@ python3 scripts/benchmark_viewer_offline.py --seconds 300
 It requires `gtk4-broadwayd`, uses private Unix sockets and a synthetic static
 PNG, and accepts up to 3600 seconds. Its results are **not** Hyprland/GPU latency
 measurements. Current changes and offline comparisons are documented in
-[the performance follow-up](performance-2026-09.md).
+[the performance follow-up](archive/performance-2026-09.md).
 
 Borderless revision: verified over a room-image application at both new sizes,
 with accessible close/stop labels and scoped border/shadow suppression. In a

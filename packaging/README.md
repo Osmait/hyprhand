@@ -45,13 +45,13 @@ hyprhand skill, the main usage guide and supporting documentation, and these man
   requirements. This is a dependency manifest, not a complete transitive SBOM.
 - `SHA256SUMS`: every payload file other than the checksum list itself.
 
-Start with [README.md](../README.md) at the archive root. `PLAN.md`, `docs/` and `packaging/`
-keep their checkout-relative layout so local documentation links work after
-extraction. This includes the [0.4.0 reliability report](../docs/reliability-040.md),
-[experimental hardening report](../docs/experimental-hardening.md) and existing compatibility, dependency and
-probe reports. All listed documents are required; packaging fails before building
-if one is missing. The usage guide also contains source-build and test commands;
-those require a source checkout, as sources and test runners are not bundled.
+Start with [README.md](../README.md) at the archive root. Guides, examples and
+historical evidence keep their checkout-relative layout so local documentation
+links work after extraction. Historical reports live under `docs/archive/` and
+describe specific past runs, not current test results. All documents in the explicit
+payload are required; packaging fails before building if one is missing. The usage
+guide also contains source-build and test commands; those require a source checkout,
+as sources and test runners are not bundled.
 
 A separate `.tar.gz.sha256` verifies the archive. From the output directory,
 verify before extracting; then verify the files inside the extracted directory:
@@ -101,7 +101,7 @@ redistribution rights; a license decision remains with the repository owner.
 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) preserves the original Wayland
 protocol permissions independently of that decision.
 
-Before publication, follow the [readiness report](../docs/open-source-readiness.md).
+Before publication, follow the [release checklist](../docs/releasing.md).
 `python3 scripts/check_docs.py` validates local documentation links and the package
 payload. Example/fixture guides and the skill instructions are included so those
 links work; source code, test runners and editable Blender scenes remain excluded.

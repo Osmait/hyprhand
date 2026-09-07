@@ -109,7 +109,7 @@ does not certify a graphical session on that platform.
 Build locally for the exact stack and rebuild after compositor/dependency updates.
 Scripts also require `sha256sum` and GNU/Linux utilities for build metadata.
 See [explicit bridge selection](experimental-bridges.md) and
-[hardening and metadata](experimental-hardening.md).
+[hardening and metadata](archive/experimental-hardening.md).
 
 The [Blender example](../examples/blender/README.md) chooses output beside the
 open `.blend` or in an existing absolute `HYPRHAND_BLENDER_OUTPUT_DIR`. It refuses

@@ -62,7 +62,7 @@ verification, full recording, and edit timeline.
 
 A second workspace in the same compositor does **not** isolate keyboard or mouse
 input. Targeted shortcuts can briefly steal foreground keyboard focus even when
-Hyprland reports an unchanged active window. See the [background-input probe](docs/background-probe.md).
+Hyprland reports an unchanged active window. See the [background-input probe](docs/archive/background-probe.md).
 A separate session runs its own applications; it does not provide a second cursor
 for your existing host windows.
 
@@ -371,7 +371,6 @@ that create windows and send real input; see [testing](docs/testing.md).
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull requests,
 [SECURITY.md](SECURITY.md) for the trust model and vulnerability reporting, and the
 [documentation index](docs/README.md) for all guides and historical test reports.
-The [delivery ledger](PLAN.md) records implemented work and remaining limitations.
 
 ## Limitations
 

@@ -43,7 +43,7 @@ Restoring focus is not equivalent to never changing it.
 Arbitrary concurrent GUI work needs isolation beyond separate workspaces.
 Managed sessions separate input but require their own rendering/application
 validation. The headless limitation recorded at the time of this probe has a
-later, narrowly scoped [experimental bridge](experimental-bridges.md); neither
+later, narrowly scoped [experimental bridge](../experimental-bridges.md); neither
 report promises unrestricted invisible video editing.
 
 ## Explicitly repeat the probe

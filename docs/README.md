@@ -29,18 +29,10 @@ first session. Commands and documentation refer to source version **0.4.0**.
 - [Packaging](../packaging/README.md): local archives, manifests and verification.
 - [Security](../SECURITY.md): trust boundaries, data handling and reporting.
 - [Third-party notices](../THIRD_PARTY_NOTICES.md): vendored protocol attribution.
-- [Product](../PRODUCT.md), [design](../DESIGN.md), and [delivery ledger](../PLAN.md).
+- [Releasing](releasing.md): license decision, publication checks and package verification.
 
 ## Historical evidence
 
-These reports describe particular runs, versions, and machines. Their test counts
-and timings are historical; they do not establish current CI status or universal
-compatibility.
-
-- [Initial September audit](audit-2026-09.md)
-- [Audit follow-up](audit-followup-2026-09.md)
-- [Performance follow-up](performance-2026-09.md)
-- [0.4.0 reliability report](reliability-040.md)
-- [Hidden-workspace probe](background-probe.md)
-- [Cursor capture probe](cursor-outline-probe.md)
-- [Experimental bridge hardening](experimental-hardening.md)
+Past audits, benchmarks and exploratory probes are collected in the
+[archive](archive/README.md). Consult them for the evidence behind a particular
+limitation; use the guides above for current behavior and instructions.

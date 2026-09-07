@@ -1,6 +1,6 @@
 # Experimental bridge hardening
 
-This historical review supplements [experimental bridges](experimental-bridges.md).
+This historical review supplements [experimental bridges](../experimental-bridges.md).
 Plugin loading remains manual and explicit in a disposable instance. Building
 loads no library, starts no compositor, and changes no desktop. The headless bridge
 remains an explicit choice for a new session; its implementation was not rewritten.

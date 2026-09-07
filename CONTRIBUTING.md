@@ -89,3 +89,16 @@ and benchmark output belong in ignored `output/`. Avoid adding dependencies or
 changing the license without an explicit project need and maintainer agreement.
 Treat other contributors respectfully; discuss the code and provide actionable
 feedback.
+
+## Maintain documentation
+
+Keep the root focused on the README, contribution/security policies and third-party
+notices. Put current usage and development guides in `docs/`, reproduction steps
+beside their examples, and useful dated investigations in `docs/archive/`. Update
+the relevant guide instead of adding a delivery log that repeats it. PiP behavior
+and UI maintenance guidance live in [the preview guide](docs/preview.md).
+
+When moving or removing a document, update the documentation index, incoming links
+and the explicit payload in `scripts/package-release.py`, then run
+`python3 scripts/check_docs.py`. Keep current limitations in the relevant guide or
+compatibility matrix rather than only in historical reports.

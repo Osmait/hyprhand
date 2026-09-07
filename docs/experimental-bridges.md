@@ -111,7 +111,7 @@ Successful activation does not guarantee every future cursor texture is supporte
 Both optional targets install the `.so` and `.so.build-metadata` under the selected
 prefix's `lib` directory. Verify the sidecar's `binary_sha256` against the actual
 library; metadata is diagnostic text, not something to execute or `source`.
-See [experimental hardening](experimental-hardening.md) for GL state preservation,
+See [experimental hardening](archive/experimental-hardening.md) for GL state preservation,
 ABI guards, atomic file publication limits, and historical validation.
 
 Frame v2 and scroll guard behavior remain active with bridges. Local overlays,

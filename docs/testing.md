@@ -117,7 +117,7 @@ The stricter `tests/live_reliability.py` requires an already running managed
 observer, explicit `--session`, and an event file. It never enables input or
 creates GUI applications. Follow the complete [observer guide](../tests/fixtures/README.md).
 Its pointer matrix requires fresh screenshot review before each action and
-verifies application-received events. The [hidden-workspace probe](background-probe.md)
+verifies application-received events. The [hidden-workspace probe](archive/background-probe.md)
 is a separate host-affecting investigation, not an isolated automation backend.
 
 ## Benchmarks
@@ -132,7 +132,7 @@ python3 scripts/benchmark_preview.py --live --session agent --seconds 120 --fps 
 Offline timings include Python fixture overhead. Broadway software measurements
 cannot be compared directly with physical Hyprland/NVIDIA runs. Requested fps,
 capture responses, texture updates, GTK paints and confirmed presentation are
-separate metrics. See [performance evidence](performance-2026-09.md).
+separate metrics. See [performance evidence](archive/performance-2026-09.md).
 
 ## CI and release validation
 
@@ -142,5 +142,5 @@ offline. Read the result for the exact commit; workflow files or past successful
 runs do not prove a new change passed remotely.
 
 Record commands, versions, outcomes, and limitations in a PR. Preserve useful
-regressions without substituting test counts for correctness. Current local
-publication preparation is tracked in [the readiness report](open-source-readiness.md).
+regressions without substituting test counts for correctness. For publication, follow the
+[release checklist](releasing.md).

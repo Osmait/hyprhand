@@ -4,7 +4,7 @@ The requested effect is a blue glow following the actual arrow silhouette,
 without a ring, for the entire enabled interval (`enable` → `stop`), including
 pauses. The native probe could not obtain a usable silhouette on the recorded
 stack. A later optional plugin was tested in a disposable compositor; see
-[experimental bridges](experimental-bridges.md). The per-action circular aura
+[experimental bridges](../experimental-bridges.md). The per-action circular aura
 is a separate feature. The probe did not alter the cursor theme or load a host plugin.
 
 ## Historical investigation
