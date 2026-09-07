@@ -207,6 +207,7 @@ test {
     _ = @import("cli/args.zig");
     _ = @import("runtime/operations.zig");
     _ = @import("preview/protocol.zig");
+    _ = @import("input/actions.zig");
 }
 
 test {
