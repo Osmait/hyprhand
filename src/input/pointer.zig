@@ -1,5 +1,5 @@
 const std = @import("std");
-const native = @import("native.zig");
+const native = @import("../platform/native.zig");
 const c = native.c;
 
 pub const Pointer = struct {
@@ -8,7 +8,7 @@ pub const Pointer = struct {
     manager: ?*c.struct_zwlr_virtual_pointer_manager_v1 = null,
     device: ?*c.struct_zwlr_virtual_pointer_v1 = null,
     held: ?u32 = null,
-    runtime: ?*@import("runtime.zig").Runtime = null,
+    runtime: ?*@import("../runtime/runtime.zig").Runtime = null,
 
     fn global(data: ?*anyopaque, registry: ?*c.struct_wl_registry, name: u32, interface: [*c]const u8, version: u32) callconv(.c) void {
         const self: *Pointer = @ptrCast(@alignCast(data.?));

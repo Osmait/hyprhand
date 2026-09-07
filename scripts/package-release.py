@@ -34,6 +34,7 @@ DOCUMENTS = {relative: relative for relative in (
     "docs/experimental-bridges.md", "docs/background-probe.md",
     "docs/cursor-outline-probe.md", "docs/reliability-040.md",
     "docs/experimental-hardening.md", "docs/preview.md",
+    "CONTRIBUTING.md", "docs/architecture.md", "docs/audit-2026-09.md",
 )}
 
 
@@ -167,7 +168,7 @@ def package(version, output):
         actual_version = run(str(binary), "--version")
         if actual_version != f"deskctl {version}":
             raise ValueError("requested version does not match the built binary's --version")
-        for suite in ("tests/integration.py", "tests/keyboard_unit.py",
+        for suite in ("tests/integration.py", "tests/ipc.py", "tests/preview.py", "tests/keyboard_unit.py",
                       "tests/keyboard_protocol.py", "tests/session_lifecycle.py",
                       "tests/fixtures/test_reliability_contract.py"):
             subprocess.run([sys.executable, "-B", suite], cwd=ROOT, check=True,

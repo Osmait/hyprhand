@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import socket
 import struct
 import subprocess
@@ -51,10 +52,12 @@ class Preview(unittest.TestCase):
                         data = [{"id": 1, "name": "HEADLESS-1", "width": 1920, "height": 1080,
                                  "scale": 1, "x": 0, "y": 0, "transform": 0,
                                  "activeWorkspace": {"id": 1}, "focused": True}]
+                    elif request == "j/status":
+                        data = {"configProvider": "hyprlang"}
                     else:
                         data = {}
                     try:
-                        conn.sendall(json.dumps(data).encode())
+                        conn.sendall(b"ok" if request.startswith("/keyword ") else json.dumps(data).encode())
                     except BrokenPipeError:
                         pass
 
@@ -63,8 +66,9 @@ class Preview(unittest.TestCase):
         self.servers.append((stop, thread, server))
         helper = self.root / "grim"
         helper.write_text(f"#!{sys.executable}\n" + r'''
-import json, os, pathlib, struct, sys, time
+import json, os, pathlib, signal, struct, sys, time
 root = pathlib.Path(os.environ['DESKCTL_PREVIEW_TEST_ROOT'])
+if (root / 'ignore-term').exists(): signal.signal(signal.SIGTERM, signal.SIG_IGN)
 (root / 'capture.json').write_text(json.dumps({'argv': sys.argv, 'pid': os.getpid(),
     'runtime': os.environ['XDG_RUNTIME_DIR'], 'instance': os.environ['HYPRLAND_INSTANCE_SIGNATURE']}))
 if (root / 'slow').exists(): time.sleep(30)
@@ -143,6 +147,10 @@ sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' +
         pid = json.loads((self.root / "capture.json").read_text())["pid"]
         self.assertFalse(Path(f"/proc/{pid}").exists())
 
+    def test_capture_timeout_reaps_helper_ignoring_term(self):
+        (self.root / "ignore-term").touch()
+        self.test_capture_timeout_reaps_helper()
+
     def test_cancel_reaps_helper(self):
         (self.root / "slow").touch()
         process = subprocess.Popen(self.argv(), env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -160,6 +168,55 @@ sys.stdout.buffer.write(b'\x89PNG\r\n\x1a\n' + struct.pack('>I', 13) + b'IHDR' +
             if process.poll() is None:
                 process.kill()
                 process.communicate()
+
+    def test_viewer_ignoring_term_is_reaped_and_rules_are_disabled(self):
+        # A private fake host serves only read queries and temporary rule acks.
+        # The fake viewer opens no GUI and deliberately ignores graceful stop.
+        host = self.root / "hypr/unused-host"
+        host.mkdir(parents=True)
+        (host / "hyprland.lock").write_text("123\nunused-host\n")
+        (host / ".socket.sock").symlink_to(self.runtime / "hypr/test/.socket.sock")
+        binary_dir = self.root / "bin"
+        binary_dir.mkdir()
+        cli = binary_dir / "deskctl"
+        shutil.copy2(BIN, cli)
+        viewer = binary_dir / "deskctl-pip"
+        marker = self.root / "viewer.pid"
+        viewer.write_text(f"#!{sys.executable}\n" +
+                          "import os, pathlib, signal, time\n" +
+                          "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" +
+                          f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid()))\n" +
+                          "while True: time.sleep(1)\n")
+        viewer.chmod(0o700)
+        process = subprocess.Popen([str(cli), "preview", "--session", "check"],
+                                   env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        viewer_fd = None
+        try:
+            deadline = time.monotonic() + 3
+            while not marker.exists():
+                self.assertIsNone(process.poll())
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.01)
+            viewer_pid = int(marker.read_text())
+            viewer_fd = os.pidfd_open(viewer_pid)
+            started = time.monotonic()
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=3)
+            self.assertEqual(process.returncode, 0, (stdout, stderr))
+            self.assertLess(time.monotonic() - started, 3)
+            self.assertFalse(Path(f"/proc/{viewer_pid}").exists())
+            self.assertTrue(any(":enable 0" in request for request in self.requests))
+            self.assertTrue(live(self.metadata["compositor"]))
+        finally:
+            if viewer_fd is not None:
+                try:
+                    signal.pidfd_send_signal(viewer_fd, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                os.close(viewer_fd)
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=2)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 //! Optional GTK viewer. No virtual input devices, IPC dispatchers or enable path.
 const std = @import("std");
-const protocol = @import("preview_protocol.zig");
+const protocol = @import("protocol.zig");
 const c = @cImport({
     @cUndef("_FORTIFY_SOURCE");
     @cDefine("_FORTIFY_SOURCE", "0");

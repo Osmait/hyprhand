@@ -1,238 +1,24 @@
 const std = @import("std");
-const args = @import("args.zig");
-const geometry = @import("geometry.zig");
-const native = @import("native.zig");
+const args = @import("cli/args.zig");
+const geometry = @import("core/geometry.zig");
+const native = @import("platform/native.zig");
 const c = native.c;
-const Runtime = @import("runtime.zig").Runtime;
-const Pointer = @import("pointer.zig").Pointer;
-const motion = @import("motion.zig");
-const Aura = @import("aura.zig").Aura;
-const operations = @import("operations.zig");
-const sessions = @import("sessions.zig");
-const preview = @import("preview.zig");
-const Keyboard = @import("keyboard.zig").Keyboard;
+const Runtime = @import("runtime/runtime.zig").Runtime;
+const Pointer = @import("input/pointer.zig").Pointer;
+const motion = @import("input/motion.zig");
+const Aura = @import("input/aura.zig").Aura;
+const operations = @import("runtime/operations.zig");
+const sessions = @import("runtime/sessions.zig");
+const preview = @import("preview/controller.zig");
+const Keyboard = @import("input/keyboard.zig").Keyboard;
 
-const help =
-    \\deskctl 0.4.0 — computer use for Hyprland (Zig 0.16, Linux)
-    \\
-    \\All commands accept --session NAME (default host). Input REQUIRES it.
-    \\JSON output; events emits NDJSON. No MCP server or AI model.
-    \\
-    \\Observe and inspect:
-    \\  doctor | state | monitors | windows | workspaces | sessions
-    \\  observe [--monitor NAME] [--scale 0.1..2] [--backend auto|helper]
-    \\  accessibility [--window ADDRESS] [--depth 5] [--limit 100] [--timeout-ms 5000]
-    \\  wait stable [--pixels] [--monitor NAME] [--stable-ms 300] [--timeout-ms 5000]
-    \\  wait window --class CLASS [--timeout-ms 5000]
-    \\  wait focus --window ADDRESS | wait workspace --workspace NUMBER
-    \\  events [--limit 100] [--timeout-ms 5000]
-    \\  logs [--limit 100]
-    \\  gc [--older-than-ms 300000] [--dry-run]
-    \\
-    \\Input (shared human cursor/focus ONLY in host; disabled until enable):
-    \\  enable [--indicator none|outline] | stop
-    \\  focus ADDRESS | workspace NUMBER
-    \\  move --frame ID --x X --y Y
-    \\  click|doubleclick --frame ID --x X --y Y [--button left|right|middle]
-    \\  drag --frame ID --x X --y Y --to-x X --to-y Y [--duration-ms 500]
-    \\  scroll --frame ID --x X --y Y [--dy STEPS] [--dx STEPS]
-    \\    [--scroll-mode auto|wheel|continuous] [--duration-ms 500]
-    \\  type --window ADDRESS --text TEXT [--backend auto|native|helper]
-    \\  key CHORD --window ADDRESS [--backend auto|native|helper]
-    \\
-    \\Managed sessions (input isolation, NOT filesystem/credential sandboxing):
-    \\  session create NAME [--nested] [--lua]
-    \\    [--headless-bridge /absolute/trusted.so] Experimental, new headless only
-    \\  session inspect NAME
-    \\  session destroy NAME       Closes tracked apps; retains profiles and logs
-    \\  launch --session NAME -- PROGRAM ARGUMENTS...
-    \\  preview --session NAME [--monitor NAME] [--fps 1..15]
-    \\    Optional GTK4 host PiP; read-only, close leaves agent running.
-    \\
-    \\Input accepts --dry-run. Coordinates are screenshot pixels, not desktop pixels.
-    \\Pointer approach is smooth (auto 200..600ms); --move-duration-ms 50..10000
-    \\overrides it for move/click/doubleclick/scroll/drag. Use 0 for instant approach.
-    \\Drag --duration-ms controls the separate, smooth button-held segment.
-    \\Scroll mode and pacing are independent; auto keeps legacy behavior.
-    \\Wheel supports smooth pacing; continuous is unavailable on XWayland.
-    \\Pointer actions accept --window ADDRESS and guard initial focus/layout.
-    \\Focus the destination window before observing; changes during approach abort.
-    \\Outline requires the optional Hyprland plugin, never auto-loaded.
-    \\Pointer actions show a blue, click-through halo; --no-aura disables it.
-    \\Frames expire after 30s or layout/focus changes. Observe again after each action.
-    \\Type/key require the exact focused window. Example chord: ctrl+shift+Return.
-    \\SIGINT/SIGTERM/stop cancel input; native devices release owned keys/buttons.
-    \\Headless needs compatible GPU buffers. --nested opens a compositor preview.
-    \\
-;
+const help = @import("cli/help.zig").text;
 
 fn eq(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
-const Client = struct {
-    address: []const u8,
-    at: [2]i32,
-    size: [2]i32,
-    workspace: geometry.Workspace,
-    monitor: i64 = -1,
-    mapped: bool = true,
-    hidden: bool = false,
-    floating: bool = false,
-    pinned: bool = false,
-    fullscreen: i64 = 0,
-    xwayland: bool = false,
-    pid: i64 = 0,
-    class: []const u8 = "",
-};
-const Snapshot = struct {
-    monitors: []geometry.Monitor,
-    clients: []Client,
-    active: []const u8,
-    revision: []const u8,
-};
-
-fn snapshot(rt: *Runtime, scope: ?[]const u8) !Snapshot {
-    return snapshotForAction(rt, scope, false);
-}
-
-// Do not trust a namespace alone: only our own PID's input-transparent aura
-// is excluded during input. Other overlays remain safety dependencies.
-fn stripOwnedAura(a: std.mem.Allocator, value: std.json.Value, pid: i64) !std.json.Value {
-    var result = value;
-    switch (result) {
-        .array => |*items| {
-            var filtered: std.array_list.Managed(std.json.Value) = .init(a);
-            for (items.items) |item| {
-                if (item == .object) {
-                    const owner = item.object.get("pid") orelse .null;
-                    const ns = item.object.get("namespace") orelse .null;
-                    if (owner == .integer and owner.integer == pid and ns == .string and eq(ns.string, @import("aura.zig").namespace)) continue;
-                }
-                try filtered.append(try stripOwnedAura(a, item, pid));
-            }
-            items.* = filtered;
-        },
-        .object => |*obj| {
-            var it = obj.iterator();
-            while (it.next()) |entry| entry.value_ptr.* = try stripOwnedAura(a, entry.value_ptr.*, pid);
-        },
-        else => {},
-    }
-    return result;
-}
-
-fn snapshotForAction(rt: *Runtime, scope: ?[]const u8, owned_aura: bool) !Snapshot {
-    const monitors = try rt.json([]geometry.Monitor, try rt.query("monitors"));
-    const clients = try rt.json([]Client, try rt.query("clients"));
-    const active = try rt.json(struct { address: []const u8 = "" }, try rt.query("activewindow"));
-    var layers = try rt.json(std.json.Value, try rt.query("layers"));
-    if (owned_aura) layers = try stripOwnedAura(rt.a, layers, c.getpid());
-    var relevant: std.ArrayList(Client) = .empty;
-    if (scope) |name| {
-        var target: ?geometry.Monitor = null;
-        for (monitors) |m| if (eq(m.name, name)) {
-            target = m;
-            break;
-        };
-        const monitor = target orelse return error.MonitorNotFound;
-        const rect = try monitor.rect();
-        // A floating window may cross an output boundary. Keep intersecting
-        // clients as well as all clients assigned to the captured output.
-        for (clients) |client| {
-            const intersects = @as(f64, @floatFromInt(client.at[0])) < rect.x + rect.width and
-                @as(f64, @floatFromInt(client.at[1])) < rect.y + rect.height and
-                @as(f64, @floatFromInt(@as(i64, client.at[0]) + client.size[0])) > rect.x and
-                @as(f64, @floatFromInt(@as(i64, client.at[1]) + client.size[1])) > rect.y;
-            if (client.monitor == monitor.id or intersects) try relevant.append(rt.a, client);
-        }
-        if (layers != .object) return error.InvalidLayerState;
-        layers = layers.object.get(name) orelse .null;
-    } else try relevant.appendSlice(rt.a, clients);
-    const normalized = try rt.a.dupe(geometry.Monitor, monitors);
-    for (normalized) |*m| m.focused = false;
-    const data = try std.json.Stringify.valueAlloc(rt.a, .{ .scope = scope, .monitors = normalized, .clients = relevant.items, .active = active.address, .layers = layers }, .{});
-    var digest: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(data, &digest, .{});
-    return .{ .monitors = monitors, .clients = clients, .active = active.address, .revision = try rt.a.dupe(u8, &std.fmt.bytesToHex(digest, .lower)) };
-}
-
-fn monitorByName(s: Snapshot, name: ?[]const u8) !geometry.Monitor {
-    for (s.monitors) |m| {
-        if (if (name) |n| eq(n, m.name) else m.focused) {
-            if (m.disabled or !m.dpmsStatus) return error.MonitorUnavailable;
-            return m;
-        }
-    }
-    return error.MonitorNotFound;
-}
-
-fn observe(rt: *Runtime, opt: args.Args) !void {
-    if (eq(opt.backend, "native")) return error.NativeCaptureUnavailable;
-    operations.collect(rt, opt, false) catch |err| switch (err) {
-        error.ControlBusy => {},
-        else => return err,
-    };
-    try rt.prepare();
-    try rt.validateDisplay();
-    try rt.unlocked();
-    const monitor_name = opt.monitor orelse blk: {
-        const monitors = try rt.json([]geometry.Monitor, try rt.query("monitors"));
-        for (monitors) |m| if (m.focused) break :blk m.name;
-        return error.MonitorNotFound;
-    };
-    const before = try snapshot(rt, monitor_name);
-    const monitor = try monitorByName(before, monitor_name);
-    const rect = try monitor.rect();
-    const frame_id = try rt.id();
-    const image_path = try rt.path(try std.fmt.allocPrint(rt.a, "{s}.png", .{frame_id}));
-    errdefer _ = c.unlink(image_path);
-    const started = native.nowMs();
-    const unix_ms = @as(i64, @intCast(c.time(null))) * 1000;
-    const scale = try std.fmt.allocPrint(rt.a, "{d}", .{opt.scale});
-    try rt.run(&.{ "grim", "-t", "png", "-s", scale, "-o", monitor.name, image_path }, null, false);
-    try rt.unlocked();
-    const after = try snapshot(rt, monitor_name);
-    if (!eq(before.revision, after.revision)) return error.StaleObservation;
-    // Read only the PNG header, without decoding or allocating the image.
-    const fd = c.open(image_path, c.O_RDONLY | c.O_CLOEXEC | c.O_NOFOLLOW);
-    if (fd < 0) return error.InvalidScreenshot;
-    defer _ = c.close(fd);
-    var header: [24]u8 = undefined;
-    if (c.read(fd, &header, header.len) != header.len) return error.InvalidScreenshot;
-    const size = try geometry.pngSize(&header);
-    const frame = geometry.Frame{
-        .session_id = rt.session_id,
-        .instance = rt.instance,
-        .wayland_display = rt.display,
-        .frame_id = frame_id,
-        .captured_at_unix_ms = unix_ms,
-        .captured_at_monotonic_ms = started,
-        .monitor_id = monitor.name,
-        .workspace_id = monitor.activeWorkspace.id,
-        .image_path = image_path,
-        .image_width = size.width,
-        .image_height = size.height,
-        .logical = rect,
-        .layout_revision = after.revision,
-    };
-    const metadata_path = try rt.path(try std.fmt.allocPrint(rt.a, "{s}.json", .{frame_id}));
-    const encoded = try std.json.Stringify.valueAlloc(rt.a, frame, .{});
-    try std.Io.Dir.cwd().writeFile(rt.io, .{ .sub_path = metadata_path, .data = encoded, .flags = .{ .exclusive = true } });
-    try rt.emit(.{ .ok = true, .frame = frame, .capture_duration_ms = native.nowMs() - started });
-}
-
-fn loadFrame(rt: *Runtime, frame_id: []const u8) !geometry.Frame {
-    if (frame_id.len != 32) return error.InvalidFrameId;
-    for (frame_id) |ch| if (!std.ascii.isHex(ch)) return error.InvalidFrameId;
-    const data = rt.read(try rt.path(try std.fmt.allocPrint(rt.a, "{s}.json", .{frame_id})), 16384) catch |err| switch (err) {
-        error.FileNotFound => return error.FrameNotFound,
-        else => return err,
-    };
-    const frame = try rt.json(geometry.Frame, data);
-    if (!eq(frame.frame_id, frame_id)) return error.InvalidFrameId;
-    if (!eq(frame.session_id, rt.session_id)) return error.SessionMismatch;
-    return frame;
-}
+const observation = @import("capture/observation.zig");
+const Client = observation.Client;
 
 fn validateAddress(address: []const u8) !void {
     if (!std.mem.startsWith(u8, address, "0x") or address.len < 3 or address.len > 18) return error.InvalidWindowAddress;
@@ -335,7 +121,7 @@ fn scroll(rt: *Runtime, pointer: *Pointer, point: geometry.Point, dx: i32, dy: i
         _ = try x11Keyboard(rt, client.address);
         if (ms != 0) {
             var driver = ScrollDriver{ .rt = rt, .pointer = pointer, .point = point, .x11 = true };
-            return @import("scroll.zig").run(&driver, .{ .x = dx, .y = dy }, ms);
+            return @import("input/scroll.zig").run(&driver, .{ .x = dx, .y = dy }, ms);
         }
         for ([_]i32{ dy, dx }, 0..) |amount, axis| {
             if (amount == 0) continue;
@@ -350,7 +136,7 @@ fn scroll(rt: *Runtime, pointer: *Pointer, point: geometry.Point, dx: i32, dy: i
     // axis_stop for them can flush a spurious surface-distance event in GTK.
     defer if (!wheel) pointer.endScroll(dx, dy);
     const unit: i32 = if (wheel) 1 else 15 * 256;
-    try @import("scroll.zig").run(&driver, .{ .x = dx * unit, .y = dy * unit }, ms);
+    try @import("input/scroll.zig").run(&driver, .{ .x = dx * unit, .y = dy * unit }, ms);
 }
 
 const ScrollDriver = struct {
@@ -417,7 +203,7 @@ const PointerGuard = struct {
         defer arena.deinit();
         var scratch = rt.*;
         scratch.a = arena.allocator();
-        const current = try snapshotForAction(&scratch, self.frame.monitor_id, true);
+        const current = try observation.snapshotForAction(&scratch, self.frame.monitor_id, true);
         try self.frame.validate(rt.instance, rt.display, current.revision, native.nowMs());
     }
 };
@@ -433,8 +219,8 @@ fn action(rt: *Runtime, opt: args.Args) !void {
     var frame: ?geometry.Frame = null;
     var pointer_guard: PointerGuard = undefined;
     if (opt.frame) |id| {
-        frame = try loadFrame(rt, id);
-        const s = try snapshot(rt, frame.?.monitor_id);
+        frame = try observation.loadFrame(rt, id);
+        const s = try observation.snapshot(rt, frame.?.monitor_id);
         try frame.?.validate(rt.instance, rt.display, s.revision, native.nowMs());
         point = try frame.?.point(opt.x.?, opt.y.?);
         if (opt.window) |window| {
@@ -489,7 +275,7 @@ fn action(rt: *Runtime, opt: args.Args) !void {
         try pointer.create();
         pointer.runtime = rt;
         // Recheck after connecting the input device, before moving the cursor.
-        try frame.?.validate(rt.instance, rt.display, (try snapshot(rt, frame.?.monitor_id)).revision, native.nowMs());
+        try frame.?.validate(rt.instance, rt.display, (try observation.snapshot(rt, frame.?.monitor_id)).revision, native.nowMs());
         rt.extra_guard = PointerGuard.check;
         rt.guard_context = &pointer_guard;
         defer {
@@ -596,13 +382,13 @@ fn waitFor(rt: *Runtime, opt: args.Args) !void {
         var scratch = rt.*;
         scratch.a = arena.allocator();
         try scratch.unlocked();
-        const state = try snapshot(&scratch, opt.monitor);
+        const state = try observation.snapshot(&scratch, opt.monitor);
         var satisfied = false;
         if (eq(condition, "stable")) {
             var hash = std.crypto.hash.sha2.Sha256.init(.{});
             hash.update(state.revision);
             if (opt.pixels) {
-                const monitor = try monitorByName(state, opt.monitor);
+                const monitor = try observation.monitorByName(state, opt.monitor);
                 try scratch.run(&.{ "grim", "-o", monitor.name, temp }, null, false);
                 hash.update(try scratch.read(temp, 64 * 1024 * 1024));
             }
@@ -731,16 +517,16 @@ fn execute(init: std.process.Init, opt: args.Args) !void {
             try rt.emit(.{ .ok = true, .session_id = rt.session_id, .data = try rt.json(std.json.Value, try rt.query(name)) });
         },
         .sessions => try rt.emit(.{ .ok = true, .sessions = .{.{ .id = "host", .instance = rt.instance, .wayland_display = rt.display, .shared_cursor = eq(rt.session_id, "host") }} }),
-        .observe => try observe(&rt, opt),
+        .observe => try observation.observe(&rt, opt),
         .enable => try rt.enable(opt.indicator),
         .stop => try rt.stop(),
         .wait => try waitFor(&rt, opt),
         .events => try operations.events(&rt, opt),
         .logs => try operations.logs(&rt, opt),
         .gc => try operations.collect(&rt, opt, true),
-        .accessibility => try @import("accessibility.zig").tree(&rt, opt),
-        ._a11y => try @import("accessibility.zig").worker(&rt, opt),
-        ._cursor_probe => try @import("cursor_capture.zig").probe(&rt),
+        .accessibility => try @import("accessibility/tree.zig").tree(&rt, opt),
+        ._a11y => try @import("accessibility/tree.zig").worker(&rt, opt),
+        ._cursor_probe => try @import("capture/cursor_capture.zig").probe(&rt),
         ._preview_frame, ._preview_stop => try preview.worker(&rt, opt),
         else => return error.CommandNotImplemented,
     }
@@ -808,10 +594,10 @@ pub fn main(init: std.process.Init) void {
 }
 
 test {
-    _ = @import("geometry.zig");
-    _ = @import("args.zig");
-    _ = @import("operations.zig");
-    _ = @import("preview_protocol.zig");
+    _ = @import("core/geometry.zig");
+    _ = @import("cli/args.zig");
+    _ = @import("runtime/operations.zig");
+    _ = @import("preview/protocol.zig");
 }
 test "key chords emit explicit modifier releases and reject malformed input" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -824,25 +610,11 @@ test "key chords emit explicit modifier releases and reject malformed input" {
     try std.testing.expectError(error.InvalidWindowAddress, validateAddress("0x123,exec,evil"));
 }
 
-test "pointer snapshot excludes only the current process aura, never arbitrary overlays" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
-    const parsed = try std.json.parseFromSlice(std.json.Value, a,
-        \\{"levels":{"3":[{"namespace":"deskctl-aura","pid":42},{"namespace":"deskctl-aura","pid":43},{"namespace":"dialog","pid":42},{"namespace":"deskctl-aura"} ]}}
-    , .{});
-    const filtered = try stripOwnedAura(a, parsed.value, 42);
-    const items = filtered.object.get("levels").?.object.get("3").?.array.items;
-    try std.testing.expectEqual(@as(usize, 3), items.len);
-    try std.testing.expectEqual(@as(i64, 43), items[0].object.get("pid").?.integer);
-    try std.testing.expectEqualStrings("dialog", items[1].object.get("namespace").?.string);
-}
-
 test {
     std.testing.refAllDecls(motion);
-    std.testing.refAllDecls(@import("keyboard.zig"));
+    std.testing.refAllDecls(@import("input/keyboard.zig"));
     std.testing.refAllDecls(sessions);
-    std.testing.refAllDecls(@import("scroll.zig"));
-    std.testing.refAllDecls(@import("aura.zig"));
-    std.testing.refAllDecls(@import("cursor_capture.zig"));
+    std.testing.refAllDecls(@import("input/scroll.zig"));
+    std.testing.refAllDecls(@import("input/aura.zig"));
+    std.testing.refAllDecls(@import("capture/cursor_capture.zig"));
 }

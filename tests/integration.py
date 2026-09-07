@@ -233,6 +233,13 @@ else:
         Path(f["image_path"]).with_suffix(".json").write_text(json.dumps(f))
         self.error("StaleObservation", "click", "--frame", f["frame_id"], "--x", "0", "--y", "0", "--session", "host", "--dry-run")
 
+    def test_extreme_frame_timestamp_is_rejected_without_panic(self):
+        f = self.frame()
+        f["captured_at_monotonic_ms"] = -(2 ** 63)
+        Path(f["image_path"]).with_suffix(".json").write_text(json.dumps(f))
+        self.error("StaleObservation", "move", "--frame", f["frame_id"],
+                   "--x", "0", "--y", "0", "--session", "host", "--dry-run")
+
     def test_coordinate_bounds(self):
         f = self.frame()
         for x in ("nan", "inf", "-1", "1920"):

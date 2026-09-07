@@ -23,6 +23,12 @@ y destruye árboles de procesos propios con identidades verificadas.
 [Dependencias](docs/dependencies.md), [compatibilidad](docs/compatibility.md) y
 [empaquetado verificable](packaging/README.md).
 
+Para contribuir: [guía de desarrollo](CONTRIBUTING.md),
+[estructura de módulos](docs/architecture.md) y
+[bugs corregidos en la auditoría](docs/audit-2026-09.md).
+`zig build check -Doptimize=ReleaseSafe` reúne formato, unitarias y regresiones
+offline sin controlar el escritorio. El PiP se compila por separado con `zig build pip`.
+
 | Área | Implementado |
 | --- | --- |
 | Observación | Estado, ventanas, monitores, workspaces, PNG con contrato de coordenadas |

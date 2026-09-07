@@ -1,9 +1,9 @@
 const std = @import("std");
-const native = @import("native.zig");
+const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("runtime.zig").Runtime;
-const Args = @import("args.zig").Args;
-const ipc = @import("ipc.zig");
+const Args = @import("../cli/args.zig").Args;
+const ipc = @import("../platform/ipc.zig");
 const eq = std.mem.eql;
 
 pub const Process = struct { pid: c_int, start: []const u8 };
@@ -34,7 +34,7 @@ fn root(rt: *Runtime) ![]const u8 {
     return path;
 }
 fn named(rt: *Runtime, name: []const u8) ![]const u8 {
-    if (!@import("args.zig").validName(name) or eq(u8, name, "host")) return error.InvalidSessionName;
+    if (!@import("../cli/args.zig").validName(name) or eq(u8, name, "host")) return error.InvalidSessionName;
     return std.fmt.allocPrint(rt.a, "{s}/{s}", .{ try root(rt), name });
 }
 const ProcStat = struct { start: u64, parent: c_int, state: u8, uid: c.uid_t };
@@ -224,7 +224,7 @@ fn spawn(rt: *Runtime, env: *std.process.Environ.Map, argv: []const []const u8, 
     if (fd < 0) return error.SessionLogFailed;
     defer _ = c.close(fd);
     var child = try std.process.spawn(rt.io, .{ .argv = argv, .environ_map = env, .pgid = 0, .stdin = .ignore, .stdout = .{ .file = .{ .handle = fd, .flags = .{ .nonblocking = false } } }, .stderr = .{ .file = .{ .handle = fd, .flags = .{ .nonblocking = false } } } });
-    errdefer child.kill(rt.io);
+    errdefer @import("../platform/child_process.zig").terminate(&child, rt.io);
     return .{ .pid = child.id.?, .start = try startTime(rt, child.id.?) };
 }
 fn save(rt: *Runtime, session: Session) !void {
@@ -455,7 +455,7 @@ pub fn list(rt: *Runtime) !void {
     try entries.append(rt.a, .{ .id = "host", .running = true, .shared_cursor = true, .nested = false });
     while (c.readdir(dir)) |item| {
         const name = std.mem.span(@as([*:0]const u8, @ptrCast(&item.*.d_name)));
-        if (!@import("args.zig").validName(name)) continue;
+        if (!@import("../cli/args.zig").validName(name)) continue;
         const session = load(rt, name) catch continue;
         try entries.append(rt.a, .{ .id = session.name, .running = running(rt, session), .shared_cursor = false, .nested = session.nested });
     }

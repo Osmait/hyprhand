@@ -21,7 +21,7 @@ The Operate contract is in `.impeccable/surfaces/src-pip-zig.md`.
 
 ## Colors
 
-`src/pip.css` defines a scoped dark canvas, white text, neutral controls and a
+`src/preview/pip.css` defines a scoped dark canvas, white text, neutral controls and a
 muted red stop action. Top and bottom gradient scrims protect text over bright
 or dark application imagery. The live state is also written as text; color alone
 does not indicate permission. Styles apply only inside this viewer.
@@ -67,6 +67,7 @@ grip is two diagonal Cairo strokes, not a text character masquerading as an icon
 - Don't crop the source just to hide aspect-ratio letterboxing.
 - Don't relay clicks or key events into the captured session.
 
-Sources: `src/pip.zig`, `src/pip.css`, `src/pip_gtk.h`, `src/preview.zig`.
+Sources: `src/preview/viewer.zig`, `src/preview/pip.css`,
+`src/preview/pip_gtk.h`, `src/preview/controller.zig`.
 Evidence: `.impeccable/review/borderless-wide.png` and `borderless-small.png`.
 These are native Linux checks, not a web or theme-matrix certification.

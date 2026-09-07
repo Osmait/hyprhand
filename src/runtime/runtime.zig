@@ -1,7 +1,7 @@
 const std = @import("std");
-const native = @import("native.zig");
+const native = @import("../platform/native.zig");
 const c = native.c;
-const ipc = @import("ipc.zig");
+const ipc = @import("../platform/ipc.zig");
 
 pub const Runtime = struct {
     a: std.mem.Allocator,
@@ -123,13 +123,13 @@ pub const Runtime = struct {
     pub fn guard(self: *Runtime) !void {
         try native.checkCancelled();
         const expected = self.control_token orelse return error.ControlStopped;
-        const actual = try self.token();
-        if (!std.mem.eql(u8, expected, actual)) return error.ControlStopped;
         // Per-check arena avoids growth during long input/wait loops.
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         var scratch = self.*;
         scratch.a = arena.allocator();
+        const actual = try scratch.token();
+        if (!std.mem.eql(u8, expected, actual)) return error.ControlStopped;
         try scratch.unlocked();
         if (self.target_window) |target| {
             const active = try scratch.json(struct { address: []const u8 = "" }, try scratch.query("activewindow"));
@@ -235,7 +235,7 @@ pub const Runtime = struct {
             .stdout = .ignore,
             .stderr = .inherit,
         });
-        defer child.kill(self.io);
+        defer @import("../platform/child_process.zig").terminate(&child, self.io);
         const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));
         if (pidfd < 0) return error.ProcessMonitorFailed;
         defer _ = c.close(pidfd);

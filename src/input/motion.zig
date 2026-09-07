@@ -1,5 +1,5 @@
 const std = @import("std");
-const Point = @import("geometry.zig").Point;
+const Point = @import("../core/geometry.zig").Point;
 
 pub fn duration(from: Point, to: Point) u32 {
     const dx = @as(f64, @floatFromInt(to.x)) - @as(f64, @floatFromInt(from.x));

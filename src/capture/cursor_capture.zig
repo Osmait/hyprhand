@@ -1,8 +1,8 @@
 const std = @import("std");
-const native = @import("native.zig");
+const native = @import("../platform/native.zig");
 const c = native.c;
-const Pointer = @import("pointer.zig").Pointer;
-const Point = @import("geometry.zig").Point;
+const Pointer = @import("../input/pointer.zig").Pointer;
+const Point = @import("../core/geometry.zig").Point;
 
 // Captures only the compositor's cursor buffer, never an output/window image.
 // Callers keep this object in stable storage for the Wayland listeners.
@@ -169,20 +169,20 @@ pub const Capture = struct {
     }
 };
 
-pub fn probe(rt: *@import("runtime.zig").Runtime) !void {
+pub fn probe(rt: *@import("../runtime/runtime.zig").Runtime) !void {
     try rt.validateDisplay();
     try rt.unlocked();
     var pointer: Pointer = undefined;
     try pointer.init(try rt.displayPath());
     defer pointer.deinit();
-    var aura: @import("aura.zig").Aura = undefined;
-    const geometry = @import("geometry.zig");
+    var aura: @import("../input/aura.zig").Aura = undefined;
+    const geometry = @import("../core/geometry.zig");
     const monitors = try rt.json([]geometry.Monitor, try rt.query("monitors"));
     try aura.init(&pointer, monitors);
     defer aura.deinit();
     const p = try rt.json(Point, try rt.query("cursorpos"));
     for (aura.outputs[0..aura.count]) |*output| {
-        if (!@import("aura.zig").contains(output.rect orelse continue, p)) continue;
+        if (!@import("../input/aura.zig").contains(output.rect orelse continue, p)) continue;
         var capture: Capture = undefined;
         try capture.init(&pointer, output.output.?);
         defer capture.deinit();

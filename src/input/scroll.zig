@@ -1,6 +1,6 @@
 const std = @import("std");
 const motion = @import("motion.zig");
-const Point = @import("geometry.zig").Point;
+const Point = @import("../core/geometry.zig").Point;
 
 /// Ease cumulative distance, then emit only the difference. This preserves
 /// signed totals (including sub-pixel remainders) despite scheduler delays.

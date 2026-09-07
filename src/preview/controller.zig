@@ -1,12 +1,12 @@
 const std = @import("std");
-const native = @import("native.zig");
+const native = @import("../platform/native.zig");
 const c = native.c;
-const Runtime = @import("runtime.zig").Runtime;
-const Args = @import("args.zig").Args;
-const sessions = @import("sessions.zig");
-const geometry = @import("geometry.zig");
-const ipc = @import("ipc.zig");
-const protocol = @import("preview_protocol.zig");
+const Runtime = @import("../runtime/runtime.zig").Runtime;
+const Args = @import("../cli/args.zig").Args;
+const sessions = @import("../runtime/sessions.zig");
+const geometry = @import("../core/geometry.zig");
+const ipc = @import("../platform/ipc.zig");
+const protocol = @import("protocol.zig");
 
 fn monitor(rt: *Runtime, name: ?[]const u8) !geometry.Monitor {
     for (try rt.json([]geometry.Monitor, try rt.query("monitors"))) |m| {
@@ -22,6 +22,31 @@ fn monitor(rt: *Runtime, name: ?[]const u8) !geometry.Monitor {
 fn rule(rt: *Runtime, id: []const u8, key: []const u8, value: []const u8) !void {
     const response = try ipc.request(rt.a, rt.socket, try std.fmt.allocPrint(rt.a, "/keyword windowrule[{s}]:{s} {s}", .{ id, key, value }));
     if (!std.mem.eql(u8, std.mem.trim(u8, response, " \r\n"), "ok")) return error.PreviewWindowRuleFailed;
+}
+
+fn disableRule(rt: *Runtime, id: []const u8) void {
+    // SIGTERM cancels normal IPC, but must not skip our own rule teardown.
+    // Give cleanup a separate, short budget even if the compositor is stuck.
+    const command = std.fmt.allocPrint(rt.a, "/keyword windowrule[{s}]:enable 0", .{id}) catch return;
+    _ = ipc.requestWithOptions(rt.a, rt.socket, command, .{ .timeout_ms = 250, .cancellable = false }) catch {};
+}
+
+fn stopViewer(rt: *Runtime, child: *std.process.Child, pidfd: c_int) !void {
+    // The pidfd belongs only to our unreaped viewer, never a user's app.
+    if (c.syscall(c.SYS_pidfd_send_signal, pidfd, c.SIGTERM, @as(?*anyopaque, null), @as(c_uint, 0)) < 0 and c.__errno_location().* != c.ESRCH)
+        return error.ProcessMonitorFailed;
+    const deadline = native.nowMs() + 750;
+    while (native.nowMs() < deadline) {
+        var pfd = c.struct_pollfd{ .fd = pidfd, .events = c.POLLIN, .revents = 0 };
+        const ready = c.poll(&pfd, 1, 25);
+        if (ready < 0 and c.__errno_location().* != c.EINTR) return error.ProcessMonitorFailed;
+        if (ready > 0) {
+            _ = try child.wait(rt.io);
+            return;
+        }
+    }
+    // A viewer ignoring TERM must not strand its parent or the window rules.
+    @import("../platform/child_process.zig").terminate(child, rt.io);
 }
 
 /// The GTK process inherits the HOST environment. Only short-lived workers
@@ -47,7 +72,7 @@ pub fn launch(host: *Runtime, opt: Args) !void {
     // Set the match before any effects. Disable on exit, including partial
     // setup failure. No configuration files, reload, or unrelated rules touched.
     try rule(host, id, "match:class", try std.fmt.allocPrint(host.a, "^{s}$", .{id}));
-    defer rule(host, id, "enable", "0") catch {};
+    defer disableRule(host, id);
     try rule(host, id, "float", "on");
     try rule(host, id, "pin", "on");
     try rule(host, id, "no_initial_focus", "on");
@@ -70,15 +95,14 @@ pub fn launch(host: *Runtime, opt: Args) !void {
         .stdout = .inherit,
         .stderr = .inherit,
     });
-    defer child.kill(host.io);
+    defer @import("../platform/child_process.zig").terminate(&child, host.io);
     const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));
     if (pidfd < 0) return error.ProcessMonitorFailed;
     defer _ = c.close(pidfd);
     try host.emit(.{ .ok = true, .event = "preview_started", .session_id = opt.session, .pid = child.id.?, .read_only = true, .fps = opt.fps });
     while (true) {
         native.checkCancelled() catch {
-            _ = c.kill(child.id.?, c.SIGTERM);
-            _ = try child.wait(host.io);
+            try stopViewer(host, &child, pidfd);
             return;
         };
         var pfd = c.struct_pollfd{ .fd = pidfd, .events = c.POLLIN, .revents = 0 };
@@ -98,7 +122,7 @@ fn capture(rt: *Runtime, argv: []const []const u8, fd: c_int) !void {
         .stdout = .{ .file = .{ .handle = fd, .flags = .{ .nonblocking = false } } },
         .stderr = .ignore,
     });
-    defer child.kill(rt.io);
+    defer @import("../platform/child_process.zig").terminate(&child, rt.io);
     const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));
     if (pidfd < 0) return error.ProcessMonitorFailed;
     defer _ = c.close(pidfd);

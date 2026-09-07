@@ -57,7 +57,9 @@ pub const Frame = struct {
     pub fn validate(f: Frame, instance: []const u8, display: []const u8, revision: []const u8, now: i64) !void {
         if (f.schema_version != 2) return error.StaleObservation;
         if (!std.mem.eql(u8, f.instance, instance) or !std.mem.eql(u8, f.wayland_display, display)) return error.SessionMismatch;
-        if (now < f.captured_at_monotonic_ms or now - f.captured_at_monotonic_ms > 30_000 or !std.mem.eql(u8, revision, f.layout_revision)) return error.StaleObservation;
+        // Metadata is external input: reject negative monotonic timestamps
+        // before subtraction so minInt(i64) cannot panic in ReleaseSafe.
+        if (f.captured_at_monotonic_ms < 0 or now < f.captured_at_monotonic_ms or now - f.captured_at_monotonic_ms > 30_000 or !std.mem.eql(u8, revision, f.layout_revision)) return error.StaleObservation;
     }
 };
 
@@ -93,4 +95,7 @@ test "frames expire and reject different layouts and sessions" {
     try std.testing.expectError(error.StaleObservation, f.validate("abc", "wayland-1", "one", 31001));
     try std.testing.expectError(error.StaleObservation, f.validate("abc", "wayland-1", "one", 999));
     try std.testing.expectError(error.SessionMismatch, f.validate("abc", "wayland-2", "one", 1100));
+    var invalid = f;
+    invalid.captured_at_monotonic_ms = std.math.minInt(i64);
+    try std.testing.expectError(error.StaleObservation, invalid.validate("abc", "wayland-1", "one", 1100));
 }

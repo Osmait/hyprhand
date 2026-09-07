@@ -1,7 +1,7 @@
 const std = @import("std");
-const native = @import("native.zig");
+const native = @import("../platform/native.zig");
 const c = native.c;
-const Runtime = @import("runtime.zig").Runtime;
+const Runtime = @import("../runtime/runtime.zig").Runtime;
 const Connection = @import("pointer.zig").Pointer;
 
 const Modifier = struct {

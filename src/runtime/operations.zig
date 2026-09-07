@@ -1,8 +1,8 @@
 const std = @import("std");
-const native = @import("native.zig");
+const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("runtime.zig").Runtime;
-const Args = @import("args.zig").Args;
+const Args = @import("../cli/args.zig").Args;
 
 // No argv, text, titles, or application content in the audit trail.
 pub fn log(rt: *Runtime, action: []const u8, status: []const u8) !void {
@@ -69,7 +69,7 @@ pub fn collect(rt: *Runtime, opt: Args, emit: bool) !void {
 pub fn events(rt: *Runtime, opt: Args) !void {
     try rt.validateDisplay();
     const path = try std.fmt.allocPrint(rt.a, "{s}/.socket2.sock", .{std.fs.path.dirname(rt.socket).?});
-    const fd = try @import("ipc.zig").connect(path);
+    const fd = try @import("../platform/ipc.zig").connect(path);
     defer _ = c.close(fd);
     var pending: std.ArrayList(u8) = .empty;
     const deadline = native.nowMs() + opt.timeout_ms;
@@ -85,6 +85,7 @@ pub fn events(rt: *Runtime, opt: Args) !void {
         if (ready == 0) continue;
         var buffer: [4096]u8 = undefined;
         const n = c.read(fd, &buffer, buffer.len);
+        if (n < 0 and (c.__errno_location().* == c.EINTR or c.__errno_location().* == c.EAGAIN)) continue;
         if (n <= 0) return error.EventStreamClosed;
         try pending.appendSlice(rt.a, buffer[0..@intCast(n)]);
         if (pending.items.len > 65536) return error.EventTooLarge;

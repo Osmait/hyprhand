@@ -41,7 +41,7 @@ def main():
         subprocess.run(["wayland-scanner", "private-code",
                         str(root / "protocols/xdg-shell.xml"), str(xdg)],
                        check=True, env=env)
-        subprocess.run(["zig", "test", "src/keyboard.zig", "-lc",
+        subprocess.run(["zig", "test", "src/test_keyboard.zig", "-lc",
                         "-lwayland-client", "-lxkbcommon", "-I", directory,
                         *sources, str(xdg)], cwd=root, env=env, check=True)
 

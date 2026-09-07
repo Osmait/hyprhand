@@ -31,27 +31,15 @@ jobs:
           echo "$zig_install" >> "$GITHUB_PATH"
       - name: Check toolchain pin
         run: test "$(zig version)" = "$(tr -d '\n' < .zigversion)"
-      - name: Reliability contract tests (offline, no GUI)
-        run: python3 -B tests/fixtures/test_reliability_contract.py
-      - run: zig fmt --check build.zig src
       - run: zig build test
       - name: Keyboard unit tests (no Wayland connection)
         run: python3 tests/keyboard_unit.py
-      - run: zig build -Doptimize=ReleaseSafe -Dcpu=baseline
-      - run: strip --strip-all zig-out/bin/deskctl
-      - run: python3 tests/integration.py
-      - name: Keyboard protocol tests (private fake Wayland socket)
-        run: python3 tests/keyboard_protocol.py
-      - name: Session lifecycle tests (private fixtures, no desktop)
-        run: python3 tests/session_lifecycle.py
-      - name: Preview worker tests (private fixtures, no GTK or desktop)
-        run: python3 tests/preview.py
+      - name: Formatting and all offline regressions (private fixtures, no desktop)
+        run: zig build check -Doptimize=ReleaseSafe -Dcpu=baseline
       - name: Optional GTK4 preview build and ABI check
         if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get install -y libgtk-4-dev
           zig build pip -Doptimize=ReleaseSafe -Dcpu=baseline
-      - name: Packaging and Blender path checks (no Blender import or execution)
-        run: python3 -m unittest discover -s packaging -p 'test_*.py' -v
       - run: python3 -m py_compile tests/*.py tests/fixtures/*.py scripts/*.py examples/blender/style_room.py
       - run: bash -n completions/deskctl.bash

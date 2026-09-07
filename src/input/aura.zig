@@ -1,7 +1,7 @@
 const std = @import("std");
-const native = @import("native.zig");
+const native = @import("../platform/native.zig");
 const c = native.c;
-const geometry = @import("geometry.zig");
+const geometry = @import("../core/geometry.zig");
 const Pointer = @import("pointer.zig").Pointer;
 
 const extent = 64;

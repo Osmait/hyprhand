@@ -1,7 +1,7 @@
 const std = @import("std");
-const native = @import("native.zig");
-const Runtime = @import("runtime.zig").Runtime;
-const Args = @import("args.zig").Args;
+const native = @import("../platform/native.zig");
+const Runtime = @import("../runtime/runtime.zig").Runtime;
+const Args = @import("../cli/args.zig").Args;
 const c = @cImport({
     @cInclude("accessibility.h");
 });

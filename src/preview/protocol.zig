@@ -1,5 +1,5 @@
 const std = @import("std");
-const geometry = @import("geometry.zig");
+const geometry = @import("../core/geometry.zig");
 pub const max_bytes = 8 * 1024 * 1024;
 pub const header_len = 13;
 pub const max_age_ms = 2000;

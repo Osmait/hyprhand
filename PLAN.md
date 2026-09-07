@@ -68,7 +68,21 @@ Scope: CLI only, no MCP. Preserve host configuration and user applications.
   clearing, host floating/pinned/no-initial-focus rules. Worker regressions and
   live Hyprlang 0.56.2 / GTK4 4.22.4 checks; see docs/preview.md.
 
-## Explicit limitations, not claimed complete
+## Maintenance audit — September 2026
+
+- [x] Reproduce and fix IPC trickle deadlines, signal cancellation while reading,
+  extreme frame timestamp overflow, and TERM-ignoring viewer/helper teardown.
+- [x] Preserve bounded window-rule cleanup after cancellation; use per-check
+  token allocation in guards rather than retaining it for the whole action.
+- [x] Domain-oriented source directories, extracted observation/help, modular
+  native/optional build configuration, contribution guide and audit evidence.
+- [x] Single offline `zig build check` path used by CI; package tests include
+  the new IPC and preview regressions. Public command/JSON contracts preserved.
+
+See [audit scope and follow-ups](docs/audit-2026-09.md). This is not a claim
+that all bugs or live platform incompatibilities are eliminated.
+
+## Remaining platform limitations
 
 - [ ] PiP follow-ups: host Lua window-rule support, PipeWire/zero-copy higher-fps
   streaming, high-DPI/fullscreen stacking and sustained performance coverage.
