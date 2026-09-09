@@ -20,7 +20,7 @@ pub fn terminate(child: *std.process.Child, io: std.Io) void {
             child.kill(io);
             return;
         }
-        if (ready < 0 and c.__errno_location().* != c.EINTR) break;
+        if (ready < 0 and native.errno() != c.EINTR) break;
     }
     // Zig 0.16's POSIX Child.kill sends TERM and waits indefinitely. Escalate
     // explicitly first, then let Zig reap and clear its child/pipe ownership.

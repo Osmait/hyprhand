@@ -63,6 +63,7 @@ typedef void (*GTaskThreadFunc)(GTask *, void *, void *, GCancellable *);
 #define GTK_PHASE_CAPTURE 1
 #define GDK_KEY_Tab 0xff09
 #define GDK_KEY_ISO_Left_Tab 0xfe20
+#define GTK_STYLE_PROVIDER_PRIORITY_USER 800
 #else
 _Static_assert(GTK_ORIENTATION_HORIZONTAL == 0 && GTK_ORIENTATION_VERTICAL == 1, "orientation ABI");
 _Static_assert(GTK_CONTENT_FIT_CONTAIN == 1, "fit ABI");
@@ -70,6 +71,7 @@ _Static_assert(G_SUBPROCESS_FLAGS_STDOUT_PIPE == 4 && G_SUBPROCESS_FLAGS_STDERR_
 _Static_assert(GTK_ALIGN_END == 2 && GTK_ALIGN_START == 1 && PANGO_ELLIPSIZE_END == 3, "layout ABI");
 _Static_assert(GDK_SURFACE_EDGE_SOUTH_EAST == 7 && GTK_EVENT_SEQUENCE_CLAIMED == 1, "resize ABI");
 _Static_assert(GTK_PHASE_CAPTURE == 1 && GDK_KEY_Tab == 0xff09 && GDK_KEY_ISO_Left_Tab == 0xfe20, "keyboard controller ABI");
+_Static_assert(GTK_STYLE_PROVIDER_PRIORITY_USER == 800, "style priority ABI");
 #endif
 gboolean gtk_init_check(void);
 GtkWidget *gtk_window_new(void);
@@ -100,7 +102,7 @@ void gtk_overlay_add_overlay(GtkOverlay *, GtkWidget *);
 GtkWidget *gtk_window_handle_new(void);
 void gtk_window_handle_set_child(GtkWindowHandle *, GtkWidget *);
 GtkCssProvider *gtk_css_provider_new(void);
-void gtk_css_provider_load_from_data(GtkCssProvider *, const char *, ptrdiff_t);
+void gtk_css_provider_load_from_string(GtkCssProvider *, const char *);
 void gtk_style_context_add_provider_for_display(GdkDisplay *, GtkStyleProvider *, guint);
 GdkDisplay *gdk_display_get_default(void);
 void gtk_widget_set_halign(GtkWidget *, GtkAlign);

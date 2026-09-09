@@ -1,5 +1,6 @@
-pub const text =
-    \\hyprhand 0.4.0 — computer use for Hyprland (Zig 0.16, Linux)
+const version = @import("../version.zig");
+
+pub const text = "hyprhand " ++ version.string ++ " — computer use for Hyprland (Zig 0.16, Linux)\n" ++
     \\
     \\All commands accept --session NAME (default host). Input REQUIRES it.
     \\JSON output; events emits NDJSON. No MCP server or AI model.

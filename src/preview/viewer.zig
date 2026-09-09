@@ -93,10 +93,17 @@ fn lost() void {
     label(if (state.stop_failed) "No signal · Could not stop input. Try again." else if (state.stop_confirmed) "No signal · Input stopped" else "No signal · Session closed, locked, or unavailable");
 }
 
+/// Starts a hyprhand worker for this viewer's session. Frame workers get a
+/// monitor and bidirectional pipes; the stop worker runs silently.
 fn spawn(command: [*:0]const u8, frame: bool) ?*c.GSubprocess {
-    const argv = [_:null]?[*:0]const u8{ state.cli, command, "--session", state.session, "--expected-instance", state.instance, if (frame) "--monitor" else null, if (frame) state.monitor.ptr else null };
+    var argv = [_:null]?[*:0]const u8{ state.cli, command, "--session", state.session, "--expected-instance", state.instance, null, null };
+    if (frame) {
+        argv[6] = "--monitor";
+        argv[7] = state.monitor.ptr;
+    }
     var err: ?*c.GError = null;
-    const flags: c.GSubprocessFlags = @intCast(c.G_SUBPROCESS_FLAGS_STDERR_SILENCE | (if (frame) c.G_SUBPROCESS_FLAGS_STDIN_PIPE | c.G_SUBPROCESS_FLAGS_STDOUT_PIPE else c.G_SUBPROCESS_FLAGS_STDOUT_SILENCE));
+    const pipes: c_int = if (frame) c.G_SUBPROCESS_FLAGS_STDIN_PIPE | c.G_SUBPROCESS_FLAGS_STDOUT_PIPE else c.G_SUBPROCESS_FLAGS_STDOUT_SILENCE;
+    const flags: c.GSubprocessFlags = @intCast(c.G_SUBPROCESS_FLAGS_STDERR_SILENCE | pipes);
     const process = c.g_subprocess_newv(@ptrCast(&argv), flags, &err);
     if (err) |e| c.g_error_free(e);
     return process;
@@ -227,7 +234,9 @@ fn metrics() void {
 
 fn tick(_: ?*anyopaque) callconv(.c) c_int {
     metrics();
-    if (state.retiring_at != 0 and now() - state.retiring_at > 500) if (state.frame_process) |process| c.g_subprocess_force_exit(process);
+    if (state.retiring_at != 0 and now() - state.retiring_at > 500) {
+        if (state.frame_process) |process| c.g_subprocess_force_exit(process);
+    }
     if (state.closing) {
         retire();
         if (state.stop_process) |process| {
@@ -239,7 +248,12 @@ fn tick(_: ?*anyopaque) callconv(.c) c_int {
         return c.G_SOURCE_CONTINUE;
     }
     if (state.stop_process) |process| {
-        if (now() - state.stop_started > 2500) c.g_subprocess_force_exit(process) else if (now() - state.stop_started > 2000) c.g_subprocess_send_signal(process, c.SIGTERM);
+        const waited = now() - state.stop_started;
+        if (waited > 2500) {
+            c.g_subprocess_force_exit(process);
+        } else if (waited > 2000) {
+            c.g_subprocess_send_signal(process, c.SIGTERM);
+        }
     }
     if (state.last_frame != 0 and now() - state.last_frame > protocol.max_age_ms) lost();
     if (state.frame_busy) {
@@ -314,22 +328,20 @@ fn resizePressed(gesture: ?*c.GtkGestureClick, _: c_int, _: f64, _: f64, data: ?
     _ = c.gtk_gesture_set_state(@ptrCast(gesture.?), c.GTK_EVENT_SEQUENCE_CLAIMED);
     c.gdk_toplevel_begin_resize(@ptrCast(surface), c.GDK_SURFACE_EDGE_SOUTH_EAST, device, 1, x, y, c.gtk_event_controller_get_current_event_time(controller));
 }
-pub fn main(init: std.process.Init) !void {
-    const a = init.arena.allocator();
-    const argv = try init.minimal.args.toSlice(a);
-    if (argv.len != 6) return error.UseHyprhandPreview;
-    const fps = try std.fmt.parseInt(u32, argv[5], 10);
-    if (fps < 1 or fps > 15) return error.InvalidPreviewFps;
-    const app_id = init.environ_map.get("HYPRHAND_PIP_APP_ID") orelse return error.UseHyprhandPreview;
-    c.g_set_prgname(try a.dupeZ(u8, app_id));
-    c.g_set_application_name("Hyprhand · Session preview");
-    if (c.gtk_init_check() == 0) return error.PreviewDisplayUnavailable;
-    const style = c.gtk_css_provider_new();
-    c.gtk_css_provider_load_from_data(style, css, css.len);
-    c.gtk_style_context_add_provider_for_display(c.gdk_display_get_default(), @ptrCast(style), 800);
-    c.g_object_unref(style);
+/// Widgets the event handlers need after construction.
+const Ui = struct {
+    window: *c.GtkWindow,
+    picture: *c.GtkPicture,
+    status: *c.GtkLabel,
+    stop: *c.GtkWidget,
+    close: *c.GtkWidget,
+};
+
+/// Undecorated window: picture, a header with title and close button, and a
+/// footer with status, stop button and a resize grip, all as overlays.
+fn buildUi(a: std.mem.Allocator, session: []const u8) !Ui {
     const window: *c.GtkWindow = @ptrCast(c.gtk_window_new());
-    c.gtk_window_set_title(window, try std.fmt.allocPrintSentinel(a, "Hyprhand · {s}", .{argv[2]}, 0));
+    c.gtk_window_set_title(window, try std.fmt.allocPrintSentinel(a, "Hyprhand · {s}", .{session}, 0));
     c.gtk_window_set_default_size(window, 640, 360);
     c.gtk_widget_set_size_request(@ptrCast(window), 360, 203);
     c.gtk_window_set_decorated(window, 0);
@@ -346,11 +358,11 @@ pub fn main(init: std.process.Init) !void {
     const header: *c.GtkBox = @ptrCast(c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 12));
     c.gtk_widget_add_css_class(@ptrCast(header), "pip-top");
     c.gtk_widget_set_valign(@ptrCast(header), c.GTK_ALIGN_START);
-    const title: *c.GtkLabel = @ptrCast(c.gtk_label_new(try std.fmt.allocPrintSentinel(a, "{s} · Read-only", .{argv[2]}, 0)));
+    const title: *c.GtkLabel = @ptrCast(c.gtk_label_new(try std.fmt.allocPrintSentinel(a, "{s} · Read-only", .{session}, 0)));
     c.gtk_label_set_xalign(title, 0);
     c.gtk_label_set_ellipsize(title, c.PANGO_ELLIPSIZE_END);
     c.gtk_widget_set_hexpand(@ptrCast(title), 1);
-    c.gtk_widget_set_tooltip_text(@ptrCast(title), try std.fmt.allocPrintSentinel(a, "{s} · Drag the image to move the viewer", .{argv[2]}, 0));
+    c.gtk_widget_set_tooltip_text(@ptrCast(title), try std.fmt.allocPrintSentinel(a, "{s} · Drag the image to move the viewer", .{session}, 0));
     const close = c.gtk_button_new_from_icon_name("window-close-symbolic").?;
     c.gtk_widget_add_css_class(close, "pip-close");
     c.gtk_widget_set_tooltip_text(close, "Close viewer (the agent keeps running)");
@@ -384,42 +396,60 @@ pub fn main(init: std.process.Init) !void {
     c.gtk_overlay_add_overlay(overlay, @ptrCast(footer));
     c.gtk_window_handle_set_child(handle, @ptrCast(overlay));
     c.gtk_window_set_child(window, @ptrCast(handle));
+    return .{ .window = window, .picture = picture, .status = status, .stop = stop, .close = close };
+}
+
+pub fn main(init: std.process.Init) !void {
+    const a = init.arena.allocator();
+    const argv = try init.minimal.args.toSlice(a);
+    if (argv.len != 6) return error.UseHyprhandPreview;
+    const fps = try std.fmt.parseInt(u32, argv[5], 10);
+    if (fps < 1 or fps > 15) return error.InvalidPreviewFps;
+    const app_id = init.environ_map.get("HYPRHAND_PIP_APP_ID") orelse return error.UseHyprhandPreview;
+    c.g_set_prgname(try a.dupeZ(u8, app_id));
+    c.g_set_application_name("Hyprhand · Session preview");
+    if (c.gtk_init_check() == 0) return error.PreviewDisplayUnavailable;
+    const style = c.gtk_css_provider_new();
+    c.gtk_css_provider_load_from_string(style, css);
+    c.gtk_style_context_add_provider_for_display(c.gdk_display_get_default(), @ptrCast(style), c.GTK_STYLE_PROVIDER_PRIORITY_USER);
+    c.g_object_unref(style);
+    const ui = try buildUi(a, argv[2]);
     const motion = c.gtk_event_controller_motion_new();
-    c.gtk_widget_add_controller(@ptrCast(window), motion);
+    c.gtk_widget_add_controller(@ptrCast(ui.window), motion);
     state = .{
         .cli = try a.dupeZ(u8, argv[1]),
         .session = try a.dupeZ(u8, argv[2]),
         .instance = try a.dupeZ(u8, argv[3]),
         .monitor = try a.dupeZ(u8, argv[4]),
-        .window = window,
+        .window = ui.window,
         .motion = @ptrCast(motion),
         .loop = c.g_main_loop_new(null, 0).?,
-        .picture = picture,
-        .status = status,
-        .stop = stop,
+        .picture = ui.picture,
+        .status = ui.status,
+        .stop = ui.stop,
         .cadence = .{ .interval_ms = @intCast((1000 + fps - 1) / fps) },
         .metrics = if (init.environ_map.get("HYPRHAND_PIP_METRICS")) |v| std.mem.eql(u8, v, "1") else false,
         .metrics_started = now(),
         .metrics_emitted = now(),
     };
     _ = c.g_signal_connect_data(motion, "notify::contains-pointer", @ptrCast(&pointerChanged), null, null, 0);
-    _ = c.g_signal_connect_data(window, "notify::is-active", @ptrCast(&activeChanged), null, null, 0);
+    _ = c.g_signal_connect_data(ui.window, "notify::is-active", @ptrCast(&activeChanged), null, null, 0);
     const keys = c.gtk_event_controller_key_new();
     c.gtk_event_controller_set_propagation_phase(keys, c.GTK_PHASE_CAPTURE);
     _ = c.g_signal_connect_data(keys, "key-pressed", @ptrCast(&keyPressed), null, null, 0);
-    c.gtk_widget_add_controller(@ptrCast(window), keys);
-    _ = c.g_signal_connect_data(window, "close-request", @ptrCast(&closeRequested), null, null, 0);
-    _ = c.g_signal_connect_data(stop, "clicked", @ptrCast(&stopClicked), null, null, 0);
-    _ = c.g_signal_connect_data(close, "clicked", @ptrCast(&closeClicked), null, null, 0);
+    c.gtk_widget_add_controller(@ptrCast(ui.window), keys);
+    _ = c.g_signal_connect_data(ui.window, "close-request", @ptrCast(&closeRequested), null, null, 0);
+    _ = c.g_signal_connect_data(ui.stop, "clicked", @ptrCast(&stopClicked), null, null, 0);
+    _ = c.g_signal_connect_data(ui.close, "clicked", @ptrCast(&closeClicked), null, null, 0);
     const interrupt = c.g_unix_signal_add(c.SIGINT, quit, null);
     const terminate = c.g_unix_signal_add(c.SIGTERM, quit, null);
     const timer = c.g_timeout_add(25, tick, null);
     // Mapping respects no_initial_focus; present() would request activation.
-    c.gtk_widget_set_visible(@ptrCast(window), 1);
+    c.gtk_widget_set_visible(@ptrCast(ui.window), 1);
     if (state.metrics) {
         const flags = c.fcntl(c.STDOUT_FILENO, c.F_GETFL);
         if (flags < 0 or c.fcntl(c.STDOUT_FILENO, c.F_SETFL, flags | c.O_NONBLOCK) < 0) state.metrics = false;
-        state.clock = c.gtk_widget_get_frame_clock(@ptrCast(window));
+        state.clock = c.gtk_widget_get_frame_clock(@ptrCast(ui.window));
         if (state.clock) |clock| _ = c.g_signal_connect_data(clock, "after-paint", @ptrCast(&afterPaint), null, null, 0);
     }
     _ = tick(null);
@@ -427,7 +457,7 @@ pub fn main(init: std.process.Init) !void {
     _ = c.g_source_remove(timer);
     _ = c.g_source_remove(interrupt);
     _ = c.g_source_remove(terminate);
-    c.gtk_window_destroy(window);
+    c.gtk_window_destroy(ui.window);
     if (state.png) |png| c.g_bytes_unref(png);
     if (state.texture) |texture| c.g_object_unref(texture);
     c.g_main_loop_unref(state.loop);

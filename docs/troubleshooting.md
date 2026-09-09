@@ -17,6 +17,7 @@ the result before deciding what action is still needed.
 | `SessionRequired` | Add an explicit `--session host` or managed session name |
 | `ControlStopped` | Input is disabled. Enable only when the operator authorizes control; never override a human stop automatically |
 | `ControlBusy` | Another hyprhand input action holds the action lock. Let it finish or stop it; do not delete locks to bypass serialization |
+| `LogBusy` | Another hyprhand command held the audit log for more than 500 ms. Retry; do not delete `audit.lock` |
 | `StaleObservation` | Frame expired or relevant focus/layout changed. Focus the intended window, observe again, inspect the PNG, and use its new frame ID |
 | `FrameNotFound`, `InvalidFrameId` | Use the exact `frame.frame_id` from the selected session; old captures may have been collected |
 | `SessionMismatch` | The frame or runtime belongs to a different session/display. Obtain a new observation from the intended session |

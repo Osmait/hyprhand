@@ -2,12 +2,16 @@ const std = @import("std");
 const native = @import("../platform/native.zig");
 const c = native.c;
 const Pointer = @import("../input/pointer.zig").Pointer;
-const Point = @import("../core/geometry.zig").Point;
+const Connection = @import("../platform/wayland.zig").Connection;
+const Runtime = @import("../runtime/runtime.zig").Runtime;
+const aura = @import("../input/aura.zig");
+const geometry = @import("../core/geometry.zig");
+const Point = geometry.Point;
 
 // Captures only the compositor's cursor buffer, never an output/window image.
 // Callers keep this object in stable storage for the Wayland listeners.
 pub const Capture = struct {
-    connection: *Pointer,
+    connection: *Connection,
     registry: ?*c.struct_wl_registry = null,
     manager: ?*c.struct_ext_image_copy_capture_manager_v1 = null,
     sources: ?*c.struct_ext_output_image_capture_source_manager_v1 = null,
@@ -100,7 +104,7 @@ pub const Capture = struct {
     }
     const frame_listener = c.struct_ext_image_copy_capture_frame_v1_listener{ .transform = transform, .damage = damage, .presentation_time = time, .ready = readyEvent, .failed = failedEvent };
 
-    pub fn init(s: *Capture, connection: *Pointer, output: *c.struct_wl_output) !void {
+    pub fn init(s: *Capture, connection: *Connection, output: *c.struct_wl_output) !void {
         s.* = .{ .connection = connection };
         errdefer s.deinit();
         s.registry = c.wl_display_get_registry(connection.display) orelse return error.CursorCaptureUnavailable;
@@ -169,22 +173,21 @@ pub const Capture = struct {
     }
 };
 
-pub fn probe(rt: *@import("../runtime/runtime.zig").Runtime) !void {
+pub fn probe(rt: *Runtime) !void {
     try rt.validateDisplay();
     try rt.unlocked();
     var pointer: Pointer = undefined;
     try pointer.init(try rt.displayPath());
     defer pointer.deinit();
-    var aura: @import("../input/aura.zig").Aura = undefined;
-    const geometry = @import("../core/geometry.zig");
-    const monitors = try rt.json([]geometry.Monitor, try rt.query("monitors"));
-    try aura.init(&pointer, monitors);
-    defer aura.deinit();
-    const p = try rt.json(Point, try rt.query("cursorpos"));
-    for (aura.outputs[0..aura.count]) |*output| {
-        if (!@import("../input/aura.zig").contains(output.rect orelse continue, p)) continue;
+    var halo: aura.Aura = undefined;
+    const monitors = try rt.queryJson([]geometry.Monitor, "monitors");
+    try halo.init(&pointer.connection, monitors);
+    defer halo.deinit();
+    const p = try rt.queryJson(Point, "cursorpos");
+    for (halo.outputs[0..halo.count]) |*output| {
+        if (!aura.contains(output.rect orelse continue, p)) continue;
         var capture: Capture = undefined;
-        try capture.init(&pointer, output.output.?);
+        try capture.init(&pointer.connection, output.output.?);
         defer capture.deinit();
         try capture.request();
         const deadline = native.nowMs() + 2000;

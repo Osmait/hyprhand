@@ -32,7 +32,9 @@ pub const c = @cImport({
     @cInclude("ext-image-capture-source-v1.h");
 });
 
-var cancelled = @import("std").atomic.Value(bool).init(false);
+const std = @import("std");
+
+var cancelled = std.atomic.Value(bool).init(false);
 // One CLI command runs per process. Child cleanup deliberately does not consult
 // this budget, so deadline expiry cannot suppress release/reaping.
 var command_deadline: ?i64 = null;
@@ -70,7 +72,31 @@ pub fn nowMs() i64 {
     return t.tv_sec * 1000 + @divTrunc(t.tv_nsec, 1_000_000);
 }
 
+/// Wayland event timestamps are 32-bit milliseconds; wrapping is expected.
+pub fn timestampMs() u32 {
+    return @truncate(@as(u64, @intCast(nowMs())));
+}
+
 pub fn sleepMs(ms: u32) void {
     var t = c.struct_timespec{ .tv_sec = @intCast(ms / 1000), .tv_nsec = @as(c_long, ms % 1000) * 1_000_000 };
-    while (c.nanosleep(&t, &t) < 0 and c.__errno_location().* == c.EINTR) {}
+    while (c.nanosleep(&t, &t) < 0 and errno() == c.EINTR) {}
+}
+
+pub fn errno() c_int {
+    return c.__errno_location().*;
+}
+
+pub fn clearErrno() void {
+    c.__errno_location().* = 0;
+}
+
+/// Next directory entry name, or null at the end. Distinguishes end-of-stream
+/// from a failed readdir, which the raw C API only reports through errno.
+pub fn nextEntry(dir: *c.DIR) !?[]const u8 {
+    clearErrno();
+    const entry = c.readdir(dir) orelse {
+        if (errno() != 0) return error.ProcessScanFailed;
+        return null;
+    };
+    return std.mem.span(@as([*:0]const u8, @ptrCast(&entry.*.d_name)));
 }

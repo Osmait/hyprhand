@@ -6,11 +6,13 @@ const Args = @import("../cli/args.zig").Args;
 const sessions = @import("../runtime/sessions.zig");
 const geometry = @import("../core/geometry.zig");
 const ipc = @import("../platform/ipc.zig");
+const child_process = @import("../platform/child_process.zig");
 const protocol = @import("protocol.zig");
+const eq = @import("../core/text.zig").eq;
 
 fn monitor(rt: *Runtime, name: ?[]const u8) !geometry.Monitor {
-    for (try rt.json([]geometry.Monitor, try rt.query("monitors"))) |m| {
-        if (if (name) |n| std.mem.eql(u8, m.name, n) else m.focused) {
+    for (try rt.queryJson([]geometry.Monitor, "monitors")) |m| {
+        if (if (name) |n| eq(m.name, n) else m.focused) {
             if (m.disabled or !m.dpmsStatus) return error.MonitorUnavailable;
             _ = try m.rect();
             return m;
@@ -20,36 +22,36 @@ fn monitor(rt: *Runtime, name: ?[]const u8) !geometry.Monitor {
 }
 
 fn rule(rt: *Runtime, id: []const u8, key: []const u8, value: []const u8) !void {
-    const response = try ipc.request(rt.a, rt.socket, try std.fmt.allocPrint(rt.a, "/keyword windowrule[{s}]:{s} {s}", .{ id, key, value }));
-    if (!std.mem.eql(u8, std.mem.trim(u8, response, " \r\n"), "ok")) return error.PreviewWindowRuleFailed;
+    const request = try std.fmt.allocPrint(rt.allocator, "/keyword windowrule[{s}]:{s} {s}", .{ id, key, value });
+    try rt.expectOk(request, error.PreviewWindowRuleFailed);
 }
 
 fn disableRule(rt: *Runtime, id: []const u8, lua: bool) void {
     // SIGTERM cancels normal IPC, but must not skip our own rule teardown.
     // Give cleanup a separate, short budget even if the compositor is stuck.
     const command = (if (lua)
-        std.fmt.allocPrint(rt.a, "/eval if _G['{s}'] then _G['{s}']:set_enabled(false); _G['{s}']=nil end", .{ id, id, id })
+        std.fmt.allocPrint(rt.allocator, "/eval if _G['{s}'] then _G['{s}']:set_enabled(false); _G['{s}']=nil end", .{ id, id, id })
     else
-        std.fmt.allocPrint(rt.a, "/keyword windowrule[{s}]:enable 0", .{id})) catch return;
-    _ = ipc.requestWithOptions(rt.a, rt.socket, command, .{ .timeout_ms = 250, .cancellable = false }) catch {};
+        std.fmt.allocPrint(rt.allocator, "/keyword windowrule[{s}]:enable 0", .{id})) catch return;
+    _ = ipc.requestWithOptions(rt.allocator, rt.socket, command, .{ .timeout_ms = 250, .cancellable = false }) catch {};
 }
 
 fn stopViewer(rt: *Runtime, child: *std.process.Child, pidfd: c_int) !void {
     // The pidfd belongs only to our unreaped viewer, never a user's app.
-    if (c.syscall(c.SYS_pidfd_send_signal, pidfd, c.SIGTERM, @as(?*anyopaque, null), @as(c_uint, 0)) < 0 and c.__errno_location().* != c.ESRCH)
+    if (c.syscall(c.SYS_pidfd_send_signal, pidfd, c.SIGTERM, @as(?*anyopaque, null), @as(c_uint, 0)) < 0 and native.errno() != c.ESRCH)
         return error.ProcessMonitorFailed;
     const deadline = native.nowMs() + 750;
     while (native.nowMs() < deadline) {
         var pfd = c.struct_pollfd{ .fd = pidfd, .events = c.POLLIN, .revents = 0 };
         const ready = c.poll(&pfd, 1, 25);
-        if (ready < 0 and c.__errno_location().* != c.EINTR) return error.ProcessMonitorFailed;
+        if (ready < 0 and native.errno() != c.EINTR) return error.ProcessMonitorFailed;
         if (ready > 0) {
             _ = try child.wait(rt.io);
             return;
         }
     }
     // A viewer ignoring TERM must not strand its parent or the window rules.
-    @import("../platform/child_process.zig").terminate(child, rt.io);
+    child_process.terminate(child, rt.io);
 }
 
 /// The GTK process inherits the HOST environment. Only short-lived workers
@@ -57,33 +59,32 @@ fn stopViewer(rt: *Runtime, child: *std.process.Child, pidfd: c_int) !void {
 pub fn launch(host: *Runtime, opt: Args) !void {
     var source = host.*;
     try sessions.route(&source, opt.session);
-    if (std.mem.eql(u8, source.instance, host.instance)) return error.PreviewManagedSessionRequired;
+    if (eq(source.instance, host.instance)) return error.PreviewManagedSessionRequired;
     try source.unlocked();
     const output = try monitor(&source, opt.monitor);
     try host.validateDisplay();
     try host.unlocked();
-    const status = try host.json(struct { configProvider: []const u8 }, try host.query("status"));
-    const lua = std.mem.eql(u8, status.configProvider, "lua");
-    if (!lua and !std.mem.eql(u8, status.configProvider, "hyprlang")) return error.UnsupportedConfigProvider;
+    const provider = try host.configProvider();
+    const lua = eq(provider, "lua");
+    if (!lua and !eq(provider, "hyprlang")) return error.UnsupportedConfigProvider;
 
     var executable: [4096]u8 = undefined;
     const count = c.readlink("/proc/self/exe", &executable, executable.len);
     if (count <= 0 or count == executable.len) return error.PreviewHelperMissing;
     const cli = executable[0..@intCast(count)];
-    const helper = try std.fmt.allocPrintSentinel(host.a, "{s}/hyprhand-pip", .{std.fs.path.dirname(cli).?}, 0);
+    const helper = try std.fmt.allocPrintSentinel(host.allocator, "{s}/hyprhand-pip", .{std.fs.path.dirname(cli).?}, 0);
     if (c.access(helper, c.X_OK) != 0) return error.PreviewHelperMissing;
-    const id = try std.fmt.allocPrint(host.a, "hyprhand-pip-{d}", .{c.getpid()});
+    const id = try std.fmt.allocPrint(host.allocator, "hyprhand-pip-{d}", .{c.getpid()});
     // Set the match before any effects. Disable on exit, including partial
     // setup failure. No configuration files, reload, or unrelated rules touched.
     defer disableRule(host, id, lua);
     if (lua) {
         // Only the internally generated decimal PID is interpolated. Session
         // names, window titles and all other external text are never Lua code.
-        const command = try std.fmt.allocPrint(host.a, "/eval _G['{s}']=hl.window_rule({{name='{s}',match={{class='^{s}$'}},float=true,pin=true,no_initial_focus=true,no_follow_mouse=true,border_size=0,rounding=0,no_shadow=true,opacity='1 override 1 override',size='640 360'}})", .{ id, id, id });
-        const reply = try ipc.request(host.a, host.socket, command);
-        if (!std.mem.eql(u8, std.mem.trim(u8, reply, " \r\n"), "ok")) return error.PreviewWindowRuleFailed;
+        const command = try std.fmt.allocPrint(host.allocator, "/eval _G['{s}']=hl.window_rule({{name='{s}',match={{class='^{s}$'}},float=true,pin=true,no_initial_focus=true,no_follow_mouse=true,border_size=0,rounding=0,no_shadow=true,opacity='1 override 1 override',size='640 360'}})", .{ id, id, id });
+        try host.expectOk(command, error.PreviewWindowRuleFailed);
     } else {
-        try rule(host, id, "match:class", try std.fmt.allocPrint(host.a, "^{s}$", .{id}));
+        try rule(host, id, "match:class", try std.fmt.allocPrint(host.allocator, "^{s}$", .{id}));
         try rule(host, id, "float", "on");
         try rule(host, id, "pin", "on");
         try rule(host, id, "no_initial_focus", "on");
@@ -96,18 +97,18 @@ pub fn launch(host: *Runtime, opt: Args) !void {
         try rule(host, id, "enable", "1");
     }
 
-    var env = try host.env.clone(host.a);
+    var env = try host.env.clone(host.allocator);
     try env.put("GDK_BACKEND", "wayland");
     // GTK uses this per-process application class; no shared global settings.
     try env.put("HYPRHAND_PIP_APP_ID", id);
     var child = try std.process.spawn(host.io, .{
-        .argv = &.{ helper, cli, opt.session, source.instance, output.name, try std.fmt.allocPrint(host.a, "{d}", .{opt.fps}) },
+        .argv = &.{ helper, cli, opt.session, source.instance, output.name, try std.fmt.allocPrint(host.allocator, "{d}", .{opt.fps}) },
         .environ_map = &env,
         .stdin = .ignore,
         .stdout = .inherit,
         .stderr = .inherit,
     });
-    defer @import("../platform/child_process.zig").terminate(&child, host.io);
+    defer child_process.terminate(&child, host.io);
     const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));
     if (pidfd < 0) return error.ProcessMonitorFailed;
     defer _ = c.close(pidfd);
@@ -119,7 +120,7 @@ pub fn launch(host: *Runtime, opt: Args) !void {
         };
         var pfd = c.struct_pollfd{ .fd = pidfd, .events = c.POLLIN, .revents = 0 };
         const ready = c.poll(&pfd, 1, 50);
-        if (ready < 0 and c.__errno_location().* != c.EINTR) return error.ProcessMonitorFailed;
+        if (ready < 0 and native.errno() != c.EINTR) return error.ProcessMonitorFailed;
         if (ready > 0) break;
     }
     const term = try child.wait(host.io);
@@ -141,7 +142,7 @@ fn capture(rt: *Runtime, argv: []const []const u8) ![]const u8 {
         .stdout = .{ .file = .{ .handle = pipe[1], .flags = .{ .nonblocking = false } } },
         .stderr = .ignore,
     });
-    defer @import("../platform/child_process.zig").terminate(&child, rt.io);
+    defer child_process.terminate(&child, rt.io);
     _ = c.close(pipe[1]);
     pipe[1] = -1;
     const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));
@@ -149,7 +150,7 @@ fn capture(rt: *Runtime, argv: []const []const u8) ![]const u8 {
     defer _ = c.close(pidfd);
     const deadline = native.nowMs() + 1500;
     var bytes: std.ArrayList(u8) = .empty;
-    errdefer bytes.deinit(rt.a);
+    errdefer bytes.deinit(rt.allocator);
     // Drain incrementally with a hard cap, instead of allowing a helper to
     // grow a memfd arbitrarily before validating its final size.
     while (true) {
@@ -161,32 +162,36 @@ fn capture(rt: *Runtime, argv: []const []const u8) ![]const u8 {
         if (count > 0) {
             const size: usize = @intCast(count);
             if (size > protocol.max_bytes - bytes.items.len) return error.InvalidScreenshot;
-            try bytes.appendSlice(rt.a, chunk[0..size]);
+            try bytes.appendSlice(rt.allocator, chunk[0..size]);
             continue;
         }
-        if (c.__errno_location().* == c.EINTR) continue;
-        if (c.__errno_location().* != c.EAGAIN) return error.PreviewBufferFailed;
+        if (native.errno() == c.EINTR) continue;
+        if (native.errno() != c.EAGAIN) return error.PreviewBufferFailed;
         var readable = c.struct_pollfd{ .fd = pipe[0], .events = c.POLLIN, .revents = 0 };
-        if (c.poll(&readable, 1, 25) < 0 and c.__errno_location().* != c.EINTR) return error.PreviewBufferFailed;
+        if (c.poll(&readable, 1, 25) < 0 and native.errno() != c.EINTR) return error.PreviewBufferFailed;
     }
     while (true) {
         try native.checkCancelled();
         if (native.nowMs() >= deadline) return error.HelperTimeout;
         var pfd = c.struct_pollfd{ .fd = pidfd, .events = c.POLLIN, .revents = 0 };
         const ready = c.poll(&pfd, 1, 25);
-        if (ready < 0 and c.__errno_location().* != c.EINTR) return error.ProcessMonitorFailed;
+        if (ready < 0 and native.errno() != c.EINTR) return error.ProcessMonitorFailed;
         if (ready > 0) break;
     }
     const term = try child.wait(rt.io);
     if (term != .exited or term.exited != 0) return error.HelperFailed;
-    return bytes.toOwnedSlice(rt.a);
+    return bytes.toOwnedSlice(rt.allocator);
 }
 
 const Frame = struct { header: [protocol.header_len]u8, png: []const u8 };
 
+fn requireExpectedSession(rt: *Runtime, opt: Args) !void {
+    if (rt.isHost()) return error.PreviewManagedSessionRequired;
+    if (!eq(rt.instance, opt.expected_instance.?)) return error.PreviewIdentityMismatch;
+}
+
 fn frame(rt: *Runtime, opt: Args) !Frame {
-    if (std.mem.eql(u8, rt.session_id, "host")) return error.PreviewManagedSessionRequired;
-    if (!std.mem.eql(u8, rt.instance, opt.expected_instance.?)) return error.PreviewIdentityMismatch;
+    try requireExpectedSession(rt, opt);
     try rt.prepare();
     try rt.validateDisplay();
     try rt.unlocked();
@@ -194,7 +199,7 @@ fn frame(rt: *Runtime, opt: Args) !Frame {
     const rect = try output.rect();
     const scale = @min(1.0, @min(960.0 / rect.width, 540.0 / rect.height));
     const started = native.nowMs();
-    const png = try capture(rt, &.{ "grim", "-c", "-t", "png", "-l", "1", "-s", try std.fmt.allocPrint(rt.a, "{d}", .{scale}), "-o", output.name, "-" });
+    const png = try capture(rt, &.{ "grim", "-c", "-t", "png", "-l", "1", "-s", try std.fmt.allocPrint(rt.allocator, "{d}", .{scale}), "-o", output.name, "-" });
     try rt.unlocked();
     try protocol.validatePng(png);
     const enabled = if (rt.token()) |_| true else |err| switch (err) {
@@ -206,8 +211,7 @@ fn frame(rt: *Runtime, opt: Args) !Frame {
 
 pub fn worker(rt: *Runtime, opt: Args) !void {
     if (opt.command == ._preview_stop) {
-        if (std.mem.eql(u8, rt.session_id, "host")) return error.PreviewManagedSessionRequired;
-        if (!std.mem.eql(u8, rt.instance, opt.expected_instance.?)) return error.PreviewIdentityMismatch;
+        try requireExpectedSession(rt, opt);
         return rt.stop();
     }
     const result = try frame(rt, opt);
@@ -224,10 +228,10 @@ fn writeStream(bytes: []const u8) !void {
             offset += @intCast(n);
             continue;
         }
-        if (n < 0 and c.__errno_location().* == c.EINTR) continue;
-        if (n >= 0 or c.__errno_location().* != c.EAGAIN) return error.PreviewStreamClosed;
+        if (n < 0 and native.errno() == c.EINTR) continue;
+        if (n >= 0 or native.errno() != c.EAGAIN) return error.PreviewStreamClosed;
         var pfd = c.struct_pollfd{ .fd = c.STDOUT_FILENO, .events = c.POLLOUT, .revents = 0 };
-        if (c.poll(&pfd, 1, 25) < 0 and c.__errno_location().* != c.EINTR) return error.PreviewStreamClosed;
+        if (c.poll(&pfd, 1, 25) < 0 and native.errno() != c.EINTR) return error.PreviewStreamClosed;
     }
 }
 
@@ -235,7 +239,7 @@ fn writeStream(bytes: []const u8) !void {
 /// Re-route from the original owner environment each frame so a replaced or
 /// destroyed session never inherits a persistent worker's authorization.
 pub fn stream(owner: *Runtime, opt: Args) !void {
-    if (std.mem.eql(u8, opt.session, "host")) return error.PreviewManagedSessionRequired;
+    if (eq(opt.session, "host")) return error.PreviewManagedSessionRequired;
     const flags = c.fcntl(c.STDOUT_FILENO, c.F_GETFL);
     if (flags < 0 or c.fcntl(c.STDOUT_FILENO, c.F_SETFL, flags | c.O_NONBLOCK) < 0) return error.PreviewBufferFailed;
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -248,26 +252,24 @@ pub fn stream(owner: *Runtime, opt: Args) !void {
             if (native.nowMs() >= idle_deadline) return;
             var pfd = c.struct_pollfd{ .fd = c.STDIN_FILENO, .events = c.POLLIN, .revents = 0 };
             const ready = c.poll(&pfd, 1, 50);
-            if (ready < 0 and c.__errno_location().* != c.EINTR) return error.PreviewStreamClosed;
+            if (ready < 0 and native.errno() != c.EINTR) return error.PreviewStreamClosed;
             if (ready <= 0) continue;
             var request: u8 = 0;
             const n = c.read(c.STDIN_FILENO, &request, 1);
-            if (n < 0 and c.__errno_location().* == c.EINTR) continue;
+            if (n < 0 and native.errno() == c.EINTR) continue;
             if (n == 0) return;
             if (n != 1 or request != 'F') return error.InvalidPreviewRequest;
             break;
         }
         native.limitCommand(2000, error.HelperTimeout);
         defer _ = arena.reset(.{ .retain_with_limit = 4 * 1024 * 1024 });
-        var source = owner.*;
-        source.a = arena.allocator();
+        var source = owner.scratch(arena.allocator());
         try sessions.route(&source, opt.session);
         const result = try frame(&source, opt);
         // Recheck identity after capture as well, before publishing any bytes.
-        var current = owner.*;
-        current.a = arena.allocator();
+        var current = owner.scratch(arena.allocator());
         try sessions.route(&current, opt.session);
-        if (!std.mem.eql(u8, current.instance, opt.expected_instance.?)) return error.PreviewIdentityMismatch;
+        if (!eq(current.instance, opt.expected_instance.?)) return error.PreviewIdentityMismatch;
         var length: [4]u8 = undefined;
         std.mem.writeInt(u32, &length, @intCast(result.header.len + result.png.len), .little);
         try writeStream(&length);

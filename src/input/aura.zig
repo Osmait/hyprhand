@@ -2,12 +2,14 @@ const std = @import("std");
 const native = @import("../platform/native.zig");
 const c = native.c;
 const geometry = @import("../core/geometry.zig");
-const Pointer = @import("pointer.zig").Pointer;
+const Connection = @import("../platform/wayland.zig").Connection;
 
 const extent = 64;
 const scale = 2;
 const pixels = extent * scale;
 pub const namespace = "hyprhand-aura";
+// Anchoring to every edge makes the layer surface cover the whole output.
+const all_edges = c.ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | c.ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM | c.ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | c.ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
 
 // Premultiplied ARGB: a restrained blue glow and thin soft ring. Transparent
 // outside its footprint; no cursor replacement or compositor theme changes.
@@ -102,7 +104,7 @@ const Output = struct {
 };
 
 pub const Aura = struct {
-    pointer: *Pointer,
+    connection: *Connection,
     registry: ?*c.struct_wl_registry = null,
     compositor: ?*c.struct_wl_compositor = null,
     subcompositor: ?*c.struct_wl_subcompositor = null,
@@ -142,13 +144,13 @@ pub const Aura = struct {
     const registry_listener = c.struct_wl_registry_listener{ .global = global, .global_remove = removed };
 
     // Caller-owned stable storage is required for Wayland listener pointers.
-    pub fn init(self: *Aura, pointer: *Pointer, monitors: []const geometry.Monitor) !void {
-        self.* = .{ .pointer = pointer };
+    pub fn init(self: *Aura, connection: *Connection, monitors: []const geometry.Monitor) !void {
+        self.* = .{ .connection = connection };
         errdefer self.deinit();
-        self.registry = c.wl_display_get_registry(pointer.display) orelse return error.AuraUnavailable;
+        self.registry = c.wl_display_get_registry(connection.display) orelse return error.AuraUnavailable;
         if (c.wl_registry_add_listener(self.registry, &registry_listener, self) != 0) return error.AuraUnavailable;
-        try pointer.sync();
-        try pointer.sync(); // wl_output names follow the binds from the first roundtrip.
+        try connection.sync();
+        try connection.sync(); // wl_output names follow the binds from the first roundtrip.
         if (self.compositor == null or self.subcompositor == null or self.shm == null or self.shell == null) return error.AuraUnavailable;
         for (self.outputs[0..self.count]) |*output| {
             for (monitors) |monitor| {
@@ -172,10 +174,10 @@ pub const Aura = struct {
         if (c.zwlr_layer_surface_v1_add_listener(output.layer, &Output.layer_listener, output) != 0) return error.AuraUnavailable;
         c.zwlr_layer_surface_v1_set_keyboard_interactivity(output.layer, c.ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
         c.zwlr_layer_surface_v1_set_exclusive_zone(output.layer, -1);
-        c.zwlr_layer_surface_v1_set_anchor(output.layer, 15);
+        c.zwlr_layer_surface_v1_set_anchor(output.layer, all_edges);
         c.zwlr_layer_surface_v1_set_size(output.layer, 0, 0);
         c.wl_surface_commit(output.parent);
-        try self.pointer.sync();
+        try self.connection.sync();
         if (!output.configured or output.closed) return error.AuraUnavailable;
         const rect = output.rect.?;
         if (output.width != @as(u32, @intFromFloat(rect.width)) or output.height != @as(u32, @intFromFloat(rect.height))) return error.AuraGeometryUnsupported;
@@ -213,15 +215,14 @@ pub const Aura = struct {
             }
         }
         if (!found) return error.AuraGeometryUnsupported;
-        try self.pointer.sync();
+        try self.connection.sync();
     }
 
     pub fn deinit(self: *Aura) void {
         // Hide before destroy so compositor close animations cannot retain a
         // painted halo. Cleanup must run even after stop or a caught signal.
-        const runtime = self.pointer.runtime;
-        self.pointer.runtime = null;
-        defer self.pointer.runtime = runtime;
+        const saved = self.connection.suspendGuard();
+        defer self.connection.runtime = saved;
         for (self.outputs[0..self.count]) |*output| {
             if (output.child) |child| {
                 c.wl_surface_attach(child, null, 0, 0);
@@ -229,7 +230,7 @@ pub const Aura = struct {
                 c.wl_surface_commit(output.parent);
             }
         }
-        self.pointer.sync() catch {};
+        self.connection.sync() catch {};
         for (self.outputs[0..self.count]) |*output| {
             if (output.subsurface) |s| c.wl_subsurface_destroy(s);
             if (output.child) |s| c.wl_surface_destroy(s);
@@ -244,7 +245,7 @@ pub const Aura = struct {
         if (self.subcompositor) |s| c.wl_subcompositor_destroy(s);
         if (self.compositor) |s| c.wl_compositor_destroy(s);
         if (self.registry) |r| c.wl_registry_destroy(r);
-        self.pointer.sync() catch {};
+        self.connection.sync() catch {};
     }
 };
 

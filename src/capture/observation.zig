@@ -6,10 +6,9 @@ const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const operations = @import("../runtime/operations.zig");
+const aura = @import("../input/aura.zig");
+const eq = @import("../core/text.zig").eq;
 
-fn eq(a: []const u8, b: []const u8) bool {
-    return std.mem.eql(u8, a, b);
-}
 pub const Client = struct {
     address: []const u8,
     at: [2]i32,
@@ -24,6 +23,13 @@ pub const Client = struct {
     xwayland: bool = false,
     pid: i64 = 0,
     class: []const u8 = "",
+
+    /// True when `p` (desktop coordinates) lies inside the window rectangle.
+    pub fn contains(self: Client, p: geometry.Point) bool {
+        const right = @as(i64, self.at[0]) + self.size[0];
+        const bottom = @as(i64, self.at[1]) + self.size[1];
+        return p.x >= self.at[0] and p.y >= self.at[1] and p.x < right and p.y < bottom;
+    }
 };
 pub const Snapshot = struct {
     monitors: []geometry.Monitor,
@@ -47,7 +53,7 @@ fn stripOwnedAura(a: std.mem.Allocator, value: std.json.Value, pid: i64) !std.js
                 if (item == .object) {
                     const owner = item.object.get("pid") orelse .null;
                     const ns = item.object.get("namespace") orelse .null;
-                    if (owner == .integer and owner.integer == pid and ns == .string and eq(ns.string, @import("../input/aura.zig").namespace)) continue;
+                    if (owner == .integer and owner.integer == pid and ns == .string and eq(ns.string, aura.namespace)) continue;
                 }
                 try filtered.append(try stripOwnedAura(a, item, pid));
             }
@@ -63,11 +69,11 @@ fn stripOwnedAura(a: std.mem.Allocator, value: std.json.Value, pid: i64) !std.js
 }
 
 pub fn snapshotForAction(rt: *Runtime, scope: ?[]const u8, owned_aura: bool) !Snapshot {
-    const monitors = try rt.json([]geometry.Monitor, try rt.query("monitors"));
-    const clients = try rt.json([]Client, try rt.query("clients"));
-    const active = try rt.json(struct { address: []const u8 = "" }, try rt.query("activewindow"));
-    var layers = try rt.json(std.json.Value, try rt.query("layers"));
-    if (owned_aura) layers = try stripOwnedAura(rt.a, layers, c.getpid());
+    const monitors = try rt.queryJson([]geometry.Monitor, "monitors");
+    const clients = try rt.queryJson([]Client, "clients");
+    const active = try rt.activeWindow();
+    var layers = try rt.queryJson(std.json.Value, "layers");
+    if (owned_aura) layers = try stripOwnedAura(rt.allocator, layers, c.getpid());
     var relevant: std.ArrayList(Client) = .empty;
     if (scope) |name| {
         var target: ?geometry.Monitor = null;
@@ -84,17 +90,17 @@ pub fn snapshotForAction(rt: *Runtime, scope: ?[]const u8, owned_aura: bool) !Sn
                 @as(f64, @floatFromInt(client.at[1])) < rect.y + rect.height and
                 @as(f64, @floatFromInt(@as(i64, client.at[0]) + client.size[0])) > rect.x and
                 @as(f64, @floatFromInt(@as(i64, client.at[1]) + client.size[1])) > rect.y;
-            if (client.monitor == monitor.id or intersects) try relevant.append(rt.a, client);
+            if (client.monitor == monitor.id or intersects) try relevant.append(rt.allocator, client);
         }
         if (layers != .object) return error.InvalidLayerState;
         layers = layers.object.get(name) orelse .null;
-    } else try relevant.appendSlice(rt.a, clients);
-    const normalized = try rt.a.dupe(geometry.Monitor, monitors);
+    } else try relevant.appendSlice(rt.allocator, clients);
+    const normalized = try rt.allocator.dupe(geometry.Monitor, monitors);
     for (normalized) |*m| m.focused = false;
-    const data = try std.json.Stringify.valueAlloc(rt.a, .{ .scope = scope, .monitors = normalized, .clients = relevant.items, .active = active.address, .layers = layers }, .{});
+    const data = try std.json.Stringify.valueAlloc(rt.allocator, .{ .scope = scope, .monitors = normalized, .clients = relevant.items, .active = active, .layers = layers }, .{});
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(data, &digest, .{});
-    return .{ .monitors = monitors, .clients = clients, .active = active.address, .revision = try rt.a.dupe(u8, &std.fmt.bytesToHex(digest, .lower)) };
+    return .{ .monitors = monitors, .clients = clients, .active = active, .revision = try rt.allocator.dupe(u8, &std.fmt.bytesToHex(digest, .lower)) };
 }
 
 pub fn monitorByName(s: Snapshot, name: ?[]const u8) !geometry.Monitor {
@@ -107,8 +113,15 @@ pub fn monitorByName(s: Snapshot, name: ?[]const u8) !geometry.Monitor {
     return error.MonitorNotFound;
 }
 
+fn focusedMonitorName(rt: *Runtime) ![]const u8 {
+    for (try rt.queryJson([]geometry.Monitor, "monitors")) |m| if (m.focused) return m.name;
+    return error.MonitorNotFound;
+}
+
 pub fn observe(rt: *Runtime, opt: args.Args) !void {
     if (eq(opt.backend, "native")) return error.NativeCaptureUnavailable;
+    // Opportunistic cleanup under its own lock: never contends with an input
+    // action, and another observer already collecting is not an error.
     operations.collect(rt, opt, false) catch |err| switch (err) {
         error.ControlBusy => {},
         else => return err,
@@ -116,21 +129,17 @@ pub fn observe(rt: *Runtime, opt: args.Args) !void {
     try rt.prepare();
     try rt.validateDisplay();
     try rt.unlocked();
-    const monitor_name = opt.monitor orelse blk: {
-        const monitors = try rt.json([]geometry.Monitor, try rt.query("monitors"));
-        for (monitors) |m| if (m.focused) break :blk m.name;
-        return error.MonitorNotFound;
-    };
+    const monitor_name = opt.monitor orelse try focusedMonitorName(rt);
     const before = try snapshot(rt, monitor_name);
     const monitor = try monitorByName(before, monitor_name);
     const rect = try monitor.rect();
-    const frame_id = try rt.id();
-    const image_path = try rt.path(try std.fmt.allocPrint(rt.a, "{s}.png", .{frame_id}));
+    const frame_id = try rt.randomToken();
+    const image_path = try rt.statePath(try std.fmt.allocPrint(rt.allocator, "{s}.png", .{frame_id}));
     errdefer _ = c.unlink(image_path);
     const started = native.nowMs();
     const unix_ms = @as(i64, @intCast(c.time(null))) * 1000;
-    const scale = try std.fmt.allocPrint(rt.a, "{d}", .{opt.scale});
-    try rt.run(&.{ "grim", "-t", "png", "-s", scale, "-o", monitor.name, image_path }, null, false);
+    const scale = try std.fmt.allocPrint(rt.allocator, "{d}", .{opt.scale});
+    try rt.runHelper(&.{ "grim", "-t", "png", "-s", scale, "-o", monitor.name, image_path }, null, false);
     try rt.unlocked();
     const after = try snapshot(rt, monitor_name);
     if (!eq(before.revision, after.revision)) return error.StaleObservation;
@@ -156,8 +165,8 @@ pub fn observe(rt: *Runtime, opt: args.Args) !void {
         .logical = rect,
         .layout_revision = after.revision,
     };
-    const metadata_path = try rt.path(try std.fmt.allocPrint(rt.a, "{s}.json", .{frame_id}));
-    const encoded = try std.json.Stringify.valueAlloc(rt.a, frame, .{});
+    const metadata_path = try rt.statePath(try std.fmt.allocPrint(rt.allocator, "{s}.json", .{frame_id}));
+    const encoded = try std.json.Stringify.valueAlloc(rt.allocator, frame, .{});
     try std.Io.Dir.cwd().writeFile(rt.io, .{ .sub_path = metadata_path, .data = encoded, .flags = .{ .exclusive = true } });
     try rt.emit(.{ .ok = true, .frame = frame, .capture_duration_ms = native.nowMs() - started });
 }
@@ -165,11 +174,11 @@ pub fn observe(rt: *Runtime, opt: args.Args) !void {
 pub fn loadFrame(rt: *Runtime, frame_id: []const u8) !geometry.Frame {
     if (frame_id.len != 32) return error.InvalidFrameId;
     for (frame_id) |ch| if (!std.ascii.isHex(ch)) return error.InvalidFrameId;
-    const data = rt.read(try rt.path(try std.fmt.allocPrint(rt.a, "{s}.json", .{frame_id})), 16384) catch |err| switch (err) {
+    const data = rt.readFile(try rt.statePath(try std.fmt.allocPrint(rt.allocator, "{s}.json", .{frame_id})), 16384) catch |err| switch (err) {
         error.FileNotFound => return error.FrameNotFound,
         else => return err,
     };
-    const frame = try rt.json(geometry.Frame, data);
+    const frame = try rt.parseJson(geometry.Frame, data);
     if (!eq(frame.frame_id, frame_id)) return error.InvalidFrameId;
     if (!eq(frame.session_id, rt.session_id)) return error.SessionMismatch;
     return frame;

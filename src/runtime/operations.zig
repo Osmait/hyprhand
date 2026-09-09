@@ -3,6 +3,7 @@ const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("runtime.zig").Runtime;
 const Args = @import("../cli/args.zig").Args;
+const ipc = @import("../platform/ipc.zig");
 
 // Under audit.lock, recover only an uncommitted tail, never complete records.
 fn repairTail(fd: c_int) !c.off_t {
@@ -14,7 +15,7 @@ fn repairTail(fd: c_int) !c.off_t {
         const length: usize = @intCast(@min(end, buffer.len));
         const start = end - @as(c.off_t, @intCast(length));
         const n = c.pread(fd, &buffer, length, start);
-        if (n < 0 and c.__errno_location().* == c.EINTR) continue;
+        if (n < 0 and native.errno() == c.EINTR) continue;
         if (n != length) return error.LogFailed;
         if (std.mem.lastIndexOfScalar(u8, buffer[0..length], '\n')) |index| {
             end = start + @as(c.off_t, @intCast(index)) + 1;
@@ -29,27 +30,28 @@ fn repairTail(fd: c_int) !c.off_t {
 // No argv, text, titles, or application content in the audit trail.
 pub fn log(rt: *Runtime, action: []const u8, status: []const u8) !void {
     try rt.prepare();
-    const lock_fd = c.open(try rt.path("audit.lock"), c.O_CREAT | c.O_RDWR | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c_uint, 0o600));
+    const lock_fd = c.open(try rt.statePath("audit.lock"), c.O_CREAT | c.O_RDWR | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c_uint, 0o600));
     if (lock_fd < 0) return error.LogFailed;
     defer _ = c.close(lock_fd);
-    if (c.flock(lock_fd, c.LOCK_EX | c.LOCK_NB) < 0) return error.LogBusy;
-    const path = try rt.path("actions.jsonl");
+    // Appends are short; a concurrent command should wait, not fail outright.
+    try Runtime.flockWithin(lock_fd, 500, error.LogBusy);
+    const path = try rt.statePath("actions.jsonl");
     var st: c.struct_stat = undefined;
     if (c.lstat(path, &st) == 0) {
         if ((st.st_mode & c.S_IFMT) != c.S_IFREG or st.st_uid != c.getuid()) return error.UnsafeLog;
-        if (st.st_size > 1024 * 1024 and c.rename(path, try rt.path("actions.previous.jsonl")) < 0) return error.LogFailed;
+        if (st.st_size > 1024 * 1024 and c.rename(path, try rt.statePath("actions.previous.jsonl")) < 0) return error.LogFailed;
     }
     const fd = c.open(path, c.O_RDWR | c.O_APPEND | c.O_CREAT | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c_uint, 0o600));
     if (fd < 0) return error.LogFailed;
     defer _ = c.close(fd);
     const start = try repairTail(fd);
     errdefer _ = c.ftruncate(fd, start);
-    const json = try std.json.Stringify.valueAlloc(rt.a, .{ .unix_ms = c.time(null) * 1000, .session_id = rt.session_id, .action = action, .status = status }, .{});
-    const line = try std.fmt.allocPrint(rt.a, "{s}\n", .{json});
+    const json = try std.json.Stringify.valueAlloc(rt.allocator, .{ .unix_ms = c.time(null) * 1000, .session_id = rt.session_id, .action = action, .status = status }, .{});
+    const line = try std.fmt.allocPrint(rt.allocator, "{s}\n", .{json});
     var written: usize = 0;
     while (written < line.len) {
         const n = c.write(fd, line.ptr + written, line.len - written);
-        if (n < 0 and c.__errno_location().* == c.EINTR) continue;
+        if (n < 0 and native.errno() == c.EINTR) continue;
         if (n <= 0) return error.LogFailed;
         written += @intCast(n);
     }
@@ -57,7 +59,7 @@ pub fn log(rt: *Runtime, action: []const u8, status: []const u8) !void {
 
 pub fn logs(rt: *Runtime, opt: Args) !void {
     try rt.prepare();
-    const data = rt.read(try rt.path("actions.jsonl"), 2 * 1024 * 1024) catch |err| switch (err) {
+    const data = rt.readFile(try rt.statePath("actions.jsonl"), 2 * 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => "",
         else => return err,
     };
@@ -71,7 +73,7 @@ pub fn logs(rt: *Runtime, opt: Args) !void {
     }
     var entries: std.ArrayList(std.json.Value) = .empty;
     var lines = std.mem.tokenizeScalar(u8, data[start..committed], '\n');
-    while (lines.next()) |line| try entries.append(rt.a, try rt.json(std.json.Value, line));
+    while (lines.next()) |line| try entries.append(rt.allocator, try rt.parseJson(std.json.Value, line));
     try rt.emit(.{ .ok = true, .session_id = rt.session_id, .entries = entries.items, .incomplete_tail = committed != data.len });
 }
 
@@ -82,22 +84,28 @@ pub fn frameName(name: []const u8) bool {
     return true;
 }
 
-pub fn collect(rt: *Runtime, opt: Args, emit: bool) !void {
-    const lock_fd = try rt.lock();
+/// Removes expired frames. `report` is true for the explicit gc command,
+/// which always scans and emits a summary; observe calls with false.
+pub fn collect(rt: *Runtime, opt: Args, report: bool) !void {
+    try rt.prepare();
+    // Frames older than their 30 s validity window are never usable, so
+    // cleanup does not need the action lock and cannot block input commands.
+    const lock_fd = c.open(try rt.statePath("gc.lock"), c.O_CREAT | c.O_RDWR | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c_uint, 0o600));
+    if (lock_fd < 0) return error.CleanupFailed;
     defer _ = c.close(lock_fd);
+    try Runtime.flockWithin(lock_fd, if (report) 500 else 0, error.ControlBusy);
     // Explicit gc always runs. Observe amortizes directory scans to once per
     // 30 seconds; stale/future markers cannot postpone cleanup indefinitely.
-    const stamp = try rt.path("gc.stamp");
+    const stamp = try rt.statePath("gc.stamp");
     var stamp_stat: c.struct_stat = undefined;
     const seconds = c.time(null);
-    if (!emit and c.lstat(stamp, &stamp_stat) == 0 and
+    if (!report and c.lstat(stamp, &stamp_stat) == 0 and
         (stamp_stat.st_mode & c.S_IFMT) == c.S_IFREG and stamp_stat.st_uid == c.getuid() and
         seconds >= stamp_stat.st_mtim.tv_sec and seconds - stamp_stat.st_mtim.tv_sec < 30) return;
-    const dir = c.opendir(try rt.a.dupeZ(u8, rt.directory)) orelse return error.StateDirectoryFailed;
+    const dir = c.opendir(try rt.allocator.dupeZ(u8, rt.directory)) orelse return error.StateDirectoryFailed;
     defer _ = c.closedir(dir);
     var count: usize = 0;
-    while (c.readdir(dir)) |entry| {
-        const name = std.mem.span(@as([*:0]const u8, @ptrCast(&entry.*.d_name)));
+    while (try native.nextEntry(dir)) |name| {
         if (!frameName(name)) continue;
         var path_buffer: [4096]u8 = undefined;
         const path = try std.fmt.bufPrintZ(&path_buffer, "{s}/{s}", .{ rt.directory, name });
@@ -109,20 +117,20 @@ pub fn collect(rt: *Runtime, opt: Args, emit: bool) !void {
         if (!opt.dry_run and c.unlink(path) < 0) return error.CleanupFailed;
         count += 1;
     }
-    if (!emit and !opt.dry_run) {
+    if (!report and !opt.dry_run) {
         const fd = c.open(stamp, c.O_CREAT | c.O_WRONLY | c.O_CLOEXEC | c.O_NOFOLLOW | c.O_NONBLOCK, @as(c_uint, 0o600));
         if (fd >= 0) {
             defer _ = c.close(fd);
             if (c.fstat(fd, &stamp_stat) == 0 and (stamp_stat.st_mode & c.S_IFMT) == c.S_IFREG and stamp_stat.st_uid == c.getuid()) _ = c.futimens(fd, null);
         }
     }
-    if (emit) try rt.emit(.{ .ok = true, .session_id = rt.session_id, .dry_run = opt.dry_run, .files = count });
+    if (report) try rt.emit(.{ .ok = true, .session_id = rt.session_id, .dry_run = opt.dry_run, .files = count });
 }
 
 pub fn events(rt: *Runtime, opt: Args) !void {
     try rt.validateDisplay();
-    const path = try std.fmt.allocPrint(rt.a, "{s}/.socket2.sock", .{std.fs.path.dirname(rt.socket).?});
-    const fd = try @import("../platform/ipc.zig").connect(path);
+    const path = try std.fmt.allocPrint(rt.allocator, "{s}/.socket2.sock", .{std.fs.path.dirname(rt.socket).?});
+    const fd = try ipc.connect(path);
     defer _ = c.close(fd);
     var pending: std.ArrayList(u8) = .empty;
     const deadline = native.nowMs() + opt.timeout_ms;
@@ -132,15 +140,15 @@ pub fn events(rt: *Runtime, opt: Args) !void {
         var pfd = c.struct_pollfd{ .fd = fd, .events = c.POLLIN, .revents = 0 };
         const ready = c.poll(&pfd, 1, @intCast(@max(0, @min(50, deadline - native.nowMs()))));
         if (ready < 0) {
-            if (c.__errno_location().* == c.EINTR) continue;
+            if (native.errno() == c.EINTR) continue;
             return error.EventReadFailed;
         }
         if (ready == 0) continue;
         var buffer: [4096]u8 = undefined;
         const n = c.read(fd, &buffer, buffer.len);
-        if (n < 0 and (c.__errno_location().* == c.EINTR or c.__errno_location().* == c.EAGAIN)) continue;
+        if (n < 0 and (native.errno() == c.EINTR or native.errno() == c.EAGAIN)) continue;
         if (n <= 0) return error.EventStreamClosed;
-        try pending.appendSlice(rt.a, buffer[0..@intCast(n)]);
+        try pending.appendSlice(rt.allocator, buffer[0..@intCast(n)]);
         while (std.mem.indexOfScalar(u8, pending.items, '\n')) |end| {
             // Limit a record, not a socket read that may finish one record
             // and contain the beginning of the next valid record.

@@ -1,14 +1,18 @@
 const std = @import("std");
 const native = @import("../platform/native.zig");
 const c = native.c;
+const Connection = @import("../platform/wayland.zig").Connection;
+
+/// One wheel detent expressed in wl_fixed_t (24.8) surface units.
+pub const wheel_detent_units: i32 = 15 * 256;
+
+const Axis = enum(u32) { vertical = 0, horizontal = 1 };
 
 pub const Pointer = struct {
-    display: *c.struct_wl_display,
-    registry: ?*c.struct_wl_registry = null,
+    connection: Connection,
     manager: ?*c.struct_zwlr_virtual_pointer_manager_v1 = null,
     device: ?*c.struct_zwlr_virtual_pointer_v1 = null,
     held: ?u32 = null,
-    runtime: ?*@import("../runtime/runtime.zig").Runtime = null,
 
     fn global(data: ?*anyopaque, registry: ?*c.struct_wl_registry, name: u32, interface: [*c]const u8, version: u32) callconv(.c) void {
         const self: *Pointer = @ptrCast(@alignCast(data.?));
@@ -21,10 +25,9 @@ pub const Pointer = struct {
 
     // Caller-owned storage keeps the registry listener's data pointer stable.
     pub fn init(self: *Pointer, display: [:0]const u8) !void {
-        self.* = .{ .display = c.wl_display_connect(display) orelse return error.WaylandUnavailable };
+        self.* = .{ .connection = try Connection.connect(display) };
         errdefer self.deinit();
-        self.registry = c.wl_display_get_registry(self.display) orelse return error.WaylandUnavailable;
-        if (c.wl_registry_add_listener(self.registry, &listener, self) != 0) return error.WaylandUnavailable;
+        if (c.wl_registry_add_listener(self.connection.registry, &listener, self) != 0) return error.WaylandUnavailable;
         try self.sync();
         if (self.manager == null) return error.VirtualPointerUnavailable;
     }
@@ -38,155 +41,89 @@ pub const Pointer = struct {
         self.release();
         if (self.device) |p| c.zwlr_virtual_pointer_v1_destroy(p);
         if (self.manager) |m| c.zwlr_virtual_pointer_manager_v1_destroy(m);
-        if (self.registry) |r| c.wl_registry_destroy(r);
-        _ = c.wl_display_flush(self.display);
-        c.wl_display_disconnect(self.display);
+        self.connection.deinit();
+    }
+
+    pub fn sync(self: *Pointer) !void {
+        return self.connection.sync();
     }
 
     pub fn press(self: *Pointer, button: u32) !void {
         self.held = button;
-        c.zwlr_virtual_pointer_v1_button(self.device, timestamp(), button, 1);
+        c.zwlr_virtual_pointer_v1_button(self.device, native.timestampMs(), button, 1);
         c.zwlr_virtual_pointer_v1_frame(self.device);
         try self.sync();
     }
+
     pub fn release(self: *Pointer) void {
-        const runtime = self.runtime;
-        self.runtime = null;
-        defer self.runtime = runtime;
+        const saved = self.connection.suspendGuard();
+        defer self.connection.runtime = saved;
         if (self.held) |button| {
-            c.zwlr_virtual_pointer_v1_button(self.device, timestamp(), button, 0);
+            c.zwlr_virtual_pointer_v1_button(self.device, native.timestampMs(), button, 0);
             c.zwlr_virtual_pointer_v1_frame(self.device);
             self.held = null;
-            self.syncWithCancellation(false) catch {};
+            self.connection.syncWithCancellation(false) catch {};
         }
-    }
-
-    fn done(data: ?*anyopaque, callback: ?*c.struct_wl_callback, _: u32) callconv(.c) void {
-        const finished: *bool = @ptrCast(@alignCast(data.?));
-        finished.* = true;
-        c.wl_callback_destroy(callback);
-    }
-    const callback_listener = c.struct_wl_callback_listener{ .done = done };
-
-    pub fn sync(self: *Pointer) !void {
-        return self.syncWithCancellation(true);
-    }
-
-    // Bootstrap waits must honor cancellation even before a Runtime is bound.
-    // Only delivery/release of already queued owned input opts out.
-    pub fn syncWithCancellation(self: *Pointer, cancellable: bool) !void {
-        return self.syncChecked(cancellable, false);
-    }
-
-    /// Only for callers that just guarded, then queued non-blocking requests.
-    /// No cached authorization: checks resume on the first wait iteration.
-    pub fn syncAfterGuard(self: *Pointer) !void {
-        return self.syncChecked(true, true);
-    }
-
-    fn syncChecked(self: *Pointer, cancellable: bool, already_guarded: bool) !void {
-        var finished = false;
-        const callback = c.wl_display_sync(self.display) orelse return error.WaylandUnavailable;
-        // Destroying the callback on errors prevents a later callback into this stack.
-        errdefer if (!finished) c.wl_callback_destroy(callback);
-        if (c.wl_callback_add_listener(callback, &callback_listener, &finished) != 0) return error.WaylandUnavailable;
-        const deadline = native.nowMs() + 3000;
-        var first = true;
-        while (!finished) {
-            if (cancellable) try native.checkCancelled();
-            if (!first or !already_guarded) if (self.runtime) |rt| try rt.guard();
-            first = false;
-            if (c.wl_display_dispatch_pending(self.display) < 0) return error.WaylandUnavailable;
-            if (finished) break;
-            if (native.nowMs() >= deadline) return error.WaylandTimeout;
-            // read_events reads available bytes, including partial messages;
-            // dispatch() may instead block internally waiting for a full event.
-            if (c.wl_display_prepare_read(self.display) < 0) {
-                if (c.__errno_location().* == c.EAGAIN) continue;
-                return error.WaylandUnavailable;
-            }
-            var prepared = true;
-            defer if (prepared) c.wl_display_cancel_read(self.display);
-            var events: c_short = c.POLLIN;
-            if (c.wl_display_flush(self.display) < 0) {
-                if (c.__errno_location().* != c.EAGAIN) return error.WaylandUnavailable;
-                events |= c.POLLOUT;
-            }
-            var pfd = c.struct_pollfd{ .fd = c.wl_display_get_fd(self.display), .events = events, .revents = 0 };
-            const ready = c.poll(&pfd, 1, 50);
-            if (ready < 0 and c.__errno_location().* != c.EINTR) return error.WaylandUnavailable;
-            if (ready > 0 and pfd.revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
-                prepared = false;
-                if (c.wl_display_read_events(self.display) < 0) return error.WaylandUnavailable;
-                if (c.wl_display_dispatch_pending(self.display) < 0) return error.WaylandUnavailable;
-            } else if (ready > 0 and pfd.revents & c.POLLNVAL != 0) return error.WaylandUnavailable;
-        }
-    }
-
-    fn timestamp() u32 {
-        return @truncate(@as(u64, @intCast(native.nowMs())));
     }
 
     pub fn refreshPosition(self: *Pointer) !void {
         // IPC cursor warping alone does not deliver wl_pointer.motion to the
         // client. A zero delta refreshes surface-local coordinates and hover.
-        c.zwlr_virtual_pointer_v1_motion(self.device, timestamp(), 0, 0);
+        c.zwlr_virtual_pointer_v1_motion(self.device, native.timestampMs(), 0, 0);
         c.zwlr_virtual_pointer_v1_frame(self.device);
         try self.sync();
     }
 
     pub fn click(self: *Pointer, button: u32) !void {
-        if (self.runtime) |rt| try rt.guard();
+        if (self.connection.runtime) |rt| try rt.guard();
         // The click itself may intentionally focus/open/close a window. Check
         // immediately before dispatch, then finish its release/roundtrip even
         // when that expected application action changes the snapshot.
-        const runtime = self.runtime;
-        self.runtime = null;
-        defer self.runtime = runtime;
-        c.zwlr_virtual_pointer_v1_button(self.device, timestamp(), button, 1);
+        const saved = self.connection.suspendGuard();
+        defer self.connection.runtime = saved;
+        c.zwlr_virtual_pointer_v1_button(self.device, native.timestampMs(), button, 1);
         c.zwlr_virtual_pointer_v1_frame(self.device);
-        c.zwlr_virtual_pointer_v1_button(self.device, timestamp(), button, 0);
+        c.zwlr_virtual_pointer_v1_button(self.device, native.timestampMs(), button, 0);
         c.zwlr_virtual_pointer_v1_frame(self.device);
-        try self.syncWithCancellation(false);
+        try self.connection.syncWithCancellation(false);
+    }
+
+    fn axisDiscrete(self: *Pointer, axis: Axis, detents: i32) void {
+        if (detents == 0) return;
+        // Include both continuous distance and wheel detents for Wayland/X11.
+        // Hyprland applies source to the most recently specified axis.
+        c.zwlr_virtual_pointer_v1_axis_discrete(self.device, native.timestampMs(), @intFromEnum(axis), detents * wheel_detent_units, detents);
+        c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_WHEEL);
     }
 
     pub fn scroll(self: *Pointer, dx: i32, dy: i32) !void {
-        // Include both continuous distance and wheel detents for Wayland/X11.
-        // Hyprland applies source to the most recently specified axis.
-        if (dy != 0) {
-            c.zwlr_virtual_pointer_v1_axis_discrete(self.device, timestamp(), 0, dy * 15 * 256, dy);
-            c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_WHEEL);
-        }
-        if (dx != 0) {
-            c.zwlr_virtual_pointer_v1_axis_discrete(self.device, timestamp(), 1, dx * 15 * 256, dx);
-            c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_WHEEL);
-        }
+        self.axisDiscrete(.vertical, dy);
+        self.axisDiscrete(.horizontal, dx);
         c.zwlr_virtual_pointer_v1_frame(self.device);
         try self.sync();
+    }
+
+    fn axisContinuous(self: *Pointer, axis: Axis, units: i32) void {
+        if (units == 0) return;
+        c.zwlr_virtual_pointer_v1_axis(self.device, native.timestampMs(), @intFromEnum(axis), units);
+        c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_CONTINUOUS);
     }
 
     /// Fixed-point axis distances, without coarse wheel detents. Applications
     /// apply their own scale; cumulative distance is conserved by the driver.
     pub fn scrollContinuous(self: *Pointer, dx: i32, dy: i32) !void {
-        if (dy != 0) {
-            c.zwlr_virtual_pointer_v1_axis(self.device, timestamp(), 0, dy);
-            c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_CONTINUOUS);
-        }
-        if (dx != 0) {
-            c.zwlr_virtual_pointer_v1_axis(self.device, timestamp(), 1, dx);
-            c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_CONTINUOUS);
-        }
+        self.axisContinuous(.vertical, dy);
+        self.axisContinuous(.horizontal, dx);
         c.zwlr_virtual_pointer_v1_frame(self.device);
         try self.sync();
     }
 
     pub fn endScroll(self: *Pointer, dx: i32, dy: i32) void {
-        const runtime = self.runtime;
-        self.runtime = null;
-        defer self.runtime = runtime;
-        if (dy != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, timestamp(), 0);
-        if (dx != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, timestamp(), 1);
+        const saved = self.connection.suspendGuard();
+        defer self.connection.runtime = saved;
+        if (dy != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, native.timestampMs(), @intFromEnum(Axis.vertical));
+        if (dx != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, native.timestampMs(), @intFromEnum(Axis.horizontal));
         c.zwlr_virtual_pointer_v1_frame(self.device);
-        self.syncWithCancellation(false) catch {};
+        self.connection.syncWithCancellation(false) catch {};
     }
 };
