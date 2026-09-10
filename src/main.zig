@@ -1,87 +1,150 @@
 const std = @import("std");
 const args = @import("cli/args.zig");
-const geometry = @import("core/geometry.zig");
+const help = @import("cli/help.zig").text;
+const version = @import("version.zig");
+const eq = @import("core/text.zig").eq;
 const native = @import("platform/native.zig");
 const c = native.c;
 const Runtime = @import("runtime/runtime.zig").Runtime;
-const Pointer = @import("input/pointer.zig").Pointer;
-const motion = @import("input/motion.zig");
 const operations = @import("runtime/operations.zig");
 const sessions = @import("runtime/sessions.zig");
-const preview = @import("preview/controller.zig");
+const wait = @import("runtime/wait.zig");
+const actions = @import("input/actions.zig");
+const Pointer = @import("input/pointer.zig").Pointer;
 const Keyboard = @import("input/keyboard.zig").Keyboard;
-
-const help = @import("cli/help.zig").text;
-
-fn eq(a: []const u8, b: []const u8) bool {
-    return std.mem.eql(u8, a, b);
-}
 const observation = @import("capture/observation.zig");
+const cursor_capture = @import("capture/cursor_capture.zig");
+const accessibility = @import("accessibility/tree.zig");
+const preview = @import("preview/controller.zig");
+
+/// Read-only prerequisite and protocol probes. Nothing here sends input,
+/// captures, or starts a compositor.
+const Doctor = struct {
+    display_matches: bool,
+    pointer_available: bool,
+    keyboard_available: bool,
+    grim: bool,
+    wtype: bool,
+    xdotool: bool,
+    hyprland: bool,
+    dbus_daemon: bool,
+    registry: bool,
+    bus_configured: bool,
+    pidfd_available: bool,
+    xkb_data: bool,
+    enabled: bool,
+
+    fn probe(rt: *Runtime) !Doctor {
+        var pointer: Pointer = undefined;
+        const pointer_available = blk: {
+            pointer.init(try rt.displayPath()) catch break :blk false;
+            pointer.deinit();
+            break :blk true;
+        };
+        var keyboard: Keyboard = undefined;
+        const keyboard_available = blk: {
+            keyboard.init(try rt.displayPath()) catch break :blk false;
+            keyboard.deinit();
+            break :blk true;
+        };
+        const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, c.getpid(), @as(c_uint, 0)));
+        if (pidfd >= 0) _ = c.close(pidfd);
+        return .{
+            .display_matches = if (rt.validateDisplay()) true else |_| false,
+            .pointer_available = pointer_available,
+            .keyboard_available = keyboard_available,
+            .grim = try rt.executable("grim"),
+            .wtype = try rt.executable("wtype"),
+            .xdotool = try rt.executable("xdotool"),
+            .hyprland = try rt.executable("Hyprland"),
+            .dbus_daemon = try rt.executable("dbus-daemon"),
+            .registry = c.access("/usr/lib/at-spi2-registryd", c.X_OK) == 0 or c.access("/usr/libexec/at-spi2-registryd", c.X_OK) == 0,
+            .bus_configured = if (rt.env.get("DBUS_SESSION_BUS_ADDRESS")) |address| address.len != 0 else false,
+            .pidfd_available = pidfd >= 0,
+            .xkb_data = hostKeymapCompiles(),
+            .enabled = if (rt.token()) |_| true else |_| false,
+        };
+    }
+
+    fn hostKeymapCompiles() bool {
+        const context = c.xkb_context_new(c.XKB_CONTEXT_NO_FLAGS) orelse return false;
+        defer c.xkb_context_unref(context);
+        const map = c.xkb_keymap_new_from_names(context, null, c.XKB_KEYMAP_COMPILE_NO_FLAGS) orelse return false;
+        c.xkb_keymap_unref(map);
+        return true;
+    }
+};
 
 fn doctor(rt: *Runtime) !void {
-    const version = try rt.json(std.json.Value, try rt.query("version"));
-    const status = try rt.json(struct { configProvider: []const u8 }, try rt.query("status"));
-    const display_matches = blk: {
-        rt.validateDisplay() catch break :blk false;
-        break :blk true;
-    };
-    var pointer: Pointer = undefined;
-    const pointer_available = blk: {
-        pointer.init(try rt.displayPath()) catch break :blk false;
-        pointer.deinit();
-        break :blk true;
-    };
-    var keyboard: Keyboard = undefined;
-    const keyboard_available = blk: {
-        keyboard.init(try rt.displayPath()) catch break :blk false;
-        keyboard.deinit();
-        break :blk true;
-    };
-    const grim = try rt.executable("grim");
-    const wtype = try rt.executable("wtype");
-    const xdotool = try rt.executable("xdotool");
-    const hyprland = try rt.executable("Hyprland");
-    const dbus_daemon = try rt.executable("dbus-daemon");
-    const registry = c.access("/usr/lib/at-spi2-registryd", c.X_OK) == 0 or c.access("/usr/libexec/at-spi2-registryd", c.X_OK) == 0;
-    const bus_configured = if (rt.env.get("DBUS_SESSION_BUS_ADDRESS")) |address| address.len != 0 else false;
-    const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, c.getpid(), @as(c_uint, 0)));
-    const pidfd_available = pidfd >= 0;
-    if (pidfd >= 0) _ = c.close(pidfd);
-    const xkb_context = c.xkb_context_new(c.XKB_CONTEXT_NO_FLAGS);
-    const xkb_data = blk: {
-        if (xkb_context == null) break :blk false;
-        defer c.xkb_context_unref(xkb_context);
-        const map = c.xkb_keymap_new_from_names(xkb_context, null, c.XKB_KEYMAP_COMPILE_NO_FLAGS);
-        if (map == null) break :blk false;
-        c.xkb_keymap_unref(map);
-        break :blk true;
-    };
-    const enabled = blk: {
-        _ = rt.token() catch break :blk false;
-        break :blk true;
-    };
+    const hyprland_version = try rt.queryJson(std.json.Value, "version");
+    const provider = try rt.configProvider();
+    const d = try Doctor.probe(rt);
+    const capture = d.grim and d.display_matches;
+    const managed_sessions = d.hyprland and d.dbus_daemon and d.pidfd_available and d.display_matches;
     try rt.emit(.{
         .ok = true,
-        .version = "0.4.0",
-        .hyprland = version,
-        .config_provider = status.configProvider,
+        .version = version.string,
+        .hyprland = hyprland_version,
+        .config_provider = provider,
         .session_id = rt.session_id,
         .instance = rt.instance,
         .wayland_display = rt.display,
-        .display_matches = display_matches,
-        .dependencies = .{ .grim = grim, .wtype = wtype, .xdotool = xdotool, .Hyprland = hyprland, .dbus_daemon = dbus_daemon, .at_spi_registry = registry, .dbus_address_configured = bus_configured, .xkb_data = xkb_data, .pidfd = pidfd_available },
-        .capabilities = .{ .state = true, .capture = grim and display_matches, .virtual_pointer = pointer_available and display_matches, .virtual_keyboard = keyboard_available and display_matches, .text_helper_installed = wtype, .dispatch = eq(status.configProvider, "hyprlang") or eq(status.configProvider, "lua"), .managed_sessions = hyprland and dbus_daemon and pidfd_available and display_matches, .accessibility = bus_configured },
+        .display_matches = d.display_matches,
+        .dependencies = .{
+            .grim = d.grim,
+            .wtype = d.wtype,
+            .xdotool = d.xdotool,
+            .Hyprland = d.hyprland,
+            .dbus_daemon = d.dbus_daemon,
+            .at_spi_registry = d.registry,
+            .dbus_address_configured = d.bus_configured,
+            .xkb_data = d.xkb_data,
+            .pidfd = d.pidfd_available,
+        },
+        .capabilities = .{
+            .state = true,
+            .capture = capture,
+            .virtual_pointer = d.pointer_available and d.display_matches,
+            .virtual_keyboard = d.keyboard_available and d.display_matches,
+            .text_helper_installed = d.wtype,
+            .dispatch = eq(provider, "hyprlang") or eq(provider, "lua"),
+            .managed_sessions = managed_sessions,
+            .accessibility = d.bus_configured,
+        },
         .checks = .{
-            .capture = .{ .implemented = true, .prerequisites_available = grim and display_matches, .operation_verified = false },
-            .managed_sessions = .{ .implemented = true, .prerequisites_available = hyprland and dbus_daemon and pidfd_available and display_matches, .operation_verified = false, .headless_gpu_verified = false },
-            .accessibility = .{ .implemented = true, .prerequisites_available = bus_configured, .operation_verified = false, .note = "Bus configuration does not prove AT-SPI service availability or application support." },
-            .input = .{ .pointer_protocol_available = pointer_available, .keyboard_protocol_available = keyboard_available, .operation_verified = false },
+            .capture = .{ .implemented = true, .prerequisites_available = capture, .operation_verified = false },
+            .managed_sessions = .{ .implemented = true, .prerequisites_available = managed_sessions, .operation_verified = false, .headless_gpu_verified = false },
+            .accessibility = .{ .implemented = true, .prerequisites_available = d.bus_configured, .operation_verified = false, .note = "Bus configuration does not prove AT-SPI service availability or application support." },
+            .input = .{ .pointer_protocol_available = d.pointer_available, .keyboard_protocol_available = d.keyboard_available, .operation_verified = false },
         },
         .verification_note = "Read-only prerequisite/protocol probes; no input, capture, accessibility request or compositor startup performed. operation_verified=false means not tested, not a demonstrated failure.",
-        .control_enabled = enabled,
-        .shared_cursor = eq(rt.session_id, "host"),
+        .control_enabled = d.enabled,
+        .shared_cursor = rt.isHost(),
         .state_directory = rt.directory,
     });
+}
+
+fn state(rt: *Runtime) !void {
+    try rt.emit(.{
+        .ok = true,
+        .session_id = rt.session_id,
+        .monitors = try rt.queryJson(std.json.Value, "monitors"),
+        .windows = try rt.queryJson(std.json.Value, "clients"),
+        .workspaces = try rt.queryJson(std.json.Value, "workspaces"),
+        .active_window = try rt.queryJson(std.json.Value, "activewindow"),
+        .cursor = try rt.queryJson(std.json.Value, "cursorpos"),
+    });
+}
+
+/// Runs one mutating command with an audit-log entry before and after it.
+fn audited(rt: *Runtime, opt: args.Args) !void {
+    const action = @tagName(opt.command);
+    try operations.log(rt, action, if (opt.dry_run) "dry_run" else "started");
+    actions.run(rt, opt) catch |err| {
+        operations.log(rt, action, @errorName(err)) catch {};
+        return err;
+    };
+    operations.log(rt, action, "completed") catch {};
 }
 
 fn execute(init: std.process.Init, opt: args.Args) !void {
@@ -95,55 +158,44 @@ fn execute(init: std.process.Init, opt: args.Args) !void {
         ._preview_frame => native.limitCommand(2000, error.HelperTimeout),
         else => {},
     }
-    if (opt.command == ._preview_frame or opt.command == ._preview_stop or opt.command == ._preview_stream) {
+    if (opt.isPreviewWorker()) {
         // If a viewer is killed unexpectedly, cancel its worker and let the
         // existing child cleanup reap grim. No detached capture loop remains.
         if (c.prctl(c.PR_SET_PDEATHSIG, c.SIGTERM, @as(c_ulong, 0), @as(c_ulong, 0), @as(c_ulong, 0)) < 0 or c.getppid() == 1) return error.Cancelled;
     }
     var rt = try Runtime.init(init);
-    if (opt.command == .session) return sessions.command(&rt, opt);
-    if (opt.command == .sessions) return sessions.list(&rt);
-    if (opt.command == .preview) return preview.launch(&rt, opt);
-    if (opt.command == ._preview_stream) return preview.stream(&rt, opt);
-    try sessions.route(&rt, opt.session);
-    if (opt.mutates()) {
-        try operations.log(&rt, @tagName(opt.command), if (opt.dry_run) "dry_run" else "started");
-        @import("input/actions.zig").run(&rt, opt) catch |err| {
-            operations.log(&rt, @tagName(opt.command), @errorName(err)) catch {};
-            return err;
-        };
-        operations.log(&rt, @tagName(opt.command), "completed") catch {};
-        return;
+    switch (opt.command) {
+        .session => return sessions.command(&rt, opt),
+        .sessions => return sessions.list(&rt),
+        .preview => return preview.launch(&rt, opt),
+        ._preview_stream => return preview.stream(&rt, opt),
+        else => {},
     }
+    try sessions.route(&rt, opt.session);
+    if (opt.mutates()) return audited(&rt, opt);
     switch (opt.command) {
         .doctor => try doctor(&rt),
-        .state => try rt.emit(.{ .ok = true, .session_id = rt.session_id, .monitors = try rt.json(std.json.Value, try rt.query("monitors")), .windows = try rt.json(std.json.Value, try rt.query("clients")), .workspaces = try rt.json(std.json.Value, try rt.query("workspaces")), .active_window = try rt.json(std.json.Value, try rt.query("activewindow")), .cursor = try rt.json(std.json.Value, try rt.query("cursorpos")) }),
-        .monitors, .windows, .workspaces => {
-            const name = switch (opt.command) {
-                .windows => "clients",
-                .monitors => "monitors",
-                else => "workspaces",
-            };
-            try rt.emit(.{ .ok = true, .session_id = rt.session_id, .data = try rt.json(std.json.Value, try rt.query(name)) });
-        },
-        .sessions => try rt.emit(.{ .ok = true, .sessions = .{.{ .id = "host", .instance = rt.instance, .wayland_display = rt.display, .shared_cursor = eq(rt.session_id, "host") }} }),
+        .state => try state(&rt),
+        .monitors => try rt.emit(.{ .ok = true, .session_id = rt.session_id, .data = try rt.queryJson(std.json.Value, "monitors") }),
+        .windows => try rt.emit(.{ .ok = true, .session_id = rt.session_id, .data = try rt.queryJson(std.json.Value, "clients") }),
+        .workspaces => try rt.emit(.{ .ok = true, .session_id = rt.session_id, .data = try rt.queryJson(std.json.Value, "workspaces") }),
         .observe => try observation.observe(&rt, opt),
         .enable => try rt.enable(opt.indicator),
         .stop => try rt.stop(),
-        .wait => try @import("runtime/wait.zig").run(&rt, opt),
+        .wait => try wait.run(&rt, opt),
         .events => try operations.events(&rt, opt),
         .logs => try operations.logs(&rt, opt),
         .gc => try operations.collect(&rt, opt, true),
-        .accessibility => try @import("accessibility/tree.zig").tree(&rt, opt),
-        ._a11y => try @import("accessibility/tree.zig").worker(&rt, opt),
-        ._cursor_probe => try @import("capture/cursor_capture.zig").probe(&rt),
+        .accessibility => try accessibility.tree(&rt, opt),
+        ._a11y => try accessibility.worker(&rt, opt),
+        ._cursor_probe => try cursor_capture.probe(&rt),
         ._preview_frame, ._preview_stop => try preview.worker(&rt, opt),
         else => return error.CommandNotImplemented,
     }
 }
 
-fn report(init: std.process.Init, err: anyerror) void {
-    const hint: []const u8 = switch (err) {
+fn hint(err: anyerror) []const u8 {
+    return switch (err) {
         error.PreviewHelperMissing => "Build the optional viewer with zig build pip; keep hyprhand-pip beside hyprhand.",
         error.PreviewManagedSessionRequired => "Preview requires an explicit managed session, never host.",
         error.PreviewIdentityMismatch => "The original preview session ended or changed. Close the viewer and explicitly open a new one.",
@@ -158,6 +210,7 @@ fn report(init: std.process.Init, err: anyerror) void {
         error.UnsupportedConfigProvider => "Dispatch supports Hyprlang and Lua providers only.",
         error.FileNotFound => "A helper or required file is missing. Check hyprhand doctor and install grim/wtype.",
         error.ControlBusy => "Another hyprhand input action is running.",
+        error.LogBusy => "Another hyprhand command is writing the audit log. Retry.",
         error.InvalidHeadlessBridge => "Use an absolute, trusted regular library path without spaces/colons, not writable by other users, only with session create (not --nested).",
         error.OutlinePluginUnavailable => "The optional hyprhand-outline plugin is not loaded or rejected activation. Input remains disabled. No plugin was auto-loaded.",
         error.OutlineRequiresHyprlang => "The experimental outline dispatcher currently requires Hyprlang. Input remains disabled.",
@@ -173,7 +226,10 @@ fn report(init: std.process.Init, err: anyerror) void {
         error.X11TargetMismatch => "The focused X11 window does not match the requested Hyprland client. Check DISPLAY and focus.",
         else => "Run hyprhand --help for usage. No task outcome has been verified.",
     };
-    const message = std.json.Stringify.valueAlloc(init.arena.allocator(), .{ .ok = false, .err = .{ .code = @errorName(err), .message = hint } }, .{}) catch return;
+}
+
+fn report(init: std.process.Init, err: anyerror) void {
+    const message = std.json.Stringify.valueAlloc(init.arena.allocator(), .{ .ok = false, .err = .{ .code = @errorName(err), .message = hint(err) } }, .{}) catch return;
     std.Io.File.stdout().writeStreamingAll(init.io, message) catch {};
     std.Io.File.stdout().writeStreamingAll(init.io, "\n") catch {};
 }
@@ -190,7 +246,7 @@ pub fn main(init: std.process.Init) void {
         return;
     }
     if (argv.len == 2 and eq(argv[1], "--version")) {
-        std.Io.File.stdout().writeStreamingAll(init.io, "hyprhand 0.4.0\n") catch {};
+        std.Io.File.stdout().writeStreamingAll(init.io, "hyprhand " ++ version.string ++ "\n") catch {};
         return;
     }
     const opt = args.parse(argv[1..]) catch |err| {
@@ -205,6 +261,7 @@ pub fn main(init: std.process.Init) void {
 
 test {
     _ = @import("core/geometry.zig");
+    _ = @import("core/text.zig");
     _ = @import("cli/args.zig");
     _ = @import("runtime/operations.zig");
     _ = @import("preview/protocol.zig");
@@ -213,10 +270,10 @@ test {
 }
 
 test {
-    std.testing.refAllDecls(motion);
+    std.testing.refAllDecls(@import("input/motion.zig"));
     std.testing.refAllDecls(@import("input/keyboard.zig"));
     std.testing.refAllDecls(sessions);
     std.testing.refAllDecls(@import("input/scroll.zig"));
     std.testing.refAllDecls(@import("input/aura.zig"));
-    std.testing.refAllDecls(@import("capture/cursor_capture.zig"));
+    std.testing.refAllDecls(cursor_capture);
 }

@@ -198,7 +198,8 @@ hyprhand key alt+Left --session agent --window WINDOW_ADDRESS
 ```
 
 Both commands require the exact target to remain focused. UTF-8 text supports up
-to 64 KiB, including tabs and newlines. The native keyboard uses self-contained
+to 64 KiB, including tabs and newlines; a `\r\n` pair is sent as one Return, the
+same as a lone `\n` or `\r`. The native keyboard uses self-contained
 XKB maps in chunks of at most 128 codepoints. It sends physical modifier keys as
 well as resolved modifier masks, and releases owned input in reverse order.
 No clipboard or shell is used to transport the text.

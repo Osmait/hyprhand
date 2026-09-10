@@ -17,7 +17,7 @@ fn ready(fd: c_int, events: c_short, deadline: i64, cancellable: bool) !bool {
         var pfd = c.struct_pollfd{ .fd = fd, .events = events, .revents = 0 };
         const result = c.poll(&pfd, 1, @intCast(@min(50, remaining)));
         if (result < 0) {
-            if (c.__errno_location().* == c.EINTR) continue;
+            if (native.errno() == c.EINTR) continue;
             return error.IpcPollFailed;
         }
         // HUP/ERR also wake the caller so recv/send can report EOF or failure.
@@ -41,7 +41,7 @@ fn connectUntil(path: []const u8, deadline: i64, cancellable: bool) !c_int {
     errdefer _ = c.close(fd);
     if (c.connect(fd, .{ .__sockaddr__ = @ptrCast(&addr) }, @sizeOf(@TypeOf(addr))) < 0) {
         // AF_UNIX EAGAIN (full backlog) is not an in-progress connection.
-        if (c.__errno_location().* != c.EINPROGRESS) return error.HyprlandUnavailable;
+        if (native.errno() != c.EINPROGRESS) return error.HyprlandUnavailable;
         if (!try ready(fd, c.POLLOUT, deadline, cancellable)) return error.HyprlandUnavailable;
         var socket_error: c_int = 0;
         var length: c.socklen_t = @sizeOf(c_int);
@@ -64,7 +64,7 @@ pub fn requestWithOptions(a: std.mem.Allocator, path: []const u8, command: []con
     while (sent < command.len) {
         if (!try ready(fd, c.POLLOUT, deadline, options.cancellable)) return error.IpcWriteFailed;
         const n = c.send(fd, command.ptr + sent, command.len - sent, c.MSG_NOSIGNAL);
-        if (n < 0 and (c.__errno_location().* == c.EINTR or c.__errno_location().* == c.EAGAIN)) continue;
+        if (n < 0 and (native.errno() == c.EINTR or native.errno() == c.EAGAIN)) continue;
         if (n <= 0) return error.IpcWriteFailed;
         sent += @intCast(n);
     }
@@ -74,7 +74,7 @@ pub fn requestWithOptions(a: std.mem.Allocator, path: []const u8, command: []con
     while (true) {
         if (!try ready(fd, c.POLLIN, deadline, options.cancellable)) return error.IpcReadTimeout;
         const n = c.read(fd, &buf, buf.len);
-        if (n < 0 and (c.__errno_location().* == c.EINTR or c.__errno_location().* == c.EAGAIN)) continue;
+        if (n < 0 and (native.errno() == c.EINTR or native.errno() == c.EAGAIN)) continue;
         if (n < 0) return error.IpcReadFailed;
         if (n == 0) break;
         if (out.items.len + @as(usize, @intCast(n)) > max_reply_bytes) return error.ReplyTooLarge;

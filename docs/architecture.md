@@ -11,13 +11,14 @@ build.zig                artifacts and public build steps
 build/                   native dependencies and optional artifacts
 src/
   main.zig               entry point, command routing, JSON errors
+  version.zig            the one version string used by help, --version and doctor
   pip_main.zig           independent GTK executable root
   test_keyboard.zig      isolated keyboard test root
-  cli/                   strict argument parsing and help
-  core/                  geometry and frame contract, no native dependencies
-  platform/              Linux/Wayland FFI, signals, clock, IPC, child cleanup
+  cli/                   table-driven argument parsing and help
+  core/                  geometry, frame contract and string helpers, no native dependencies
+  platform/              Linux/Wayland FFI, shared Wayland connection, signals, clock, IPC, child cleanup
   runtime/               session routing, control, guards, waits, audit, events, GC
-  input/                 action coordination, keyboard, pointer, motion, scroll, aura
+  input/                 action coordination, keyboard, pointer, button codes, motion, scroll, aura
   capture/               observation, layout revision, cursor capture
   accessibility/         AT-SPI traversal and narrow C bridge
   preview/               controller, bounded transport, cadence, protocol, GTK, C ABI
@@ -81,7 +82,9 @@ be reused by its synchronization step.
 
 JSON serialization uses a fixed output buffer. Events bound each record, not the
 entire received chunk. Automatic frame GC scans at most every 30 s; explicit
-`gc` always scans. Audit appends recover incomplete tails when the filesystem
+`gc` always scans. Frame GC serializes on its own `gc.lock`, never on the action
+lock, so an `observe` running beside an input command cannot make either fail
+with `ControlBusy`. Audit appends recover incomplete tails when the filesystem
 allows it, and `logs` reports `incomplete_tail` while retaining complete records.
 
 ## Control authority and cleanup
