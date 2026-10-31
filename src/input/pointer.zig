@@ -92,7 +92,7 @@ pub const Pointer = struct {
         if (detents == 0) return;
         // Include both continuous distance and wheel detents for Wayland/X11.
         // Hyprland applies source to the most recently specified axis.
-        c.zwlr_virtual_pointer_v1_axis_discrete(self.device, native.timestampMs(), @intFromEnum(axis), detents * wheel_detent_units, detents);
+        c.zwlr_virtual_pointer_v1_axis_discrete(self.device, native.timestampMs(), @backingInt(axis), detents * wheel_detent_units, detents);
         c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_WHEEL);
     }
 
@@ -105,7 +105,7 @@ pub const Pointer = struct {
 
     fn axisContinuous(self: *Pointer, axis: Axis, units: i32) void {
         if (units == 0) return;
-        c.zwlr_virtual_pointer_v1_axis(self.device, native.timestampMs(), @intFromEnum(axis), units);
+        c.zwlr_virtual_pointer_v1_axis(self.device, native.timestampMs(), @backingInt(axis), units);
         c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_CONTINUOUS);
     }
 
@@ -121,8 +121,8 @@ pub const Pointer = struct {
     pub fn endScroll(self: *Pointer, dx: i32, dy: i32) void {
         const saved = self.connection.suspendGuard();
         defer self.connection.runtime = saved;
-        if (dy != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, native.timestampMs(), @intFromEnum(Axis.vertical));
-        if (dx != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, native.timestampMs(), @intFromEnum(Axis.horizontal));
+        if (dy != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, native.timestampMs(), @backingInt(Axis.vertical));
+        if (dx != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, native.timestampMs(), @backingInt(Axis.horizontal));
         c.zwlr_virtual_pointer_v1_frame(self.device);
         self.connection.syncWithCancellation(false) catch {};
     }

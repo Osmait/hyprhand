@@ -7,7 +7,8 @@ remote run. `status: sent` confirms delivery, not the application's outcome.
 
 | Environment or feature | Evidence and scope | Limits |
 | --- | --- | --- |
-| Ubuntu 22.04/24.04, Linux x86_64/glibc | CI configured with Zig 0.16.0/Python 3.12 for builds, unit tests, fake protocols, lifecycle and offline reliability contracts | No Hyprland or live GUI apps; inspect the run for the exact commit |
+| Ubuntu 22.04/24.04, Linux x86_64/glibc | CI configured with Zig 0.17.0/Python 3.12 for builds, unit tests, fake protocols, lifecycle and offline reliability contracts | No Hyprland or live GUI apps; inspect the run for the exact commit |
+| Hyprland 0.57.0 (Lua-only config), Zig 0.17.0, NVIDIA | 2026-10-31 local run: host `doctor`/`state`/`observe`/`events`; nested session with auto-selected Lua config; `tests/live_sessions.py`, `tests/live_smoke.py` and `tests/live_advanced.py` in a nested session; GTK4 preview on a Lua host | Headless without bridge still reports `HeadlessRenderUnavailable`; `live_motion.py` (visual review) not rerun; experimental bridges not rebuilt |
 | GTK4/Wayland on Hyprland 0.56.2 | Local fixture reports cover text, click/double click, motion, scroll, drag and cancellation | Does not certify other toolkits, versions, GPUs, scales or rotations |
 | GTK4/XWayland | Historical X11 fixture results; `tests/live_smoke.py --x11` checks backend, text, click and scroll | Keyboard/scroll use `xdotool`; integer detents, no subpixels or equivalent native cleanup guarantees |
 | Hidden workspace, same compositor | [Background probe](archive/background-probe.md) observed AT-SPI text/button actions without fixture focus loss | Targeted `sendshortcut` caused foreground keyboard leave/enter despite unchanged `activewindow`; workspaces do not isolate input |

@@ -406,7 +406,7 @@ pub fn main(init: std.process.Init) !void {
     const fps = try std.fmt.parseInt(u32, argv[5], 10);
     if (fps < 1 or fps > 15) return error.InvalidPreviewFps;
     const app_id = init.environ_map.get("HYPRHAND_PIP_APP_ID") orelse return error.UseHyprhandPreview;
-    c.g_set_prgname(try a.dupeZ(u8, app_id));
+    c.g_set_prgname(try a.dupeSentinel(u8, app_id, 0));
     c.g_set_application_name("Hyprhand · Session preview");
     if (c.gtk_init_check() == 0) return error.PreviewDisplayUnavailable;
     const style = c.gtk_css_provider_new();
@@ -417,10 +417,10 @@ pub fn main(init: std.process.Init) !void {
     const motion = c.gtk_event_controller_motion_new();
     c.gtk_widget_add_controller(@ptrCast(ui.window), motion);
     state = .{
-        .cli = try a.dupeZ(u8, argv[1]),
-        .session = try a.dupeZ(u8, argv[2]),
-        .instance = try a.dupeZ(u8, argv[3]),
-        .monitor = try a.dupeZ(u8, argv[4]),
+        .cli = try a.dupeSentinel(u8, argv[1], 0),
+        .session = try a.dupeSentinel(u8, argv[2], 0),
+        .instance = try a.dupeSentinel(u8, argv[3], 0),
+        .monitor = try a.dupeSentinel(u8, argv[4], 0),
         .window = ui.window,
         .motion = @ptrCast(motion),
         .loop = c.g_main_loop_new(null, 0).?,

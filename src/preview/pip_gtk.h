@@ -1,5 +1,5 @@
 /* Narrow GTK4 ABI used by Zig. GTK4's entire umbrella header currently crashes
- * Zig 0.16 translate-c. pip_gtk_check.c redeclares these same signatures against
+ * Zig translate-c. pip_gtk_check.c redeclares these same signatures against
  * installed upstream headers, so mismatches fail the optional build. No GTK
  * structures are accessed, and no hand-maintained struct layouts are used. */
 #pragma once

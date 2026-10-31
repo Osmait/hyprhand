@@ -41,9 +41,18 @@ def main():
         subprocess.run(["wayland-scanner", "private-code",
                         str(root / "protocols/xdg-shell.xml"), str(xdg)],
                        check=True, env=env)
-        subprocess.run(["zig", "test", "src/test_keyboard.zig", "-lc",
-                        "-lwayland-client", "-lxkbcommon", "-I", directory,
-                        *sources, str(xdg)], cwd=root, env=env, check=True)
+        # Zig 0.17 has no @cImport: translate the C import header the same
+        # way build.zig does and pass it as the native_c module.
+        cflags = subprocess.run(["pkg-config", "--cflags", "wayland-client", "xkbcommon"],
+                                check=True, env=env, capture_output=True, text=True).stdout.split()
+        native_c = generated / "native_c.zig"
+        with native_c.open("w") as out:
+            subprocess.run(["zig", "translate-c", "-lc", "-I", directory, *cflags,
+                            "src/platform/native_c.h"], cwd=root, env=env, check=True, stdout=out)
+        subprocess.run(["zig", "test", "-lc", "-lwayland-client", "-lxkbcommon",
+                        "-I", directory, *sources, str(xdg),
+                        "--dep", "native_c", "-Mroot=src/test_keyboard.zig",
+                        f"-Mnative_c={native_c}"], cwd=root, env=env, check=True)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ contributors can work from the same reference.
 
 ## Set up a checkout
 
-Install the [build dependencies](docs/dependencies.md), use Zig 0.16.0 from
+Install the [build dependencies](docs/dependencies.md), use Zig 0.17.0 from
 `.zigversion`, and use Python 3.11 or newer. The default checks need no running
 Hyprland desktop.
 

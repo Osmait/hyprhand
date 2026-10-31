@@ -2,9 +2,7 @@ const std = @import("std");
 const native = @import("../platform/native.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const Args = @import("../cli/args.zig").Args;
-const c = @cImport({
-    @cInclude("accessibility.h");
-});
+const c = @import("accessibility_c");
 const Bounds = struct { x: i32, y: i32, width: i32, height: i32 };
 const Node = struct {
     id: usize,

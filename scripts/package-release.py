@@ -156,7 +156,7 @@ def package(version, output):
     requirements = json.loads((ROOT / "packaging/dependencies.json").read_text())
     zig_version = run("zig", "version")
     if zig_version != requirements["build"]["zig"] or zig_version != (ROOT / ".zigversion").read_text().strip():
-        raise ValueError("packaging requires the pinned Zig 0.16.0 toolchain")
+        raise ValueError("packaging requires the pinned Zig toolchain from .zigversion")
     for command in ("readelf", "strip", "pkg-config", "wayland-scanner", "git"):
         if shutil.which(command) is None:
             raise ValueError(f"required packaging command is missing: {command}")

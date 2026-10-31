@@ -4,8 +4,8 @@ const native = @import("build/native.zig");
 const optional = @import("build/optional.zig");
 
 comptime {
-    if (builtin.zig_version.major != 0 or builtin.zig_version.minor != 16)
-        @compileError("hyprhand requires Zig 0.16.x");
+    if (builtin.zig_version.major != 0 or builtin.zig_version.minor != 17)
+        @compileError("hyprhand requires Zig 0.17.x");
 }
 
 pub fn build(b: *std.Build) void {
@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
-    native.configure(b, module);
+    native.configure(b, module, target, optimize);
     const exe = b.addExecutable(.{ .name = "hyprhand", .root_module = module });
     b.installArtifact(exe);
     b.installFile("completions/hyprhand.bash", "share/bash-completion/completions/hyprhand");
@@ -26,21 +26,23 @@ pub fn build(b: *std.Build) void {
     optional.add(b, target, optimize);
 
     const run = b.addRunArtifact(exe);
-    if (b.args) |args| run.addArgs(args);
+    run.addPassthruArgs();
     b.step("run", "Run hyprhand").dependOn(&run.step);
     const tests = b.addTest(.{ .root_module = module });
     const unit = b.addRunArtifact(tests);
     b.step("test", "Run unit tests (no desktop input)").dependOn(&unit.step);
 
-    const integration = b.addSystemCommand(&.{ "python3", "tests/integration.py" });
-    integration.setEnvironmentVariable("HYPRHAND_TEST_BIN", b.getInstallPath(.bin, "hyprhand"));
+    const integration = b.addSystemCommand(&.{"env"});
+    integration.addPrefixedArtifactArg("HYPRHAND_TEST_BIN=", exe);
+    integration.addArgs(&.{ "python3", "tests/integration.py" });
     integration.step.dependOn(b.getInstallStep());
     b.step("integration", "Run fake-compositor CLI tests (no desktop input)").dependOn(&integration.step);
 
     const format = b.addSystemCommand(&.{ b.graph.zig_exe, "fmt", "--check", "build.zig", "build", "src" });
     b.step("fmt-check", "Check Zig formatting without modifying files").dependOn(&format.step);
-    const checks = b.addSystemCommand(&.{ "python3", "scripts/check.py" });
-    checks.setEnvironmentVariable("HYPRHAND_TEST_BIN", b.getInstallPath(.bin, "hyprhand"));
+    const checks = b.addSystemCommand(&.{"env"});
+    checks.addPrefixedArtifactArg("HYPRHAND_TEST_BIN=", exe);
+    checks.addArgs(&.{ "python3", "scripts/check.py" });
     checks.step.dependOn(b.getInstallStep());
     checks.step.dependOn(&unit.step);
     checks.step.dependOn(&format.step);

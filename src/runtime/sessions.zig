@@ -58,7 +58,7 @@ const ProcStat = struct { start: u64, parent: c_int, state: u8, uid: c.uid_t };
 fn processStat(pid: c_int) !ProcStat {
     if (pid <= 1) return error.InvalidProcessIdentity;
     var path_buffer: [64]u8 = undefined;
-    const path = try std.fmt.bufPrintZ(&path_buffer, "/proc/{d}/stat", .{pid});
+    const path = try std.mem.printSentinel(&path_buffer, "/proc/{d}/stat", .{pid}, 0);
     const fd = c.open(path, c.O_RDONLY | c.O_CLOEXEC);
     if (fd < 0) return error.ProcessNotFound;
     defer _ = c.close(fd);
@@ -244,7 +244,7 @@ fn terminate(rt: *Runtime, process: Process) !void {
 
 /// Starts a detached daemon in its own process group, logging to `output`.
 fn spawn(rt: *Runtime, env: *const std.process.Environ.Map, argv: []const []const u8, output: []const u8) !Process {
-    const fd = c.open(try rt.allocator.dupeZ(u8, output), c.O_WRONLY | c.O_APPEND | c.O_CREAT | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c_uint, 0o600));
+    const fd = c.open(try rt.allocator.dupeSentinel(u8, output, 0), c.O_WRONLY | c.O_APPEND | c.O_CREAT | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c_uint, 0o600));
     if (fd < 0) return error.SessionLogFailed;
     defer _ = c.close(fd);
     const log_file: std.process.SpawnOptions.StdIo = .{ .file = .{ .handle = fd, .flags = .{ .nonblocking = false } } };
@@ -278,7 +278,7 @@ fn validRuntimeDirectory(rt: *Runtime, runtime: []const u8) !bool {
 pub fn load(rt: *Runtime, name: []const u8) !Session {
     const dir = try named(rt, name);
     var st: c.struct_stat = undefined;
-    if (c.lstat(try rt.allocator.dupeZ(u8, dir), &st) < 0) return error.SessionNotFound;
+    if (c.lstat(try rt.allocator.dupeSentinel(u8, dir, 0), &st) < 0) return error.SessionNotFound;
     try ensureDirectory(rt, dir);
     const data = rt.readFile(try std.fmt.allocPrint(rt.allocator, "{s}/session.json", .{dir}), 16384) catch return error.SessionNotFound;
     const session = try rt.parseJson(Session, data);
@@ -320,7 +320,7 @@ pub fn route(rt: *Runtime, name: []const u8) !void {
 
 fn validateHeadlessBridge(rt: *Runtime, path: []const u8) !void {
     var st: c.struct_stat = undefined;
-    if (c.lstat(try rt.allocator.dupeZ(u8, path), &st) != 0) return error.InvalidHeadlessBridge;
+    if (c.lstat(try rt.allocator.dupeSentinel(u8, path, 0), &st) != 0) return error.InvalidHeadlessBridge;
     const regular = (st.st_mode & c.S_IFMT) == c.S_IFREG;
     const trusted_owner = st.st_uid == c.getuid() or st.st_uid == 0;
     const group_or_world_writable = (st.st_mode & 0o022) != 0;
@@ -354,7 +354,7 @@ const Discovered = struct { instance: []const u8, display: []const u8 };
 /// Finds the instance directory whose lock file names `compositor`, once its
 /// IPC socket answers. Scans with a scratch arena; results are copied out.
 fn discoverInstance(rt: *Runtime, runtime: []const u8, compositor: Process) !Discovered {
-    const hypr = try rt.allocator.dupeZ(u8, try std.fmt.allocPrint(rt.allocator, "{s}/hypr", .{runtime}));
+    const hypr = try rt.allocator.dupeSentinel(u8, try std.fmt.allocPrint(rt.allocator, "{s}/hypr", .{runtime}), 0);
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const end = native.nowMs() + 10_000;
@@ -397,6 +397,9 @@ fn waitForUsableOutput(rt: *Runtime, socket: []const u8) !bool {
 fn create(rt: *Runtime, opt: Args) !void {
     try rt.validateDisplay();
     if (opt.headless_bridge) |path| try validateHeadlessBridge(rt, path);
+    // Hyprland 0.57+ only reads Lua configs. Follow the host's provider so the
+    // child compositor (same installed binary) accepts its generated config.
+    const lua = opt.lua or eq(try rt.configProvider(), "lua");
     const dir = try named(rt, opt.name.?);
     try ensureDirectory(rt, dir);
     var scoped = rt.withDirectory(dir);
@@ -406,7 +409,7 @@ fn create(rt: *Runtime, opt: Args) !void {
         if (!existing.destroyed) return error.SessionExists;
     } else |err| if (err != error.SessionNotFound) return err;
     const runtime = try std.fmt.allocPrint(rt.allocator, "{s}/d{s}", .{ rt.env.get("XDG_RUNTIME_DIR").?, (try rt.randomToken())[0..8] });
-    if (c.mkdir(try rt.allocator.dupeZ(u8, runtime), 0o700) != 0) return error.RuntimeDirectoryCollision;
+    if (c.mkdir(try rt.allocator.dupeSentinel(u8, runtime, 0), 0o700) != 0) return error.RuntimeDirectoryCollision;
     try ensureDirectory(rt, runtime);
     var env = try rt.env.clone(rt.allocator);
     // Experimental injection is scoped to the compositor, never its bus.
@@ -453,8 +456,8 @@ fn create(rt: *Runtime, opt: Args) !void {
     errdefer if (registry) |process| {
         terminate(rt, process) catch {};
     };
-    const config = try scoped.statePath(if (opt.lua) "hyprland.lua" else "hyprland.conf");
-    try std.Io.Dir.cwd().writeFile(rt.io, .{ .sub_path = config, .data = try compositorConfig(rt.allocator, opt.lua, opt.nested) });
+    const config = try scoped.statePath(if (lua) "hyprland.lua" else "hyprland.conf");
+    try std.Io.Dir.cwd().writeFile(rt.io, .{ .sub_path = config, .data = try compositorConfig(rt.allocator, lua, opt.nested) });
     var compositor_env = try env.clone(rt.allocator);
     if (opt.headless_bridge) |path| try compositor_env.put("LD_PRELOAD", path);
     const compositor = try spawn(rt, &compositor_env, &.{ "Hyprland", "--config", config }, try scoped.statePath("compositor.log"));
@@ -466,7 +469,7 @@ fn create(rt: *Runtime, opt: Args) !void {
         if (!eq(std.mem.trim(u8, reply, " \r\n"), "ok")) return error.HeadlessOutputFailed;
         // Reapply after output creation: the headless backend initially advertises
         // only its default mode and can report zero geometry until configured.
-        const command_text = if (opt.lua) "/eval hl.monitor({output='HEADLESS-1',mode='1920x1080@60',position='0x0',scale=1})" else "/keyword monitor HEADLESS-1,1920x1080@60,0x0,1";
+        const command_text = if (lua) "/eval hl.monitor({output='HEADLESS-1',mode='1920x1080@60',position='0x0',scale=1})" else "/keyword monitor HEADLESS-1,1920x1080@60,0x0,1";
         _ = try ipc.request(rt.allocator, socket, command_text);
     }
     const config_errors = try rt.parseJson([][]const u8, try ipc.request(rt.allocator, socket, "j/configerrors"));
@@ -499,7 +502,7 @@ fn sessionRoots(rt: *Runtime, session: Session) !std.ArrayList(Process) {
     var roots: std.ArrayList(Process) = .empty;
     errdefer roots.deinit(rt.allocator);
     var scoped = rt.withDirectory(session.directory);
-    const dir = c.opendir(try rt.allocator.dupeZ(u8, session.directory)) orelse return error.StateDirectoryFailed;
+    const dir = c.opendir(try rt.allocator.dupeSentinel(u8, session.directory, 0)) orelse return error.StateDirectoryFailed;
     defer _ = c.closedir(dir);
     while (try native.nextEntry(dir)) |name| {
         if (!std.mem.startsWith(u8, name, "app-") or !std.mem.endsWith(u8, name, ".json")) continue;
@@ -534,7 +537,7 @@ pub fn command(rt: *Runtime, opt: Args) !void {
 
 pub fn list(rt: *Runtime) !void {
     const base = try root(rt);
-    const dir = c.opendir(try rt.allocator.dupeZ(u8, base)) orelse return error.StateDirectoryFailed;
+    const dir = c.opendir(try rt.allocator.dupeSentinel(u8, base, 0)) orelse return error.StateDirectoryFailed;
     defer _ = c.closedir(dir);
     const Entry = struct { id: []const u8, running: bool, shared_cursor: bool, nested: bool };
     var entries: std.ArrayList(Entry) = .empty;

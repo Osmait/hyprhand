@@ -3,7 +3,7 @@
   "distribution": "Linux binary linked against system libraries; not a universal portable or static binary",
   "bundled_system_libraries": false,
   "build": {
-    "zig": "0.16.0",
+    "zig": "0.17.0",
     "tools": ["pkg-config", "wayland-scanner", "C headers and libc development files"],
     "pkg_config_modules": ["wayland-client", "xkbcommon", "atspi-2", "gobject-2.0"]
   },

@@ -1,6 +1,6 @@
 # Testing and verification
 
-Run commands from the repository root with Zig 0.16.0, the native build
+Run commands from the repository root with Zig 0.17.0, the native build
 dependencies, and Python 3.11+. Offline tests use private sockets/process fixtures;
 application and GPU verification requires separate live runs.
 
@@ -136,7 +136,7 @@ separate metrics. See [performance evidence](archive/performance-2026-09.md).
 
 ## CI and release validation
 
-The workflows configure Ubuntu 22.04/24.04 x86_64, pinned Zig 0.16.0, and Python
+The workflows configure Ubuntu 22.04/24.04 x86_64, pinned Zig 0.17.0, and Python
 3.12. GTK build/ABI/Broadway checks run on Ubuntu 24.04. All default jobs are
 offline. Read the result for the exact commit; workflow files or past successful
 runs do not prove a new change passed remotely.

@@ -69,7 +69,7 @@ pub const Chord = struct {
                 result.count += 1;
             } else {
                 for (part) |ch| if (!std.ascii.isAlphanumeric(ch) and ch != '_') return error.InvalidKeyChord;
-                const name = try a.dupeZ(u8, part);
+                const name = try a.dupeSentinel(u8, part, 0);
                 defer a.free(name);
                 result.symbol = c.xkb_keysym_from_name(name, c.XKB_KEYSYM_CASE_INSENSITIVE);
                 result.key_name = part;
@@ -475,7 +475,7 @@ test "keyboard modifier masks match XKB actions and survive serialized keymap ro
     var expected: u32 = 0;
     for (modifiers) |mod| {
         try std.testing.expectEqual(c.xkb_keymap_mod_get_index(map.compiled, mod.name), c.xkb_keymap_mod_get_index(roundtrip, mod.name));
-        const name = try std.testing.allocator.dupeZ(u8, mod.symbol);
+        const name = try std.testing.allocator.dupeSentinel(u8, mod.symbol, 0);
         defer std.testing.allocator.free(name);
         try std.testing.expectEqual(c.xkb_keysym_from_name(name, 0), c.xkb_state_key_get_one_sym(state, mod.key + 8));
         _ = c.xkb_state_update_key(state, mod.key + 8, c.XKB_KEY_DOWN);

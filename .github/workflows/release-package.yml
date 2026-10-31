@@ -33,12 +33,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwayland-dev libwayland-bin libxkbcommon-dev libatspi2.0-dev libglib2.0-dev pkg-config libc6-dev python3 binutils curl xz-utils
-      - name: Zig 0.16.0 (pinned x86_64 checksum)
+      - name: Zig 0.17.0 (pinned x86_64 checksum)
         run: |
           cd "$RUNNER_TEMP"
-          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz --output zig.tar.xz
-          echo '70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  zig.tar.xz' | sha256sum --check
-          zig_install=$(mktemp -d "$RUNNER_TEMP/zig-0.16.0.XXXXXX")
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz --output zig.tar.xz
+          echo '1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026  zig.tar.xz' | sha256sum --check
+          zig_install=$(mktemp -d "$RUNNER_TEMP/zig-0.17.0.XXXXXX")
           tar -xf zig.tar.xz --strip-components=1 -C "$zig_install"
           echo "$zig_install" >> "$GITHUB_PATH"
       - name: Packaging checks

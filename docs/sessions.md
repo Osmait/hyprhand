@@ -12,7 +12,7 @@ owner's Hyprland environment and let `--session NAME` perform routing.
 | Existing desktop | `hyprhand state --session host` | Shares your current cursor, focus, and applications |
 | Nested | `hyprhand session create agent --nested` | Creates a child compositor with a visible parent window |
 | Headless | `hyprhand session create agent` | Creates a child output without a nested preview window; requires compatible GPU buffers |
-| Lua configuration | Add `--lua` to `session create` | Generates a Lua configuration instead of Hyprlang |
+| Lua configuration | Automatic when the host uses Lua (Hyprland 0.57+); `--lua` forces it | Generates a Lua configuration instead of Hyprlang |
 
 Another workspace in `host` shares the compositor's input seat. It is not a
 replacement for a managed session. Opening or closing a nested window can affect

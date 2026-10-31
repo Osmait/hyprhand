@@ -1,7 +1,8 @@
 //! Native dependencies of the CLI only; GTK belongs to the optional viewer.
 const std = @import("std");
 
-pub fn configure(b: *std.Build, module: *std.Build.Module) void {
+pub fn configure(b: *std.Build, module: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const native_c = b.addTranslateC(.{ .root_source_file = b.path("src/platform/native_c.h"), .target = target, .optimize = optimize });
     const protocols = .{
         .{ "wlr-virtual-pointer-unstable-v1", "virtual-pointer" },
         .{ "virtual-keyboard-unstable-v1", "virtual-keyboard" },
@@ -16,12 +17,18 @@ pub fn configure(b: *std.Build, module: *std.Build.Module) void {
         header.addFileArg(source);
         const h = header.addOutputFileArg(b.fmt("{s}.h", .{protocol[1]}));
         module.addIncludePath(h.dirname());
+        native_c.addIncludePath(h.dirname());
         addCode(b, module, source, protocol[1]);
     }
     // Layer shell refers to xdg_popup even though hyprhand creates no popups.
     addCode(b, module, b.path("protocols/xdg-shell.xml"), "xdg-shell");
     for ([_][]const u8{ "wayland-client", "xkbcommon", "atspi-2", "gobject-2.0" }) |library|
         module.linkSystemLibrary(library, .{});
+    for ([_][]const u8{ "wayland-client", "xkbcommon" }) |library|
+        native_c.linkSystemLibrary(library, .{});
+    module.addImport("native_c", native_c.createModule());
+    const accessibility_c = b.addTranslateC(.{ .root_source_file = b.path("src/accessibility/accessibility.h"), .target = target, .optimize = optimize });
+    module.addImport("accessibility_c", accessibility_c.createModule());
     module.addIncludePath(b.path("src/accessibility"));
     module.addCSourceFile(.{ .file = b.path("src/accessibility/accessibility.c"), .flags = &.{"-std=c11"} });
 }
