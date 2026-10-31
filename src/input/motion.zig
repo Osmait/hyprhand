@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const Point = @import("../core/geometry.zig").Point;
 
 pub fn duration(from: Point, to: Point) u32 {
@@ -13,7 +14,17 @@ pub fn point(from: Point, to: Point, progress: f64) Point {
     const t = std.math.clamp(progress, 0, 1);
     // Minimum-jerk interpolation: zero velocity and acceleration at both ends.
     const eased = std.math.clamp(t * t * t * (10 + t * (-15 + 6 * t)), 0, 1);
-    return .{ .x = coordinate(from.x, to.x, eased), .y = coordinate(from.y, to.y, eased) };
+    const result = Point{
+        .x = coordinate(from.x, to.x, eased),
+        .y = coordinate(from.y, to.y, eased),
+    };
+    assert(between(result.x, from.x, to.x));
+    assert(between(result.y, from.y, to.y));
+    return result;
+}
+
+fn between(value: i32, bound_a: i32, bound_b: i32) bool {
+    return value >= @min(bound_a, bound_b) and value <= @max(bound_a, bound_b);
 }
 
 fn coordinate(from: i32, to: i32, t: f64) i32 {
@@ -39,9 +50,14 @@ pub fn run(driver: anytype, from: Point, to: Point, duration_ms: u32) !void {
 
         const sample_ms: f64 = @floatFromInt(@max(0, driver.now() - start));
         const progress = @min(1, sample_ms / @as(f64, @floatFromInt(duration_ms)));
-        try driver.move(point(from, to, progress));
+        const sample = point(from, to, progress);
+        try driver.move(sample);
 
-        if (progress >= 1) break;
+        if (progress >= 1) {
+            // The last sample is the destination itself, never an approximation.
+            assert(std.meta.eql(sample, to));
+            break;
+        }
     }
 }
 

@@ -388,6 +388,7 @@ test {
     _ = @import("preview/protocol.zig");
     _ = @import("preview/cadence.zig");
     _ = @import("input/actions.zig");
+    _ = @import("capture/observation.zig");
 }
 
 test {

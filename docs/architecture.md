@@ -47,6 +47,10 @@ docs/                    guides, contracts, compatibility and historical evidenc
    completion, not verification of the target application's outcome.
 
 `input/actions.zig` coordinates input and `runtime/wait.zig` implements waiting.
+While an action runs, `actions.run` owns one `ActionGuard` (control token,
+target window, optional frame check) and attaches it to the `Runtime`;
+`Runtime.guard` re-verifies all of it before each input step and fails closed
+without one. Dry runs never create a guard.
 Motion/scroll algorithms receive a driver, enabling tests without a compositor.
 Geometry and preview protocol modules validate data without creating windows or
 devices. Runtime code owns authority and lifecycle; platform code implements

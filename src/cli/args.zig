@@ -43,6 +43,9 @@ pub const Indicator = enum { none, outline };
 pub const SessionVerb = enum { create, inspect, destroy };
 pub const WaitCondition = enum { stable, window, focus, workspace };
 
+/// The deepest accessibility tree `--depth` may request.
+pub const accessibility_depth_max = 32;
+
 pub const Args = struct {
     command: Command,
     session: []const u8 = "host",
@@ -406,7 +409,7 @@ fn validate_values(arguments: Args) !void {
     if (arguments.limit < 1) return error.InvalidLimit;
     if (arguments.limit > 10_000) return error.InvalidLimit;
     if (arguments.depth < 1) return error.InvalidLimit;
-    if (arguments.depth > 32) return error.InvalidLimit;
+    if (arguments.depth > accessibility_depth_max) return error.InvalidLimit;
 }
 
 /// Required arguments and option combinations for the chosen command.

@@ -51,30 +51,41 @@ fn strip_owned_aura(
     pid: i64,
 ) !std.json.Value {
     var result = value;
-    switch (result) {
-        .array => |*items| {
-            var filtered: std.array_list.Managed(std.json.Value) = .init(allocator);
-            for (items.items) |item| {
-                if (item == .object) {
-                    const owner = item.object.get("pid") orelse .null;
-                    const namespace = item.object.get("namespace") orelse .null;
-                    const owned = owner == .integer and owner.integer == pid;
-                    const is_aura = namespace == .string and eq(namespace.string, aura.namespace);
-                    if (owned and is_aura) continue;
+    // Every array and object still to be filtered. Arrays are compacted in
+    // place, so the walk needs no recursion however deep the reply nests.
+    var pending: std.ArrayList(*std.json.Value) = .empty;
+    defer pending.deinit(allocator);
+    try pending.append(allocator, &result);
+
+    while (pending.pop()) |current| {
+        switch (current.*) {
+            .array => |*items| {
+                var kept: usize = 0;
+                for (items.items) |item| {
+                    if (is_owned_aura(item, pid)) continue;
+                    items.items[kept] = item;
+                    kept += 1;
                 }
-                try filtered.append(try strip_owned_aura(allocator, item, pid));
-            }
-            items.* = filtered;
-        },
-        .object => |*object| {
-            var iterator = object.iterator();
-            while (iterator.next()) |entry| {
-                entry.value_ptr.* = try strip_owned_aura(allocator, entry.value_ptr.*, pid);
-            }
-        },
-        else => {},
+                items.shrinkRetainingCapacity(kept);
+                for (items.items) |*item| try pending.append(allocator, item);
+            },
+            .object => |*object| {
+                var iterator = object.iterator();
+                while (iterator.next()) |entry| try pending.append(allocator, entry.value_ptr);
+            },
+            else => {},
+        }
     }
     return result;
+}
+
+fn is_owned_aura(item: std.json.Value, pid: i64) bool {
+    if (item != .object) return false;
+    const owner = item.object.get("pid") orelse return false;
+    const namespace = item.object.get("namespace") orelse return false;
+    const owned = owner == .integer and owner.integer == pid;
+    const is_aura = namespace == .string and eq(namespace.string, aura.namespace);
+    return owned and is_aura;
 }
 
 pub fn snapshot_for_action(runtime: *Runtime, scope: ?[]const u8, owned_aura: bool) !Snapshot {
@@ -263,4 +274,23 @@ test "pointer snapshot excludes only the current process aura, never arbitrary o
     try std.testing.expectEqual(@as(usize, 3), items.len);
     try std.testing.expectEqual(@as(i64, 43), items[0].object.get("pid").?.integer);
     try std.testing.expectEqualStrings("dialog", items[1].object.get("namespace").?.string);
+}
+
+test "aura filtering reaches arrays nested at any depth" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const layers =
+        \\[[{"namespace":"hyprhand-aura","pid":42}, 1],
+        \\ {"deeper":[[{"namespace":"hyprhand-aura","pid":42},
+        \\             {"namespace":"hyprhand-aura","pid":7}]]}]
+    ;
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, layers, .{});
+    const filtered = try strip_owned_aura(allocator, parsed.value, 42);
+    const outer = filtered.array.items;
+    try std.testing.expectEqual(@as(usize, 1), outer[0].array.items.len);
+    try std.testing.expectEqual(@as(i64, 1), outer[0].array.items[0].integer);
+    const deeper = outer[1].object.get("deeper").?.array.items[0].array.items;
+    try std.testing.expectEqual(@as(usize, 1), deeper.len);
+    try std.testing.expectEqual(@as(i64, 7), deeper[0].object.get("pid").?.integer);
 }

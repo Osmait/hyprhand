@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const motion = @import("motion.zig");
 const Point = @import("../core/geometry.zig").Point;
 
@@ -23,7 +24,11 @@ pub fn run(driver: anytype, total: Point, duration_ms: u32) !void {
         if (delta.x != 0 or delta.y != 0) try driver.emit(delta);
         sent = next;
 
-        if (progress >= 1) break;
+        if (progress >= 1) {
+            // Eased deltas add up to exactly the requested distance.
+            assert(std.meta.eql(sent, total));
+            break;
+        }
     }
 }
 
