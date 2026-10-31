@@ -382,6 +382,23 @@ class KeyboardProtocol(unittest.TestCase):
                 keymap.close()
         self.assert_balanced(server.events)
 
+    def test_long_text_with_few_symbols_uploads_one_keymap(self):
+        # Chunks end when keys run out, not after N characters: a long form
+        # value needs one keymap and no mid-text switch.
+        server = self.start()
+        value = "PACIENTE DE 21 AÑOS, EN EL AÑO 2021; ¿Ñandú? ¡Sí! 30€\n" * 12
+        self.fixture.cli("type", "--text", value, "--window", self.fixture.address,
+                         "--session", "host", "--backend", "native")
+        self.assertEqual(len(server.maps), 1)
+        keymap = XkbMap(server.maps[0])
+        try:
+            decoded = [chr(keymap.lib.xkb_state_key_get_utf32(keymap.state, event[1] + 8))
+                       for event in server.events if event[0] == "key" and event[2]]
+        finally:
+            keymap.close()
+        self.assertEqual("".join(decoded), value.replace("\n", "\r"))
+        self.assert_balanced(server.events)
+
     def test_shift_tab_and_shift_letters_translate_on_press_and_release(self):
         server = self.start()
         for chord, key, symbol, mask in (("Tab", KEY_TAB, 0xFF09, 0),

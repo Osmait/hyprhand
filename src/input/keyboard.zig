@@ -60,7 +60,9 @@ pub const modifiers = [_]Modifier{
         .x11 = "ISO_Level3_Shift",
     },
 };
-const chunk_size = 128;
+/// Distinct symbols one keymap can hold. Every symbol takes its own key, and
+/// fewer than this many keys are ever handed out (see `free_key`).
+const symbols_max = 128;
 
 pub fn modifier_index(name: []const u8) ?usize {
     // "super" is accepted as a synonym of "logo".
@@ -224,7 +226,7 @@ const Keymap = struct {
         chord_levels: bool,
     ) !Keymap {
         if (symbols.len == 0) return error.InvalidKeymap;
-        if (symbols.len > chunk_size) return error.InvalidKeymap;
+        if (symbols.len > symbols_max) return error.InvalidKeymap;
         if (keys.len != symbols.len) return error.InvalidKeymap;
         for (keys) |key| {
             // Keys come from us_key/printable_keys, never from input.
@@ -404,50 +406,76 @@ const HeldKeys = struct {
     }
 };
 
-/// Up to `chunk_size` characters that share one keymap. A chunk also ends
-/// early when its next new symbol finds no free key.
+/// The keysym for the next character of `iterator`, or null at the end.
+fn next_symbol(iterator: *std.unicode.Utf8Iterator) ?u32 {
+    const codepoint = iterator.nextCodepoint() orelse return null;
+    // A CRLF pair is one line break; a lone CR or LF is one as well.
+    const crlf = codepoint == '\r' and std.mem.eql(u8, iterator.peek(1), "\n");
+    if (crlf) _ = iterator.nextCodepoint();
+
+    return switch (codepoint) {
+        '\n', '\r' => c.XKB_KEY_Return,
+        '\t' => c.XKB_KEY_Tab,
+        0x1b => c.XKB_KEY_Escape,
+        else => c.xkb_utf32_to_keysym(codepoint),
+    };
+}
+
+/// The longest run of text whose distinct symbols all get a key in one
+/// keymap. Its length is not limited: a new keymap is uploaded only when a
+/// new symbol finds no free key, never every N characters. Each switch is a
+/// chance for a client to apply a stale keymap (GTK 3 caches an earlier one).
 const TextChunk = struct {
     /// Distinct symbols and the key each one is placed on.
-    symbols: [chunk_size]u32 = undefined,
-    symbol_keys: [chunk_size]u32 = undefined,
-    /// The key of every character, in order.
-    keys: [chunk_size]u32 = undefined,
+    symbols: [symbols_max]u32 = undefined,
+    symbol_keys: [symbols_max]u32 = undefined,
     symbol_count: usize = 0,
-    count: usize = 0,
     taken: KeySet = .empty,
+    /// The validated UTF-8 this chunk types.
+    bytes: []const u8 = "",
 
     fn next(iterator: *std.unicode.Utf8Iterator) TextChunk {
         var result = TextChunk{};
-        while (result.count < chunk_size) {
+        const start = iterator.i;
+        while (true) {
             const position = iterator.i;
-            const codepoint = iterator.nextCodepoint() orelse break;
-            // A CRLF pair is one line break; a lone CR or LF is one as well.
-            const crlf = codepoint == '\r' and std.mem.eql(u8, iterator.peek(1), "\n");
-            if (crlf) _ = iterator.nextCodepoint();
-
-            const symbol: u32 = switch (codepoint) {
-                '\n', '\r' => c.XKB_KEY_Return,
-                '\t' => c.XKB_KEY_Tab,
-                0x1b => c.XKB_KEY_Escape,
-                else => c.xkb_utf32_to_keysym(codepoint),
-            };
-            const key = result.key_for(symbol) orelse {
+            const symbol = next_symbol(iterator) orelse break;
+            _ = result.key_for(symbol) orelse {
                 // No free key left: this character starts the next chunk.
-                assert(result.count > 0);
+                assert(result.symbol_count > 0);
                 iterator.i = position;
                 break;
             };
-            result.keys[result.count] = key;
-            result.count += 1;
         }
+        result.bytes = iterator.bytes[start..iterator.i];
+        assert((result.symbol_count == 0) == (result.bytes.len == 0));
         return result;
     }
 
-    fn key_for(self: *TextChunk, symbol: u32) ?u32 {
-        const symbols_seen = self.symbols[0..self.symbol_count];
-        if (std.mem.indexOfScalar(u32, symbols_seen, symbol)) |index| {
-            return self.symbol_keys[index];
+    /// The keycodes to tap, in typing order.
+    fn keys(self: *const TextChunk) Keys {
+        return .{ .chunk = self, .iterator = .{ .bytes = self.bytes, .i = 0 } };
+    }
+
+    const Keys = struct {
+        chunk: *const TextChunk,
+        iterator: std.unicode.Utf8Iterator,
+
+        fn next(self: *Keys) ?u32 {
+            const symbol = next_symbol(&self.iterator) orelse return null;
+            // `TextChunk.next` placed every symbol of these bytes.
+            return self.chunk.placed(symbol).?;
         }
+    };
+
+    fn placed(self: *const TextChunk, symbol: u32) ?u32 {
+        const symbols_seen = self.symbols[0..self.symbol_count];
+        const index = std.mem.indexOfScalar(u32, symbols_seen, symbol) orelse return null;
+        return self.symbol_keys[index];
+    }
+
+    fn key_for(self: *TextChunk, symbol: u32) ?u32 {
+        if (self.placed(symbol)) |key| return key;
         const key = free_key(symbol, &self.taken) orelse return null;
         assert(self.symbol_count < self.symbols.len);
         self.taken.set(key);
@@ -645,7 +673,7 @@ pub const Keyboard = struct {
         errdefer self.release();
         while (true) {
             const chunk = TextChunk.next(&iterator);
-            if (chunk.count == 0) break;
+            if (chunk.symbol_count == 0) break;
 
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
             defer arena.deinit();
@@ -657,7 +685,8 @@ pub const Keyboard = struct {
             defer map.deinit();
             try self.upload(runtime, &map);
 
-            for (chunk.keys[0..chunk.count]) |key| {
+            var keys = chunk.keys();
+            while (keys.next()) |key| {
                 try runtime.guard();
                 try self.held.press(self, .{ .code = key });
                 self.held.pop(self);
@@ -950,14 +979,28 @@ test "keyboard unwinds every guard and synchronization failure without guarded c
     }
 }
 
+/// Collects a chunk's keycodes for tests; `buffer` bounds the fixture size.
+fn test_chunk_keys(chunk: *const TextChunk, buffer: []u32) ![]u32 {
+    var count: usize = 0;
+    var keys = chunk.keys();
+    while (keys.next()) |key| {
+        if (count == buffer.len) return error.NoSpaceLeft;
+        buffer[count] = key;
+        count += 1;
+    }
+    return buffer[0..count];
+}
+
 test "keyboard Unicode chunks preserve scalars controls and repeated keys" {
     const text = "Aé中😀e\u{301}é\n\r\t\x1b";
     var iterator = (try std.unicode.Utf8View.init(text)).iterator();
     const chunk = TextChunk.next(&iterator);
-    try std.testing.expectEqual(@as(usize, 11), chunk.count);
+    var buffer: [16]u32 = undefined;
+    const keys = try test_chunk_keys(&chunk, &buffer);
+    try std.testing.expectEqual(@as(usize, 11), keys.len);
     try std.testing.expectEqual(@as(usize, 9), chunk.symbol_count);
-    try std.testing.expectEqual(chunk.keys[1], chunk.keys[6]);
-    try std.testing.expectEqual(chunk.keys[7], chunk.keys[8]);
+    try std.testing.expectEqual(keys[1], keys[6]);
+    try std.testing.expectEqual(keys[7], keys[8]);
 
     var map = try Keymap.init(
         std.testing.allocator,
@@ -969,16 +1012,34 @@ test "keyboard Unicode chunks preserve scalars controls and repeated keys" {
     defer c.xkb_state_unref(state);
     const expected = [_]u32{ 'A', 'é', '中', 0x1f600, 'e', 0x301, 'é', '\r', '\r', '\t', 0x1b };
     for (expected, 0..) |codepoint, i| {
-        try std.testing.expectEqual(codepoint, c.xkb_state_key_get_utf32(state, chunk.keys[i] + 8));
+        try std.testing.expectEqual(codepoint, c.xkb_state_key_get_utf32(state, keys[i] + 8));
     }
-    try std.testing.expectEqual(@as(usize, 0), TextChunk.next(&iterator).count);
+    try std.testing.expectEqual(@as(usize, 0), TextChunk.next(&iterator).symbol_count);
 
     // Windows line endings are one Return, not two.
     var crlf = (try std.unicode.Utf8View.init("a\r\nb\n\r")).iterator();
     const lines = TextChunk.next(&crlf);
-    try std.testing.expectEqual(@as(usize, 5), lines.count);
-    try std.testing.expectEqual(lines.keys[1], lines.keys[3]);
-    try std.testing.expectEqual(lines.keys[1], lines.keys[4]);
+    const line_keys = try test_chunk_keys(&lines, &buffer);
+    try std.testing.expectEqual(@as(usize, 5), line_keys.len);
+    try std.testing.expectEqual(line_keys[1], line_keys[3]);
+    try std.testing.expectEqual(line_keys[1], line_keys[4]);
+}
+
+test "keyboard chunks by free keys, not length, so long text keeps one keymap" {
+    // 2000 characters from 16 distinct symbols: one chunk, one keymap upload.
+    const unit = "Año ÑANDÚ ¿qué? 30€ ";
+    var bytes: std.ArrayList(u8) = .empty;
+    defer bytes.deinit(std.testing.allocator);
+    for (0..100) |_| try bytes.appendSlice(std.testing.allocator, unit);
+
+    var iterator = (try std.unicode.Utf8View.init(bytes.items)).iterator();
+    const chunk = TextChunk.next(&iterator);
+    try std.testing.expectEqual(bytes.items.len, chunk.bytes.len);
+    try std.testing.expectEqual(@as(usize, 16), chunk.symbol_count);
+    var buffer: [2048]u32 = undefined;
+    const keys = try test_chunk_keys(&chunk, &buffer);
+    try std.testing.expectEqual(@as(usize, 2000), keys.len);
+    try std.testing.expectEqual(@as(usize, 0), TextChunk.next(&iterator).symbol_count);
 }
 
 test "keyboard maximum Unicode chunks avoid modifier collisions and keycode limits" {
@@ -996,7 +1057,9 @@ test "keyboard maximum Unicode chunks avoid modifier collisions and keycode limi
     var total: usize = 0;
     for ([_]usize{ 48, 48, 48, 48, 48, 17, 0 }) |size| {
         const chunk = TextChunk.next(&iterator);
-        try std.testing.expectEqual(size, chunk.count);
+        var buffer: [symbols_max]u32 = undefined;
+        const keys = try test_chunk_keys(&chunk, &buffer);
+        try std.testing.expectEqual(size, keys.len);
         try std.testing.expectEqual(size, chunk.symbol_count);
         if (size == 0) break;
 
@@ -1008,7 +1071,7 @@ test "keyboard maximum Unicode chunks avoid modifier collisions and keycode limi
         defer map.deinit();
         const state = c.xkb_state_new(map.compiled) orelse return error.OutOfMemory;
         defer c.xkb_state_unref(state);
-        for (chunk.keys[0..size], 0..) |key, i| {
+        for (keys, 0..) |key, i| {
             try std.testing.expect(key + 8 <= 255);
             for (modifiers) |modifier| try std.testing.expect(key != modifier.key);
             try std.testing.expectEqual(
@@ -1043,7 +1106,9 @@ test "keyboard places text and chords on US keys, never on a different control k
     const text = "data:text/html,<h1>Zoom</h1>\n\tAa é";
     var iterator = (try std.unicode.Utf8View.init(text)).iterator();
     const chunk = TextChunk.next(&iterator);
-    try std.testing.expectEqual(try std.unicode.utf8CountCodepoints(text), chunk.count);
+    var buffer: [64]u32 = undefined;
+    const text_keys = try test_chunk_keys(&chunk, &buffer);
+    try std.testing.expectEqual(try std.unicode.utf8CountCodepoints(text), text_keys.len);
     const control_keys = [_]struct { u32, u32 }{
         .{ 1, c.XKB_KEY_Escape },
         .{ 14, c.XKB_KEY_BackSpace },
@@ -1067,7 +1132,7 @@ test "keyboard places text and chords on US keys, never on a different control k
         try std.testing.expect(printable);
         try std.testing.expect(std.mem.indexOfScalar(u32, keys[0..i], natural) != null);
     }
-    try std.testing.expectEqual(@as(u32, 52), chunk.keys[std.mem.indexOfScalar(u8, text, '>').?]);
+    try std.testing.expectEqual(@as(u32, 52), text_keys[std.mem.indexOfScalar(u8, text, '>').?]);
 }
 
 test "keyboard cleanup is idempotent without a connection and invalid UTF8 sends nothing" {
