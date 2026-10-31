@@ -46,6 +46,9 @@ pub const WaitCondition = enum { stable, window, focus, workspace };
 /// The deepest accessibility tree `--depth` may request.
 pub const accessibility_depth_max = 32;
 
+/// The most extra attempts `observe --retry` may request.
+pub const observe_retry_max = 10;
+
 pub const Args = struct {
     command: Command,
     session: []const u8 = "host",
@@ -53,6 +56,8 @@ pub const Args = struct {
     fps: u32 = 5,
     expected_instance: ?[]const u8 = null,
     monitor: ?[]const u8 = null,
+    /// Host monitor that shows the preview window; the session's is `monitor`.
+    host_monitor: ?[]const u8 = null,
     window: ?[]const u8 = null,
     frame: ?[]const u8 = null,
     text: ?[]const u8 = null,
@@ -85,6 +90,7 @@ pub const Args = struct {
     limit: u32 = 100,
     depth: u32 = 5,
     older_than_ms: u32 = 300_000,
+    retry: u32 = 0,
     pixels: bool = false,
     nested: bool = false,
     headless_bridge: ?[]const u8 = null,
@@ -214,6 +220,8 @@ const options = [_]Option{
         .allowed = only(&.{ .observe, .wait, .preview, ._preview_frame, ._preview_stream }),
     },
     .{ .name = "--fps", .field = "fps", .allowed = only(&.{.preview}) },
+    .{ .name = "--host-monitor", .field = "host_monitor", .allowed = only(&.{.preview}) },
+    .{ .name = "--retry", .field = "retry", .allowed = only(&.{.observe}) },
     .{
         .name = "--expected-instance",
         .field = "expected_instance",
@@ -410,6 +418,23 @@ fn validate_values(arguments: Args) !void {
     if (arguments.limit > 10_000) return error.InvalidLimit;
     if (arguments.depth < 1) return error.InvalidLimit;
     if (arguments.depth > accessibility_depth_max) return error.InvalidLimit;
+    if (arguments.retry > observe_retry_max) return error.InvalidLimit;
+    if (arguments.host_monitor) |name| {
+        // The name reaches a host window rule; allow only output-name characters.
+        if (!valid_output_name(name)) return error.InvalidMonitorName;
+    }
+}
+
+/// Connector names such as DP-1, HDMI-A-1 or HEADLESS-2.
+pub fn valid_output_name(name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (name.len > 64) return false;
+    for (name) |character| {
+        const allowed = std.ascii.isAlphanumeric(character) or
+            character == '-' or character == '_' or character == '.';
+        if (!allowed) return false;
+    }
+    return true;
 }
 
 /// Required arguments and option combinations for the chosen command.
@@ -568,6 +593,21 @@ test "preview is explicit, managed, bounded, and workers pin identity" {
     });
     try std.testing.expectEqual(@as(u32, 10), preview.fps);
     try std.testing.expect(!preview.mutates());
+
+    // The host monitor reaches a window rule, so only output-name characters pass.
+    const placed = try parse(&.{ "preview", "--session", "agent", "--host-monitor", "DP-1" });
+    try std.testing.expectEqualStrings("DP-1", placed.host_monitor.?);
+    try std.testing.expectError(
+        error.InvalidMonitorName,
+        parse(&.{ "preview", "--session", "agent", "--host-monitor", "DP-1'}) x" }),
+    );
+}
+
+test "observe retry is bounded and observe-only" {
+    const observed = try parse(&.{ "observe", "--retry", "3" });
+    try std.testing.expectEqual(@as(u32, 3), observed.retry);
+    try std.testing.expectError(error.InvalidLimit, parse(&.{ "observe", "--retry", "11" }));
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "state", "--retry", "1" }));
 }
 
 test "enum options and positional arguments parse into typed fields" {

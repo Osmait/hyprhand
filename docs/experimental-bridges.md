@@ -12,9 +12,22 @@ compatibility guarantee. Only load trusted code.
 
 ## Headless format bridge
 
-Requirements: C++23, pkg-config, Aquamarine **0.15.0** headers, pixman and libdrm.
-The documented runtime stack is Hyprland **0.56.2**, using a parent Wayland
-renderer. The recorded NVIDIA setup fails without this bridge.
+Requirements: C++23, pkg-config, Aquamarine **0.15.0 or 0.15.1** headers, pixman
+and libdrm. `build.sh` refuses other versions: the bridge interposes
+`CHeadlessBackend::getRenderFormats()`, which is unchanged across these releases.
+Recorded runtime stacks: Hyprland **0.56.2** (Aquamarine 0.15.0) and Hyprland
+**0.57.0** (Aquamarine 0.15.1), using a parent Wayland renderer. The recorded
+NVIDIA setups fail without this bridge.
+
+The installer can build and install it next to the CLI:
+
+```sh
+scripts/install.sh --with-bridge
+hyprhand session create agent \
+  --headless-bridge ~/.local/lib/hyprhand/hyprhand-headless-formats.so
+```
+
+Or build it from the checkout:
 
 ```sh
 zig build -Doptimize=ReleaseSafe
@@ -38,7 +51,7 @@ the private bus/registry, or apps launched by hyprhand. A compositor could propa
 its own environment to processes it launches; do not add `exec` commands to this
 experimental configuration. `session inspect` records the selected library.
 
-Aquamarine 0.15.0's headless backend prefers DRM formats and otherwise uses fallback
+Aquamarine 0.15.x's headless backend prefers DRM formats and otherwise uses fallback
 formats/modifiers. The bridge preserves DRM preference and adds formats already
 negotiated by the Wayland backend with the parent. It does not invent modifiers
 when no formats exist or provide generic GPU support.

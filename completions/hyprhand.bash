@@ -8,7 +8,7 @@ _hyprhand_complete() {
     elif [[ ${COMP_WORDS[1]} == wait && $COMP_CWORD == 2 ]]; then
         COMPREPLY=( $(compgen -W 'stable window focus workspace' -- "$cur") )
     elif [[ ${COMP_WORDS[1]} == preview ]]; then
-        COMPREPLY=( $(compgen -W '--session --monitor --fps' -- "$cur") )
+        COMPREPLY=( $(compgen -W '--session --monitor --host-monitor --fps' -- "$cur") )
     elif [[ ${COMP_WORDS[COMP_CWORD-1]} == --backend ]]; then
         COMPREPLY=( $(compgen -W 'auto native helper' -- "$cur") )
     elif [[ ${COMP_WORDS[COMP_CWORD-1]} == --scroll-mode ]]; then
@@ -18,7 +18,7 @@ _hyprhand_complete() {
     elif [[ ${COMP_WORDS[COMP_CWORD-1]} == --headless-bridge ]]; then
         COMPREPLY=( $(compgen -f -- "$cur") )
     else
-        COMPREPLY=( $(compgen -W '--session --window --monitor --frame --x --y --to-x --to-y --duration-ms --scroll-mode --move-duration-ms --no-aura --indicator --headless-bridge --button --dx --dy --text --backend --dry-run --timeout-ms --stable-ms --pixels --class --workspace --limit --depth --older-than-ms --nested --lua' -- "$cur") )
+        COMPREPLY=( $(compgen -W '--session --window --monitor --frame --x --y --to-x --to-y --duration-ms --scroll-mode --move-duration-ms --no-aura --indicator --headless-bridge --button --dx --dy --text --backend --dry-run --timeout-ms --stable-ms --pixels --class --workspace --limit --depth --older-than-ms --nested --lua --retry' -- "$cur") )
     fi
 }
 complete -F _hyprhand_complete hyprhand

@@ -8,7 +8,14 @@ zig build pip -Doptimize=ReleaseSafe
 zig-out/bin/hyprhand preview --session agent
 # Explicit output and maximum frame frequency:
 zig-out/bin/hyprhand preview --session agent --monitor HEADLESS-1 --fps 10
+# Place the PiP on a specific host monitor:
+zig-out/bin/hyprhand preview --session agent --host-monitor DP-1
 ```
+
+`--monitor` names the **session's** monitor to show (`HEADLESS-1` for headless
+sessions). `--host-monitor` names the host monitor where the PiP window opens;
+it must exist on the host and contain only connector-name characters, because it
+becomes part of the viewer's window rule.
 
 Requires an **existing, running managed session**, GTK4 >= 4.8 (headers and
 pkg-config for building), and grim. Keep `hyprhand-pip` beside the matching

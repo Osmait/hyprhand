@@ -5,10 +5,16 @@ if [ "$#" -ne 2 ]; then
     echo 'Usage: build.sh SOURCE.cpp OUTPUT.so (compile only; never preloads a bridge)' >&2
     exit 2
 fi
-if [ "$(pkg-config --modversion aquamarine)" != '0.15.0' ]; then
-    echo 'Experimental headless bridge requires Aquamarine 0.15.0 headers and library' >&2
-    exit 1
-fi
+# Tested on Aquamarine 0.15.0 and 0.15.1: the interposed
+# CHeadlessBackend::getRenderFormats() is unchanged across 0.15.x patch releases.
+aquamarine_version=$(pkg-config --modversion aquamarine)
+case $aquamarine_version in
+    0.15.0 | 0.15.1) ;;
+    *)
+        echo "Experimental headless bridge supports Aquamarine 0.15.0-0.15.1, found $aquamarine_version" >&2
+        exit 1
+        ;;
+esac
 compiler=${CXX:-c++}
 command -v "$compiler" >/dev/null
 command -v sha256sum >/dev/null
@@ -39,7 +45,7 @@ binary_hash=$(sha256sum < "$build_dir/artifact.so")
 compiler_target=$("$compiler" -dumpmachine)
 {
     printf 'format=hyprhand-experimental-build-v1\nbridge=headless-formats\n'
-    printf 'aquamarine=0.15.0\nsource_sha256=%s\nbinary_sha256=%s\n' "${source_hash%% *}" "${binary_hash%% *}"
+    printf 'aquamarine=%s\nsource_sha256=%s\nbinary_sha256=%s\n' "$aquamarine_version" "${source_hash%% *}" "${binary_hash%% *}"
     printf 'compiler=%s\ncompiler_target=%s\n' "$compiler" "$compiler_target"
     "$compiler" --version
     printf 'flags=-std=c++23 -shared -fPIC -O2 -Wall -Wextra -Werror=return-type -Werror=uninitialized -Wl,-z,defs,-z,relro,-z,now\npkg_cflags=%s\npkg_libs=%s\n' "$cflags" "$libs"

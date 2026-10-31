@@ -2,7 +2,8 @@ const std = @import("std");
 const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("../runtime/runtime.zig").Runtime;
-const Args = @import("../cli/args.zig").Args;
+const args = @import("../cli/args.zig");
+const Args = args.Args;
 const sessions = @import("../runtime/sessions.zig");
 const geometry = @import("../core/geometry.zig");
 const ipc = @import("../platform/ipc.zig");
@@ -80,21 +81,27 @@ fn stop_viewer(runtime: *Runtime, child: *std.process.Child, pidfd: c_int) !void
     child_process.terminate(child, runtime.io);
 }
 
-fn launch_rules_lua(host: *Runtime, id: []const u8) !void {
-    // Only the internally generated decimal PID is interpolated. Session
-    // names, window titles and all other external text are never Lua code.
+fn launch_rules_lua(host: *Runtime, id: []const u8, host_monitor: ?[]const u8) !void {
+    // Only the internally generated decimal PID and a host monitor name that
+    // exists and passed `valid_output_name` are interpolated. Session names,
+    // window titles and all other external text are never Lua code.
+    std.debug.assert(host_monitor == null or args.valid_output_name(host_monitor.?));
+    const placement = if (host_monitor) |name|
+        try std.fmt.allocPrint(host.allocator, ",monitor='{s}'", .{name})
+    else
+        "";
     const command = try std.fmt.allocPrint(
         host.allocator,
         "/eval _G['{s}']=hl.window_rule({{name='{s}',match={{class='^{s}$'}}," ++
             "float=true,pin=true,no_initial_focus=true,no_follow_mouse=true," ++
             "border_size=0,rounding=0,no_shadow=true," ++
-            "opacity='1 override 1 override',size='640 360'}})",
-        .{ id, id, id },
+            "opacity='1 override 1 override',size='640 360'{s}}})",
+        .{ id, id, id, placement },
     );
     try host.expect_ok(command, error.PreviewWindowRuleFailed);
 }
 
-fn launch_rules_hyprlang(host: *Runtime, id: []const u8) !void {
+fn launch_rules_hyprlang(host: *Runtime, id: []const u8, host_monitor: ?[]const u8) !void {
     const class_match = try std.fmt.allocPrint(host.allocator, "^{s}$", .{id});
     try rule(host, id, "match:class", class_match);
     try rule(host, id, "float", "on");
@@ -106,7 +113,15 @@ fn launch_rules_hyprlang(host: *Runtime, id: []const u8) !void {
     try rule(host, id, "no_shadow", "on");
     try rule(host, id, "opacity", "1 override 1 override");
     try rule(host, id, "size", "640 360");
+    if (host_monitor) |name| try rule(host, id, "monitor", name);
     try rule(host, id, "enable", "1");
+}
+
+fn launch_require_host_monitor(host: *Runtime, name: []const u8) !void {
+    _ = monitor(host, name) catch |err| switch (err) {
+        error.MonitorNotFound => return error.HostMonitorNotFound,
+        else => return err,
+    };
 }
 
 /// Resolves the CLI's own path into `executable` and the viewer next to it.
@@ -139,6 +154,8 @@ pub fn launch(host: *Runtime, arguments: Args) !void {
     const output = try monitor(&source, arguments.monitor);
     try host.validate_display();
     try host.unlocked();
+    // Fail before any window rule exists if the requested host monitor is absent.
+    if (arguments.host_monitor) |name| try launch_require_host_monitor(host, name);
     const provider = try host.config_provider() orelse return error.UnsupportedConfigProvider;
     const lua = provider == .lua;
 
@@ -150,9 +167,9 @@ pub fn launch(host: *Runtime, arguments: Args) !void {
     // setup failure. No configuration files, reload, or unrelated rules touched.
     defer disable_rule(host, id, lua);
     if (lua) {
-        try launch_rules_lua(host, id);
+        try launch_rules_lua(host, id, arguments.host_monitor);
     } else {
-        try launch_rules_hyprlang(host, id);
+        try launch_rules_hyprlang(host, id, arguments.host_monitor);
     }
 
     var environment = try host.env.clone(host.allocator);

@@ -42,7 +42,8 @@ letters, digits, hyphens, or underscores. `host` cannot be created or destroyed.
 identities, and optional bridge. Use that output for diagnosis rather than
 assuming socket names or fixed paths.
 
-`launch` requires enabled control, an explicit managed session, and a program
+`launch` counts as input: it requires enabled control (`ControlStopped` until
+`enable`), an explicit managed session, and a program
 after `--`. Arguments are passed directly. Use `--dry-run` before `--` to validate
 without launching. Discover the launched window through `windows` or `wait window`;
 a PID alone does not establish that an application opened in the correct session.
@@ -68,7 +69,9 @@ choose the class observed in your actual session.
 - Managed sessions disable XWayland and remove the host `DISPLAY`.
   GTK/Qt/browser settings route supported apps to Wayland.
 - Recognized Chromium-family launches use a private user-data directory and
-  Wayland flags. Firefox gets a private profile and `--no-remote`; profile
+  Wayland flags, and get `ACCESSIBILITY_ENABLED=1` so `accessibility` can read
+  web content (Chromium otherwise exposes an empty tree). A second launch reuses
+  the running browser and its environment. Firefox gets a private profile and `--no-remote`; profile
   overrides are rejected. Generic applications may still reuse another process;
   verify the actual window and PID.
 - The private bus does not activate host systemd user services or portals.
