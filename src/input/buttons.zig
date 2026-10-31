@@ -7,7 +7,7 @@ pub const left: u32 = 0x110;
 pub const right: u32 = 0x111;
 pub const middle: u32 = 0x112;
 
-pub fn fromName(name: []const u8) ?u32 {
+pub fn from_name(name: []const u8) ?u32 {
     if (text.eq(name, "left")) return left;
     if (text.eq(name, "right")) return right;
     if (text.eq(name, "middle")) return middle;

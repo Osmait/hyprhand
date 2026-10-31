@@ -18,6 +18,7 @@ def main():
         env.pop(name, None)
     suites = [
         ["scripts/check_docs.py"],
+        ["scripts/check_style.py"],
         ["tests/integration.py"],
         ["tests/ipc.py"],
         ["tests/keyboard_protocol.py"],
