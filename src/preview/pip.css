@@ -45,3 +45,17 @@ window.hyprhand-pip {
 .hyprhand-pip button:disabled { background: rgba(18,24,33,0.8); color: #aab3be; }
 .hyprhand-pip button:disabled label { color: #aab3be; }
 .hyprhand-pip button.pip-close { min-width: 34px; padding: 0; }
+.hyprhand-pip button.takeover-action { background: #24476b; }
+.hyprhand-pip button.takeover-action:hover { background: #2f5d8a; }
+/* Takeover: the footer becomes a solid bar below the image instead of a scrim
+ * over it, and an amber frame marks that your keys reach the session. */
+.hyprhand-pip.takeover .pip-bottom {
+  padding: 8px 10px 8px 14px;
+  background: #121821;
+}
+.hyprhand-pip.takeover picture {
+  outline: 2px solid #e0a24a;
+  outline-offset: -2px;
+}
+.hyprhand-pip.takeover button.takeover-action { background: #8a5a12; }
+.hyprhand-pip.takeover button.takeover-action:hover { background: #a86e18; }

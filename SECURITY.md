@@ -33,6 +33,11 @@ applications can perform their own network operations.
 - Frames bind screenshot coordinates to a session, layout, focus and short lifetime.
 - Guards recheck authorization, lock state, focus/layout and pointer position.
 - `stop` revokes guarded input without waiting for a long-running action lock.
+- A preview **Take over** revokes agent input before forwarding the human's own
+  pointer and keys, and `enable` is refused until the human returns control. Its
+  worker accepts events only from the `hyprhand-pip` viewer beside it, re-checks
+  the pinned session instance, and never logs or echoes typed keys. That parent
+  check is cooperative, like the tokens above.
 - Native input cleanup releases owned keys/buttons on normal exit and catchable
   cancellation. It cannot undo completed actions or guarantee release after
   SIGKILL, compositor failure, or all external helper failures.

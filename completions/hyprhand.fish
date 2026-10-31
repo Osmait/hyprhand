@@ -1,6 +1,6 @@
 complete -c hyprhand -f
 complete -c hyprhand -n '__fish_use_subcommand' -a 'doctor state monitors windows workspaces sessions session launch observe preview focus workspace move click doubleclick drag scroll type key stop enable wait events logs gc accessibility'
-complete -c hyprhand -n '__fish_seen_subcommand_from preview' -l fps -r -a '1 5 10 15' -d 'Read-only PiP maximum capture frequency'
+complete -c hyprhand -n '__fish_seen_subcommand_from preview' -l fps -r -a '1 5 10 15' -d 'PiP maximum capture frequency'
 complete -c hyprhand -n '__fish_seen_subcommand_from session' -a 'create inspect destroy'
 complete -c hyprhand -n '__fish_seen_subcommand_from wait' -a 'stable window focus workspace'
 complete -c hyprhand -l session -r -d 'Explicit target session'

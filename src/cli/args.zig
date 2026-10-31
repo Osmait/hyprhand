@@ -35,6 +35,7 @@ pub const Command = enum {
     _preview_frame,
     _preview_stream,
     _preview_stop,
+    _preview_input,
 };
 
 pub const ScrollMode = enum { auto, wheel, continuous };
@@ -113,7 +114,7 @@ pub const Args = struct {
 
     pub fn is_preview_worker(self: Args) bool {
         return switch (self.command) {
-            ._preview_frame, ._preview_stop, ._preview_stream => true,
+            ._preview_frame, ._preview_stop, ._preview_stream, ._preview_input => true,
             else => false,
         };
     }
@@ -211,13 +212,20 @@ const options = [_]Option{
     .{
         .name = "--monitor",
         .field = "monitor",
-        .allowed = only(&.{ .observe, .wait, .preview, ._preview_frame, ._preview_stream }),
+        .allowed = only(&.{
+            .observe,
+            .wait,
+            .preview,
+            ._preview_frame,
+            ._preview_stream,
+            ._preview_input,
+        }),
     },
     .{ .name = "--fps", .field = "fps", .allowed = only(&.{.preview}) },
     .{
         .name = "--expected-instance",
         .field = "expected_instance",
-        .allowed = only(&.{ ._preview_frame, ._preview_stop, ._preview_stream }),
+        .allowed = only(&.{ ._preview_frame, ._preview_stop, ._preview_stream, ._preview_input }),
     },
     .{ .name = "--scale", .field = "scale", .allowed = only(&.{.observe}) },
     .{ .name = "--window", .field = "window", .allowed = windowed },
@@ -422,9 +430,11 @@ fn validate_shape(arguments: Args) !void {
         if (arguments.is_preview_worker() and identity.len == 0) {
             return error.PreviewIdentityRequired;
         }
-        const captures_monitor = arguments.command == ._preview_frame or
-            arguments.command == ._preview_stream;
-        if (captures_monitor and arguments.monitor == null) return error.MonitorRequired;
+        // Capture and takeover input both address one exact monitor.
+        const uses_monitor = arguments.command == ._preview_frame or
+            arguments.command == ._preview_stream or
+            arguments.command == ._preview_input;
+        if (uses_monitor and arguments.monitor == null) return error.MonitorRequired;
     }
     if (arguments.pointer()) {
         if (arguments.frame == null) return error.FrameCoordinatesRequired;
@@ -568,6 +578,24 @@ test "preview is explicit, managed, bounded, and workers pin identity" {
     });
     try std.testing.expectEqual(@as(u32, 10), preview.fps);
     try std.testing.expect(!preview.mutates());
+
+    // The takeover worker pins identity and monitor, never runs on host.
+    try std.testing.expectError(
+        error.PreviewIdentityRequired,
+        parse(&.{ "_preview_input", "--session", "agent", "--monitor", "HEADLESS-1" }),
+    );
+    try std.testing.expectError(
+        error.MonitorRequired,
+        parse(&.{ "_preview_input", "--session", "agent", "--expected-instance", "one" }),
+    );
+    try std.testing.expectError(error.PreviewManagedSessionRequired, parse(&.{
+        "_preview_input", "--session", "host", "--expected-instance", "one", "--monitor", "M",
+    }));
+    const input = try parse(&.{
+        "_preview_input", "--session", "agent", "--expected-instance", "one", "--monitor", "M",
+    });
+    try std.testing.expect(input.is_preview_worker());
+    try std.testing.expect(!input.mutates());
 }
 
 test "enum options and positional arguments parse into typed fields" {

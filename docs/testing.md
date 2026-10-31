@@ -22,7 +22,7 @@ and executes:
 | `tests/ipc.py` | Fragmented/trickled IPC, deadlines and signal cancellation |
 | `tests/keyboard_protocol.py` | Fake Wayland keyboard messages, modifiers, Unicode, cancellation and flush backpressure |
 | `tests/session_lifecycle.py` | Recorded process identities, routing, launch/destroy and cleanup |
-| `tests/preview.py` | Fake capture workers, source identity, stop, bounds, cancellation and rule cleanup |
+| `tests/preview.py` | Fake capture workers, source identity, stop, bounds, cancellation and rule cleanup; takeover parent check, unchanged control on setup failure, enable refused during takeover |
 | `tests/fixtures/test_reliability_contract.py` | Mocked live-runner consent, receiver evidence, token lifecycle and terminal guards |
 | `packaging/test_release.py` | Archives, checksums, manifests, documentation payload and Blender output preflight |
 

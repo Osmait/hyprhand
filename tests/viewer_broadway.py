@@ -67,6 +67,7 @@ class Viewer(unittest.TestCase):
         first = self.metrics()
         self.assertGreater(first["received_frames"], 1)
         self.assertEqual(first["texture_updates"], 1)
+        self.assertEqual(first["takeover"], "off")
         (self.root / "locked").touch()
         locked = self.metrics()
         self.assertFalse(locked["signal_live"])

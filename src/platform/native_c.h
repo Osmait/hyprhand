@@ -26,6 +26,7 @@
 #include <dirent.h>
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
+#include <xkbcommon/xkbcommon-compose.h>
 #include "virtual-pointer.h"
 #include "virtual-keyboard.h"
 #include "layer-shell.h"

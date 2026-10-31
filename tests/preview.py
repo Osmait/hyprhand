@@ -1,4 +1,5 @@
 """PiP worker contracts: private fake compositor/helpers, no GUI or input."""
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -266,6 +267,62 @@ else:
             if process.poll() is None:
                 process.kill()
                 process.communicate()
+
+    def takeover(self, instance="test"):
+        """Runs _preview_input under a parent named hyprhand-pip beside a CLI copy.
+
+        The worker accepts only that parent. A copied interpreter stands in
+        for the GTK viewer; it sends no events and closes stdin at once.
+        """
+        binary_dir = self.root / "viewer-bin"
+        if not binary_dir.exists():
+            binary_dir.mkdir()
+            shutil.copy2(os.path.realpath(sys.executable), binary_dir / "hyprhand-pip")
+            shutil.copy2(BIN, binary_dir / "hyprhand")
+        script = ("import json, subprocess, sys\n"
+                  "result = subprocess.run(sys.argv[1:], stdin=subprocess.PIPE, "
+                  "capture_output=True, timeout=8)\n"
+                  "print(json.dumps([result.returncode, result.stdout.decode()]))\n")
+        argv = [str(binary_dir / "hyprhand-pip"), "-c", script, str(binary_dir / "hyprhand"),
+                "_preview_input", "--session", "check", "--expected-instance", instance,
+                "--monitor", "HEADLESS-1"]
+        env = dict(self.env, PYTHONHOME=sys.base_prefix)
+        result = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=12)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        code, output = json.loads(result.stdout)
+        self.assertNotEqual(code, 0)
+        return json.loads(output)
+
+    def test_takeover_worker_rejects_any_parent_but_the_viewer(self):
+        result = subprocess.run([str(BIN), "_preview_input", "--session", "check",
+                                 "--expected-instance", "test", "--monitor", "HEADLESS-1"],
+                                env=self.env, stdin=subprocess.PIPE, capture_output=True,
+                                timeout=8)
+        self.assertEqual(json.loads(result.stdout)["err"]["code"], "TakeoverParentRejected")
+        self.assertEqual(self.worker().stdout[:5], b"DCP1\1")
+
+    def test_takeover_failures_before_devices_exist_leave_control_unchanged(self):
+        self.assertEqual(self.takeover("replacement")["err"]["code"], "PreviewIdentityMismatch")
+        # This fixture has no Wayland compositor: device setup fails before revoking.
+        self.assertEqual(self.takeover()["err"]["code"], "WaylandUnavailable")
+        self.assertEqual(self.worker().stdout[:5], b"DCP1\1")
+        state = self.cli("state", "--session", "check")
+        self.assertTrue(state["control_enabled"])
+        self.assertFalse(state["human_takeover"])
+
+    def test_enable_is_refused_while_a_human_holds_the_session(self):
+        state_directory = next(self.runtime.glob("hyprhand-*"))
+        with open(state_directory / "takeover.lock", "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            self.cli("stop", "--session", "check")
+            refused = self.cli("enable", "--session", "check", ok=False)
+            self.assertEqual(refused["err"]["code"], "HumanTakeoverActive")
+            state = self.cli("state", "--session", "check")
+            self.assertTrue(state["human_takeover"])
+            self.assertFalse(state["control_enabled"])
+        # The lock dies with its holder; nothing has to clean it up.
+        self.cli("enable", "--session", "check")
+        self.assertFalse(self.cli("state", "--session", "check")["human_takeover"])
 
     def test_viewer_ignoring_term_is_reaped_and_rules_are_disabled(self):
         self.viewer_cleanup()

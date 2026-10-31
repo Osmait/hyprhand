@@ -380,9 +380,22 @@ pub const Runtime = struct {
         return self.allocator.dupe(u8, &std.fmt.bytesToHex(bytes, .lower));
     }
 
-    /// Enables input. With `outline`, also asks the optional cursor-outline
-    /// plugin to draw while input is enabled.
+    /// Enables input and reports it. With `outline`, also asks the optional
+    /// cursor-outline plugin to draw while input is enabled.
     pub fn enable(self: *Runtime, outline: bool) !void {
+        try self.grant(outline);
+        try self.emit(.{
+            .ok = true,
+            .session_id = self.session_id,
+            .control = "enabled",
+            .indicator = @as([]const u8, if (outline) "outline" else "none"),
+            .shared_cursor = self.is_host(),
+        });
+    }
+
+    /// Publishes a fresh control token without reporting it. Refused while a
+    /// human holds this session through a preview takeover.
+    pub fn grant(self: *Runtime, outline: bool) !void {
         const lock_fd = try self.lock();
         defer _ = c.close(lock_fd);
         const initial_generation = try self.control_generation();
@@ -403,6 +416,7 @@ pub const Runtime = struct {
             const authority = try self.authority_lock();
             defer _ = c.close(authority);
             if (!eq(initial_generation, try self.generation())) return error.ControlStopped;
+            if (try self.takeover_active()) return error.HumanTakeoverActive;
             if (c.rename(temporary_path, enabled_path) < 0) return error.StateWriteFailed;
         }
         errdefer _ = c.unlink(enabled_path);
@@ -427,13 +441,6 @@ pub const Runtime = struct {
         }
 
         if (!eq(name, try self.token())) return error.ControlStopped;
-        try self.emit(.{
-            .ok = true,
-            .session_id = self.session_id,
-            .control = "enabled",
-            .indicator = @as([]const u8, if (outline) "outline" else "none"),
-            .shared_cursor = self.is_host(),
-        });
     }
 
     pub fn is_host(self: *const Runtime) bool {
@@ -451,6 +458,12 @@ pub const Runtime = struct {
     }
 
     pub fn stop(self: *Runtime) !void {
+        try self.revoke();
+        try self.emit(.{ .ok = true, .session_id = self.session_id, .control = "stopped" });
+    }
+
+    /// Revokes guarded input without reporting it.
+    pub fn revoke(self: *Runtime) !void {
         try self.prepare();
         const authority = try self.authority_lock();
         defer _ = c.close(authority);
@@ -465,8 +478,42 @@ pub const Runtime = struct {
             if (c.unlink(path) < 0 and native.errno() != c.ENOENT) failed = true;
         }
         if (failed) return error.StateWriteFailed;
+    }
 
-        try self.emit(.{ .ok = true, .session_id = self.session_id, .control = "stopped" });
+    /// True while a preview takeover worker holds `takeover.lock`: a human
+    /// controls this session, so agent control must stay stopped. The lock is
+    /// held by an open descriptor, so a crashed worker cannot strand it.
+    pub fn takeover_active(self: *Runtime) !bool {
+        const path = try self.state_path("takeover.lock");
+        const fd = c.open(path, c.O_RDONLY | c.O_CLOEXEC | c.O_NOFOLLOW);
+        if (fd < 0) {
+            if (native.errno() == c.ENOENT) return false;
+            return error.ControlLockFailed;
+        }
+        defer _ = c.close(fd);
+
+        // A shared probe never blocks another probe, only an active holder.
+        if (c.flock(fd, c.LOCK_SH | c.LOCK_NB) == 0) return false;
+        if (native.errno() == c.EWOULDBLOCK) return true;
+        return error.ControlLockFailed;
+    }
+
+    /// Holds `takeover.lock` until the returned descriptor is closed.
+    pub fn takeover_lock(self: *Runtime) !c_int {
+        try self.prepare();
+        const fd = try self.open_lock_file("takeover.lock");
+        errdefer _ = c.close(fd);
+        try flock_within(fd, 500, error.TakeoverBusy);
+        return fd;
+    }
+
+    /// Waits until no input action holds the action lock, then releases it.
+    /// After `revoke`, every running action fails its next guard and exits.
+    pub fn wait_for_actions(self: *Runtime, wait_ms: u32) !void {
+        try self.prepare();
+        const fd = try self.open_lock_file("action.lock");
+        defer _ = c.close(fd);
+        try flock_within(fd, wait_ms, error.ControlBusy);
     }
 
     fn generation(self: *Runtime) ![]const u8 {

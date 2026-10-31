@@ -480,16 +480,13 @@ pub const Keyboard = struct {
         c.zwp_virtual_keyboard_v1_modifiers(self.device, mask, 0, 0, 0);
     }
 
-    fn upload(self: *Keyboard, runtime: *Runtime, map: *const Keymap) !void {
-        try self.available();
-        if (self.device == null) return error.VirtualKeyboardUnavailable;
-        if (self.held.count != 0) return error.KeyboardBusy;
-
+    /// A memory file holding `text` and its NUL terminator, rewound.
+    fn keymap_buffer(text: [:0]const u8) !c_int {
         const fd = c.memfd_create("hyprhand-keymap", c.MFD_CLOEXEC);
         if (fd < 0) return error.InputBufferFailed;
-        defer _ = c.close(fd);
+        errdefer _ = c.close(fd);
         // Include the NUL terminator; handle partial writes and interrupted syscalls.
-        const bytes = map.text[0 .. map.text.len + 1];
+        const bytes = text[0 .. text.len + 1];
         var written: usize = 0;
         while (written < bytes.len) {
             const write_result = c.write(fd, bytes.ptr + written, bytes.len - written);
@@ -498,17 +495,77 @@ pub const Keyboard = struct {
             written += @intCast(write_result);
         }
         if (c.lseek(fd, 0, c.SEEK_SET) < 0) return error.InputBufferFailed;
+        return fd;
+    }
 
-        try runtime.guard();
+    fn send_keymap(self: *Keyboard, fd: c_int, text: [:0]const u8) void {
         c.zwp_virtual_keyboard_v1_keymap(
             self.device,
             c.WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1,
             fd,
-            @intCast(bytes.len),
+            @intCast(text.len + 1),
         );
         self.has_keymap = true;
         self.send_modifiers(0);
+    }
+
+    fn upload(self: *Keyboard, runtime: *Runtime, map: *const Keymap) !void {
+        try self.available();
+        if (self.device == null) return error.VirtualKeyboardUnavailable;
+        if (self.held.count != 0) return error.KeyboardBusy;
+
+        const fd = try keymap_buffer(map.text);
+        defer _ = c.close(fd);
+        try runtime.guard();
+        self.send_keymap(fd, map.text);
         try self.sync(runtime);
+    }
+
+    /// Uploads a complete serialized keymap without an action guard. Only the
+    /// preview takeover worker calls this and the other *_unguarded/queue_*
+    /// functions, after revoking agent control: it forwards a human's keys.
+    pub fn upload_unguarded(self: *Keyboard, text: [:0]const u8) !void {
+        try self.available();
+        if (self.device == null) return error.VirtualKeyboardUnavailable;
+        if (self.held.count != 0) return error.KeyboardBusy;
+
+        const fd = try keymap_buffer(text);
+        defer _ = c.close(fd);
+        self.send_keymap(fd, text);
+        try self.roundtrip_unguarded();
+    }
+
+    /// A cancellable roundtrip that also detects a lost compositor.
+    pub fn roundtrip_unguarded(self: *Keyboard) !void {
+        const connection = if (self.connection) |*value|
+            value
+        else
+            return error.VirtualKeyboardUnavailable;
+        try connection.sync_with_cancellation(true);
+        try self.available();
+    }
+
+    /// Queues one key of the uploaded keymap. Callers track what they hold.
+    pub fn queue_key(self: *Keyboard, key: u32, pressed: bool) void {
+        self.send_key(key, @intFromBool(pressed));
+    }
+
+    pub fn queue_modifiers(
+        self: *Keyboard,
+        depressed: u32,
+        latched: u32,
+        locked: u32,
+        group: u32,
+    ) void {
+        c.zwp_virtual_keyboard_v1_modifiers(self.device, depressed, latched, locked, group);
+    }
+
+    pub fn flush(self: *Keyboard) !void {
+        const connection = if (self.connection) |*value|
+            value
+        else
+            return error.VirtualKeyboardUnavailable;
+        try connection.flush();
     }
 
     const Driver = struct {
