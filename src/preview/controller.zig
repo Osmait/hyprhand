@@ -139,9 +139,8 @@ pub fn launch(host: *Runtime, arguments: Args) !void {
     const output = try monitor(&source, arguments.monitor);
     try host.validate_display();
     try host.unlocked();
-    const provider = try host.config_provider();
-    const lua = eq(provider, "lua");
-    if (!lua and !eq(provider, "hyprlang")) return error.UnsupportedConfigProvider;
+    const provider = try host.config_provider() orelse return error.UnsupportedConfigProvider;
+    const lua = provider == .lua;
 
     var executable: [4096]u8 = undefined;
     const paths = try launch_helper_paths(host, &executable);

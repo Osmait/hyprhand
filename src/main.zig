@@ -6,6 +6,7 @@ const eq = @import("core/text.zig").eq;
 const native = @import("platform/native.zig");
 const c = native.c;
 const Runtime = @import("runtime/runtime.zig").Runtime;
+const ConfigProvider = @import("runtime/runtime.zig").ConfigProvider;
 const operations = @import("runtime/operations.zig");
 const sessions = @import("runtime/sessions.zig");
 const wait = @import("runtime/wait.zig");
@@ -98,7 +99,8 @@ const doctor_verification_note =
 
 fn doctor(runtime: *Runtime) !void {
     const hyprland_version = try runtime.query_json(std.json.Value, "version");
-    const provider = try runtime.config_provider();
+    const provider = try runtime.config_provider_name();
+    const provider_supported = std.meta.stringToEnum(ConfigProvider, provider) != null;
     const probe = try Doctor.probe(runtime);
 
     const capture = probe.grim and probe.display_matches;
@@ -131,7 +133,7 @@ fn doctor(runtime: *Runtime) !void {
             .virtual_pointer = probe.pointer_available and probe.display_matches,
             .virtual_keyboard = probe.keyboard_available and probe.display_matches,
             .text_helper_installed = probe.wtype,
-            .dispatch = eq(provider, "hyprlang") or eq(provider, "lua"),
+            .dispatch = provider_supported,
             .managed_sessions = managed_sessions,
             .accessibility = probe.bus_configured,
         },
@@ -214,7 +216,7 @@ fn execute(init: std.process.Init, arguments: args.Args) !void {
         .windows => try execute_query(&runtime, "clients"),
         .workspaces => try execute_query(&runtime, "workspaces"),
         .observe => try observation.observe(&runtime, arguments),
-        .enable => try runtime.enable(arguments.indicator),
+        .enable => try runtime.enable(arguments.indicator == .outline),
         .stop => try runtime.stop(),
         .wait => try wait.run(&runtime, arguments),
         .events => try operations.events(&runtime, arguments),

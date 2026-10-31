@@ -37,6 +37,12 @@ pub const Command = enum {
     _preview_stop,
 };
 
+pub const ScrollMode = enum { auto, wheel, continuous };
+pub const Backend = enum { auto, native, helper };
+pub const Indicator = enum { none, outline };
+pub const SessionVerb = enum { create, inspect, destroy };
+pub const WaitCondition = enum { stable, window, focus, workspace };
+
 pub const Args = struct {
     command: Command,
     session: []const u8 = "host",
@@ -47,8 +53,14 @@ pub const Args = struct {
     window: ?[]const u8 = null,
     frame: ?[]const u8 = null,
     text: ?[]const u8 = null,
-    value: ?[]const u8 = null,
-    name: ?[]const u8 = null,
+    // Positional arguments, one field per meaning. `parse` fills only the
+    // field of the parsed command, and `validate_shape` requires it.
+    focus_window: ?[]const u8 = null,
+    workspace_target: ?[]const u8 = null,
+    key_chord: ?[]const u8 = null,
+    wait_condition: ?WaitCondition = null,
+    session_verb: ?SessionVerb = null,
+    session_name: ?[]const u8 = null,
     class: ?[]const u8 = null,
     workspace_id: ?i64 = null,
     x: ?f64 = null,
@@ -63,10 +75,10 @@ pub const Args = struct {
     timeout_ms: u32 = 5000,
     stable_ms: u32 = 300,
     duration_ms: u32 = 500,
-    scroll_mode: []const u8 = "auto",
+    scroll_mode: ScrollMode = .auto,
     move_duration_ms: ?u32 = null,
     no_aura: bool = false,
-    indicator: []const u8 = "none",
+    indicator: Indicator = .none,
     limit: u32 = 100,
     depth: u32 = 5,
     older_than_ms: u32 = 300_000,
@@ -74,7 +86,7 @@ pub const Args = struct {
     nested: bool = false,
     headless_bridge: ?[]const u8 = null,
     lua: bool = false,
-    backend: []const u8 = "auto",
+    backend: Backend = .auto,
     program: []const []const u8 = &.{},
 
     pub fn pointer(self: Args) bool {
@@ -105,6 +117,16 @@ pub const Args = struct {
 
     pub fn is_accessibility(self: Args) bool {
         return self.command == .accessibility or self.command == ._a11y;
+    }
+
+    /// The positional target of a mutating command, as typed, for reports.
+    pub fn target(self: Args) ?[]const u8 {
+        return switch (self.command) {
+            .focus => self.focus_window,
+            .workspace => self.workspace_target,
+            .key => self.key_chord,
+            else => null,
+        };
     }
 };
 
@@ -169,11 +191,18 @@ const Option = struct {
     field: []const u8,
     allowed: Allowed,
     kind: enum { auto, button } = .auto,
+    /// Returned when an enum-typed option names no member of its enum.
+    invalid: anyerror = error.InvalidOptionValue,
 };
 
 const options = [_]Option{
     .{ .name = "--session", .field = "session", .allowed = always },
-    .{ .name = "--indicator", .field = "indicator", .allowed = only(&.{.enable}) },
+    .{
+        .name = "--indicator",
+        .field = "indicator",
+        .allowed = only(&.{.enable}),
+        .invalid = error.InvalidIndicator,
+    },
     .{ .name = "--headless-bridge", .field = "headless_bridge", .allowed = only(&.{.session}) },
     .{ .name = "--dry-run", .field = "dry_run", .allowed = dry_runnable },
     .{
@@ -189,7 +218,12 @@ const options = [_]Option{
     },
     .{ .name = "--scale", .field = "scale", .allowed = only(&.{.observe}) },
     .{ .name = "--window", .field = "window", .allowed = windowed },
-    .{ .name = "--scroll-mode", .field = "scroll_mode", .allowed = only(&.{.scroll}) },
+    .{
+        .name = "--scroll-mode",
+        .field = "scroll_mode",
+        .allowed = only(&.{.scroll}),
+        .invalid = error.InvalidScrollMode,
+    },
     .{ .name = "--class", .field = "class", .allowed = only(&.{.wait}) },
     .{ .name = "--workspace", .field = "workspace_id", .allowed = only(&.{.wait}) },
     .{ .name = "--frame", .field = "frame", .allowed = pointer_only },
@@ -217,7 +251,12 @@ const options = [_]Option{
     .{ .name = "--older-than-ms", .field = "older_than_ms", .allowed = only(&.{.gc}) },
     .{ .name = "--nested", .field = "nested", .allowed = only(&.{.session}) },
     .{ .name = "--lua", .field = "lua", .allowed = only(&.{.session}) },
-    .{ .name = "--backend", .field = "backend", .allowed = only(&.{ .observe, .type, .key }) },
+    .{
+        .name = "--backend",
+        .field = "backend",
+        .allowed = only(&.{ .observe, .type, .key }),
+        .invalid = error.InvalidBackend,
+    },
 };
 
 fn Unwrapped(comptime T: type) type {
@@ -252,24 +291,40 @@ fn assign(
     @field(arguments, option.field) = switch (@typeInfo(Value)) {
         .int => try std.fmt.parseInt(Value, raw, 10),
         .float => try std.fmt.parseFloat(Value, raw),
+        .@"enum" => std.meta.stringToEnum(Value, raw) orelse return option.invalid,
         .pointer => raw,
         else => @compileError("unsupported option field type for " ++ option.name),
     };
 }
 
+/// Stores a positional argument in the field its command gives it meaning in.
+/// Each command takes one positional argument, except `session VERB NAME`.
 fn positional(arguments: *Args, argument: []const u8) !void {
     switch (arguments.command) {
-        .focus, .workspace, .key, .wait, .session => {},
+        .focus => try positional_store([]const u8, &arguments.focus_window, argument),
+        .workspace => try positional_store([]const u8, &arguments.workspace_target, argument),
+        .key => try positional_store([]const u8, &arguments.key_chord, argument),
+        .wait => {
+            const condition = std.meta.stringToEnum(WaitCondition, argument) orelse
+                return error.InvalidWaitCondition;
+            try positional_store(WaitCondition, &arguments.wait_condition, condition);
+        },
+        .session => {
+            if (arguments.session_verb == null) {
+                const verb = std.meta.stringToEnum(SessionVerb, argument) orelse
+                    return error.UnknownSessionCommand;
+                arguments.session_verb = verb;
+            } else {
+                try positional_store([]const u8, &arguments.session_name, argument);
+            }
+        },
         else => return error.UnexpectedArgument,
     }
+}
 
-    if (arguments.value == null) {
-        arguments.value = argument;
-    } else if (arguments.command == .session and arguments.name == null) {
-        arguments.name = argument;
-    } else {
-        return error.UnexpectedArgument;
-    }
+fn positional_store(comptime T: type, field: *?T, value: T) !void {
+    if (field.* != null) return error.UnexpectedArgument;
+    field.* = value;
 }
 
 pub fn parse(argv: []const []const u8) !Args {
@@ -316,13 +371,6 @@ pub fn parse(argv: []const []const u8) !Args {
 /// Ranges and enumerations, independent of the command.
 fn validate_values(arguments: Args) !void {
     if (!valid_name(arguments.session)) return error.InvalidSessionName;
-    if (!text.one_of(arguments.scroll_mode, &.{ "auto", "wheel", "continuous" })) {
-        return error.InvalidScrollMode;
-    }
-    if (!text.one_of(arguments.indicator, &.{ "none", "outline" })) return error.InvalidIndicator;
-    if (!text.one_of(arguments.backend, &.{ "auto", "native", "helper" })) {
-        return error.InvalidBackend;
-    }
     if (arguments.headless_bridge) |path| {
         if (!std.fs.path.isAbsolute(path)) return error.InvalidHeadlessBridge;
         if (std.mem.indexOfAny(u8, path, " :\t\r\n\x00") != null) {
@@ -388,23 +436,21 @@ fn validate_shape(arguments: Args) !void {
     if (requires_window and arguments.window == null) return error.WindowRequired;
 
     switch (arguments.command) {
-        .focus, .workspace, .key, .wait => {
-            if (arguments.value == null) return error.MissingArgument;
-        },
+        .focus => if (arguments.focus_window == null) return error.MissingArgument,
+        .workspace => if (arguments.workspace_target == null) return error.MissingArgument,
+        .key => if (arguments.key_chord == null) return error.MissingArgument,
+        .wait => if (arguments.wait_condition == null) return error.MissingArgument,
         .type => if (arguments.text == null) return error.MissingText,
         .launch => if (arguments.program.len == 0) return error.MissingProgram,
         .session => {
-            const verb = arguments.value orelse return error.MissingArgument;
-            const name = arguments.name orelse return error.MissingArgument;
+            const verb = arguments.session_verb orelse return error.MissingArgument;
+            const name = arguments.session_name orelse return error.MissingArgument;
             if (!valid_name(name)) return error.InvalidSessionName;
             if (eq(name, "host")) return error.InvalidSessionName;
-            if (!text.one_of(verb, &.{ "create", "inspect", "destroy" })) {
-                return error.UnknownSessionCommand;
-            }
             const create_options = arguments.nested or
                 arguments.lua or
                 arguments.headless_bridge != null;
-            if (create_options and !eq(verb, "create")) return error.UnknownOption;
+            if (create_options and verb != .create) return error.UnknownOption;
         },
         else => {},
     }
@@ -519,4 +565,48 @@ test "preview is explicit, managed, bounded, and workers pin identity" {
     });
     try std.testing.expectEqual(@as(u32, 10), preview.fps);
     try std.testing.expect(!preview.mutates());
+}
+
+test "enum options and positional arguments parse into typed fields" {
+    try std.testing.expectError(error.InvalidScrollMode, parse(&.{
+        "scroll",        "--session", "host", "--frame", "a", "--x", "1", "--y", "2",
+        "--scroll-mode", "sideways",
+    }));
+    try std.testing.expectError(
+        error.InvalidBackend,
+        parse(&.{ "observe", "--backend", "other" }),
+    );
+    try std.testing.expectError(
+        error.InvalidIndicator,
+        parse(&.{ "enable", "--indicator", "glow" }),
+    );
+    try std.testing.expectError(error.InvalidWaitCondition, parse(&.{ "wait", "forever" }));
+    try std.testing.expectError(
+        error.UnknownSessionCommand,
+        parse(&.{ "session", "rename", "agent" }),
+    );
+    try std.testing.expectError(error.UnexpectedArgument, parse(&.{ "wait", "stable", "focus" }));
+    try std.testing.expectError(
+        error.UnknownOption,
+        parse(&.{ "session", "inspect", "agent", "--nested" }),
+    );
+
+    const scroll = try parse(&.{
+        "scroll",        "--session", "host", "--frame", "a", "--x", "1", "--y", "2",
+        "--scroll-mode", "wheel",
+    });
+    try std.testing.expectEqual(ScrollMode.wheel, scroll.scroll_mode);
+    try std.testing.expectEqual(Backend.auto, scroll.backend);
+
+    const wait = try parse(&.{ "wait", "workspace", "--workspace", "3" });
+    try std.testing.expectEqual(WaitCondition.workspace, wait.wait_condition.?);
+    try std.testing.expectEqual(@as(?[]const u8, null), wait.target());
+
+    const session = try parse(&.{ "session", "create", "agent", "--nested" });
+    try std.testing.expectEqual(SessionVerb.create, session.session_verb.?);
+    try std.testing.expectEqualStrings("agent", session.session_name.?);
+
+    const key = try parse(&.{ "key", "ctrl+s", "--session", "host", "--window", "0x1" });
+    try std.testing.expectEqualStrings("ctrl+s", key.key_chord.?);
+    try std.testing.expectEqualStrings("ctrl+s", key.target().?);
 }

@@ -6,6 +6,18 @@ const child_process = @import("../platform/child_process.zig");
 const text = @import("../core/text.zig");
 const eq = text.eq;
 
+/// The configuration languages hyprhand can drive. Hyprland 0.57 and later
+/// only read Lua; earlier releases read Hyprlang.
+pub const ConfigProvider = enum { hyprlang, lua };
+
+/// The compositor dispatchers hyprhand sends, with typed arguments.
+pub const Dispatch = union(enum) {
+    workspace: u32,
+    /// A window address, "0x" followed by hexadecimal digits.
+    focus_window: []const u8,
+    move_cursor: struct { x: i32, y: i32 },
+};
+
 pub const Runtime = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -139,9 +151,15 @@ pub const Runtime = struct {
         return self.parse_json(T, try self.query(command));
     }
 
-    pub fn config_provider(self: *Runtime) ![]const u8 {
+    /// The provider as Hyprland reports it, including ones hyprhand cannot drive.
+    pub fn config_provider_name(self: *Runtime) ![]const u8 {
         const status = try self.query_json(struct { configProvider: []const u8 }, "status");
         return status.configProvider;
+    }
+
+    /// The provider, or null when hyprhand does not support it.
+    pub fn config_provider(self: *Runtime) !?ConfigProvider {
+        return std.meta.stringToEnum(ConfigProvider, try self.config_provider_name());
     }
 
     pub fn active_window(self: *Runtime) ![]const u8 {
@@ -163,56 +181,64 @@ pub const Runtime = struct {
         if (!eq(std.mem.trim(u8, reply, " \r\n"), "ok")) return failure;
     }
 
-    pub fn dispatch(self: *Runtime, name: []const u8, argument: []const u8) !void {
+    pub fn dispatch(self: *Runtime, action: Dispatch) !void {
         const provider = try self.config_provider();
         try self.guard();
 
-        const request = if (eq(provider, "hyprlang"))
-            try std.fmt.allocPrint(self.allocator, "/dispatch {s} {s}", .{ name, argument })
-        else if (eq(provider, "lua"))
-            try self.lua_dispatch(name, argument)
-        else
-            return error.UnsupportedConfigProvider;
+        const request = switch (provider orelse return error.UnsupportedConfigProvider) {
+            .hyprlang => try self.dispatch_hyprlang(action),
+            .lua => try self.dispatch_lua(action),
+        };
         try self.expect_ok(request, error.DispatchFailed);
     }
 
-    // Only construct these three dispatchers. User text is never Lua.
-    fn lua_dispatch(self: *Runtime, name: []const u8, argument: []const u8) ![]const u8 {
-        if (eq(name, "workspace")) {
-            const workspace_id = try std.fmt.parseInt(u32, argument, 10);
-            return std.fmt.allocPrint(
+    fn dispatch_hyprlang(self: *Runtime, action: Dispatch) ![]const u8 {
+        return switch (action) {
+            .workspace => |number| std.fmt.allocPrint(
+                self.allocator,
+                "/dispatch workspace {d}",
+                .{number},
+            ),
+            .focus_window => |address| std.fmt.allocPrint(
+                self.allocator,
+                "/dispatch focuswindow address:{s}",
+                .{address},
+            ),
+            .move_cursor => |point| std.fmt.allocPrint(
+                self.allocator,
+                "/dispatch movecursor {d} {d}",
+                .{ point.x, point.y },
+            ),
+        };
+    }
+
+    /// Builds a Lua dispatch from typed values only: no caller text becomes
+    /// Lua code, and the window address is checked to be hexadecimal.
+    fn dispatch_lua(self: *Runtime, action: Dispatch) ![]const u8 {
+        return switch (action) {
+            .workspace => |number| std.fmt.allocPrint(
                 self.allocator,
                 "/dispatch hl.dsp.focus({{workspace='{d}'}})",
-                .{workspace_id},
-            );
-        }
-        if (eq(name, "focuswindow")) {
-            const prefix = "address:0x";
-            if (!std.mem.startsWith(u8, argument, prefix)) return error.InvalidWindowAddress;
-            for (argument[prefix.len..]) |character| {
-                if (!std.ascii.isHex(character)) return error.InvalidWindowAddress;
-            }
-            return std.fmt.allocPrint(
-                self.allocator,
-                "/dispatch hl.dsp.focus({{window='{s}'}})",
-                .{argument},
-            );
-        }
-        if (eq(name, "movecursor")) {
-            var parts = std.mem.tokenizeScalar(u8, argument, ' ');
-            const x_text = parts.next() orelse return error.InvalidCoordinates;
-            const x = try std.fmt.parseInt(i32, x_text, 10);
-            const y_text = parts.next() orelse return error.InvalidCoordinates;
-            const y = try std.fmt.parseInt(i32, y_text, 10);
-            if (parts.next() != null) return error.InvalidCoordinates;
-
-            return std.fmt.allocPrint(
+                .{number},
+            ),
+            .focus_window => |address| {
+                const prefix = "0x";
+                if (!std.mem.startsWith(u8, address, prefix)) return error.InvalidWindowAddress;
+                for (address[prefix.len..]) |character| {
+                    if (!std.ascii.isHex(character)) return error.InvalidWindowAddress;
+                }
+                return std.fmt.allocPrint(
+                    self.allocator,
+                    "/dispatch hl.dsp.focus({{window='address:{s}'}})",
+                    .{address},
+                );
+            },
+            .move_cursor => |point| std.fmt.allocPrint(
                 self.allocator,
                 "/dispatch hl.dsp.cursor.move({{x={d},y={d}}})",
-                .{ x, y },
-            );
-        }
-        return error.UnsupportedDispatcher;
+                .{ point.x, point.y },
+            ),
+        };
     }
 
     pub fn read_file(self: *Runtime, path_name: []const u8, limit: usize) ![]const u8 {
@@ -324,7 +350,9 @@ pub const Runtime = struct {
         return self.allocator.dupe(u8, &std.fmt.bytesToHex(bytes, .lower));
     }
 
-    pub fn enable(self: *Runtime, indicator: []const u8) !void {
+    /// Enables input. With `outline`, also asks the optional cursor-outline
+    /// plugin to draw while input is enabled.
+    pub fn enable(self: *Runtime, outline: bool) !void {
         const lock_fd = try self.lock();
         defer _ = c.close(lock_fd);
         const initial_generation = try self.control_generation();
@@ -350,8 +378,9 @@ pub const Runtime = struct {
         errdefer _ = c.unlink(enabled_path);
         _ = c.unlink(outline_path);
 
-        if (eq(indicator, "outline")) {
-            if (!eq(try self.config_provider(), "hyprlang")) return error.OutlineRequiresHyprlang;
+        if (outline) {
+            const provider = try self.config_provider();
+            if (provider != .hyprlang) return error.OutlineRequiresHyprlang;
             // The optional plugin must already be loaded by the user. Never
             // load code into the compositor as a side effect of enabling input.
             const request = try std.fmt.allocPrint(
@@ -372,7 +401,7 @@ pub const Runtime = struct {
             .ok = true,
             .session_id = self.session_id,
             .control = "enabled",
-            .indicator = indicator,
+            .indicator = @as([]const u8, if (outline) "outline" else "none"),
             .shared_cursor = self.is_host(),
         });
     }

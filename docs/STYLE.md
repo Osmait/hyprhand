@@ -47,8 +47,13 @@ runs it together with `zig fmt --check`.
 ## Types and invariants
 
 - Use an `enum` for a closed set of values, never a string compared with `eq`.
-- Make invalid states unrepresentable: parse arguments into the struct a command
-  needs instead of carrying optional fields and unwrapping them with `.?`.
+- Make invalid states unrepresentable. Give each value a field named for what
+  it holds (`key_chord`, `session_verb`), not a shared `value`. A `.?` on a
+  field that `parse` already required is an assertion: it is fine, as long as
+  the name says what is being unwrapped.
+- When a function takes a closed set of actions, use a tagged union with typed
+  payloads (`Runtime.Dispatch`) instead of a name string plus an argument
+  string that has to be parsed again.
 - Assert programmer invariants with `std.debug.assert` (preconditions,
   postconditions, relationships between values). Operating errors (bad input,
   missing windows, compositor failures) return errors instead.
