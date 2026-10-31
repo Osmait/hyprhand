@@ -2,6 +2,7 @@ const std = @import("std");
 const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("runtime.zig").Runtime;
+const NestedHost = @import("runtime.zig").NestedHost;
 const Args = @import("../cli/args.zig").Args;
 const valid_name = @import("../cli/args.zig").valid_name;
 const ipc = @import("../platform/ipc.zig");
@@ -91,6 +92,7 @@ fn process_stat(pid: c_int) !ProcStat {
     if (state.len != 1) return error.InvalidProcessIdentity;
     if (state[0] == 'Z') return error.ProcessNotFound;
     if (state[0] == 'X') return error.ProcessNotFound;
+    if (state[0] == 'x') return error.ProcessNotFound;
     const parent_field = fields.next() orelse return error.InvalidProcessIdentity;
     const parent = try std.fmt.parseInt(c_int, parent_field, 10);
     // Fields 5 (pgrp) through 21 (itrealvalue) precede starttime (field 22).
@@ -114,6 +116,51 @@ fn alive(process: Process) bool {
 
 fn running(session: Session) bool {
     return !session.destroyed and alive(session.compositor) and alive(session.bus);
+}
+
+/// Whether a session can take commands, and if not, why. Emitted as JSON.
+pub const Health = enum {
+    running,
+    destroyed,
+    /// The compositor or its bus is gone (crash, kill, logout).
+    exited,
+    /// Nested only: the host window was closed. Hyprland keeps running on a
+    /// zero-size fallback output, so the process alone looks healthy.
+    window_closed,
+    /// The processes are alive but the compositor did not answer IPC.
+    unresponsive,
+
+    /// What `running` reports: commands are routed to the session.
+    pub fn usable(self: Health) bool {
+        return self == .running or self == .unresponsive;
+    }
+};
+
+fn health(runtime: *Runtime, session: Session) Health {
+    if (session.destroyed) return .destroyed;
+    if (!running(session)) return .exited;
+    if (!session.nested) return .running;
+    return health_nested_output(runtime, session);
+}
+
+/// A nested compositor renders to a "WAYLAND-N" output backed by its host
+/// window; closing that window removes the output.
+fn health_nested_output(runtime: *Runtime, session: Session) Health {
+    const Monitor = struct { name: []const u8, width: u32 = 0, height: u32 = 0 };
+    const socket = Runtime.socket_path(runtime.allocator, session.runtime, session.instance) catch
+        return .unresponsive;
+    const reply = ipc.request_with_options(
+        runtime.allocator,
+        socket,
+        "j/monitors",
+        .{ .timeout_ms = 1000 },
+    ) catch return .unresponsive;
+    const monitors = runtime.parse_json([]Monitor, reply) catch return .unresponsive;
+    for (monitors) |monitor| {
+        const host_output = std.mem.startsWith(u8, monitor.name, "WAYLAND-");
+        if (host_output and monitor.width > 0 and monitor.height > 0) return .running;
+    }
+    return .window_closed;
 }
 
 const Tracked = struct {
@@ -148,17 +195,27 @@ const Tracked = struct {
 
     fn freeze(self: *Tracked) !void {
         const current = self.stat() orelse return;
-        if (current.state == 'T') return;
+        if (stopped(current.state)) return;
         // Restore processes we stopped if collection fails partway through.
         self.needs_resume = true;
         try self.signal(c.SIGSTOP);
         const deadline = native.now_ms() + 500;
         while (native.now_ms() < deadline) {
             const actual = self.stat() orelse return;
-            if (actual.state == 'T') return;
+            if (stopped(actual.state)) return;
             native.sleep_ms(5);
         }
-        return error.ProcessStopTimeout;
+        // Still running: uninterruptible sleep (D) in a driver or file system,
+        // typically after its compositor or GPU went away. The pending SIGSTOP
+        // is delivered before it runs user code again, so it cannot fork an
+        // untracked child meanwhile. Failing here used to abort `destroy`
+        // with ProcessStopTimeout and leave every process of the session alive.
+    }
+
+    /// Group stop (T) or a tracer's stop (t, e.g. a crash reporter attached
+    /// to a crashing browser process): neither runs code until resumed.
+    fn stopped(state: u8) bool {
+        return state == 'T' or state == 't';
     }
 };
 
@@ -278,7 +335,9 @@ fn terminate_tree(runtime: *Runtime, roots: []const Process) !void {
         index -= 1;
         try tree.items[index].signal(c.SIGKILL);
     }
-    if (!wait_tree(tree.items, 1500)) return error.SessionStopTimeout;
+    // A killed process in uninterruptible sleep exits only when its system
+    // call returns; give GPU drivers a few seconds.
+    if (!wait_tree(tree.items, 5000)) return error.SessionStopTimeout;
 }
 
 fn terminate(runtime: *Runtime, process: Process) !void {
@@ -385,7 +444,20 @@ pub fn load(runtime: *Runtime, name: []const u8) !Session {
 pub fn route(runtime: *Runtime, name: []const u8) !void {
     if (eq(name, "host")) return;
     const session = try load(runtime, name);
-    if (!running(session)) return error.SessionNotRunning;
+    switch (health(runtime, session)) {
+        // Commands against an unresponsive compositor fail with their own
+        // IPC error; refusing them here would hide which request hung.
+        .running, .unresponsive => {},
+        .window_closed => return error.NestedWindowClosed,
+        .destroyed, .exited => return error.SessionNotRunning,
+    }
+    if (session.nested) {
+        // Recorded before retargeting: `runtime.socket` is still the host's.
+        runtime.nested_host = .{
+            .socket = runtime.socket,
+            .compositor_pid = session.compositor.pid,
+        };
+    }
 
     const env = try runtime.allocator.create(std.process.Environ.Map);
     env.* = try runtime.env.clone(runtime.allocator);
@@ -422,6 +494,74 @@ pub fn route(runtime: *Runtime, name: []const u8) !void {
     // Never call setenv: libc can invalidate Zig's startup environment block.
     // Native Wayland gets an absolute socket; children get this explicit map.
     try runtime.validate_display();
+}
+
+const HostWorkspace = struct { id: i64 = 0 };
+
+/// Bounded on its own: it also runs after the command's budget expired.
+fn host_query(runtime: *Runtime, host: NestedHost, request: []const u8) ![]const u8 {
+    const options: ipc.Options = .{ .timeout_ms = 1000, .cancellable = false };
+    return ipc.request_with_options(runtime.allocator, host.socket, request, options);
+}
+
+/// Hyprland sends no frame callbacks to a window on a workspace no monitor
+/// shows, so a nested compositor there renders nothing and screen captures
+/// wait forever. Fails with NestedWindowHidden (window exists, not shown) or
+/// NestedWindowClosed (no host window). Never moves the user's window.
+pub fn check_nested_window(runtime: *Runtime) !void {
+    const host = runtime.nested_host orelse return;
+    const Client = struct {
+        pid: i64 = 0,
+        mapped: bool = true,
+        hidden: bool = false,
+        workspace: HostWorkspace = .{},
+    };
+    const clients = try runtime.parse_json([]Client, try host_query(runtime, host, "j/clients"));
+    for (clients) |client| {
+        if (client.pid != host.compositor_pid) continue;
+        if (!client.mapped) return error.NestedWindowHidden;
+        if (client.hidden) return error.NestedWindowHidden;
+        const shown = try check_nested_window_shown(runtime, host, client.workspace.id);
+        if (!shown) return error.NestedWindowHidden;
+        return;
+    }
+    return error.NestedWindowClosed;
+}
+
+fn check_nested_window_shown(runtime: *Runtime, host: NestedHost, workspace_id: i64) !bool {
+    const Monitor = struct {
+        activeWorkspace: HostWorkspace = .{},
+        specialWorkspace: HostWorkspace = .{},
+        dpmsStatus: bool = true,
+        disabled: bool = false,
+    };
+    const reply = try host_query(runtime, host, "j/monitors");
+    const monitors = try runtime.parse_json([]Monitor, reply);
+    for (monitors) |monitor| {
+        if (monitor.disabled) continue;
+        if (!monitor.dpmsStatus) continue;
+        if (monitor.activeWorkspace.id == workspace_id) return true;
+        // A shown special workspace has a non-zero (negative) id.
+        if (monitor.specialWorkspace.id == workspace_id) return true;
+    }
+    return false;
+}
+
+/// A capture or wait that timed out in a nested session usually means the
+/// host hid its window. Name that cause instead of the generic timeout.
+pub fn explain_failure(runtime: *Runtime, failure: anyerror) anyerror {
+    if (runtime.nested_host == null) return failure;
+    const timed_out = failure == error.CommandTimeout or
+        failure == error.WaitTimeout or
+        failure == error.HelperTimeout;
+    if (!timed_out) return failure;
+
+    native.clear_command_limit();
+    check_nested_window(runtime) catch |cause| switch (cause) {
+        error.NestedWindowHidden, error.NestedWindowClosed => return cause,
+        else => return failure,
+    };
+    return failure;
 }
 
 fn validate_headless_bridge(runtime: *Runtime, path: []const u8) !void {
@@ -527,20 +667,18 @@ fn wait_for_usable_output(runtime: *Runtime, socket: []const u8) !bool {
 }
 
 fn create(runtime: *Runtime, arguments: Args) !void {
-    try runtime.validate_display();
-    if (arguments.headless_bridge) |path| try validate_headless_bridge(runtime, path);
-    // Hyprland 0.57+ only reads Lua configs. Follow the host's provider so the
-    // child compositor (same installed binary) accepts its generated config.
-    const lua = arguments.lua or try runtime.config_provider() == .lua;
-
     const directory = try named(runtime, arguments.session_name.?);
     try ensure_directory(runtime, directory);
     var scoped = runtime.with_directory(directory);
     const lock = try scoped.lock();
     defer _ = c.close(lock);
-    if (load(runtime, arguments.session_name.?)) |existing| {
-        if (!existing.destroyed) return error.SessionExists;
-    } else |err| if (err != error.SessionNotFound) return err;
+    try create_check_existing(runtime, arguments.session_name.?);
+
+    try runtime.validate_display();
+    if (arguments.headless_bridge) |path| try validate_headless_bridge(runtime, path);
+    // Hyprland 0.57+ only reads Lua configs. Follow the host's provider so the
+    // child compositor (same installed binary) accepts its generated config.
+    const lua = arguments.lua or try runtime.config_provider() == .lua;
 
     const runtime_directory = try create_runtime_directory(runtime);
     const dbus = try std.fmt.allocPrint(
@@ -593,6 +731,21 @@ fn create(runtime: *Runtime, arguments: Args) !void {
         .filesystem_sandbox = false,
         .control_enabled = false,
     });
+}
+
+/// A name is free once its session was destroyed. A session that died on its
+/// own still owns processes (bus, registry, applications) that only `destroy`
+/// may stop, so it is reported rather than silently reaped.
+fn create_check_existing(runtime: *Runtime, name: []const u8) !void {
+    const existing = load(runtime, name) catch |err| switch (err) {
+        error.SessionNotFound => return,
+        else => return err,
+    };
+    switch (health(runtime, existing)) {
+        .destroyed => {},
+        .running, .unresponsive => return error.SessionExists,
+        .exited, .window_closed => return error.SessionDead,
+    }
 }
 
 fn create_runtime_directory(runtime: *Runtime) ![]const u8 {
@@ -771,10 +924,12 @@ pub fn command(runtime: *Runtime, arguments: Args) !void {
         .create => return create(runtime, arguments),
         .inspect => {
             const session = try load(runtime, name);
+            const state = health(runtime, session);
             return runtime.emit(.{
                 .ok = true,
                 .session = session,
-                .running = running(session),
+                .running = state.usable(),
+                .health = state,
                 .filesystem_sandbox = false,
             });
         },
@@ -813,20 +968,29 @@ pub fn list(runtime: *Runtime) !void {
     const directory_stream = c.opendir(base_path) orelse return error.StateDirectoryFailed;
     defer _ = c.closedir(directory_stream);
 
-    const Entry = struct { id: []const u8, running: bool, shared_cursor: bool, nested: bool };
+    const Entry = struct {
+        id: []const u8,
+        running: bool,
+        health: Health,
+        shared_cursor: bool,
+        nested: bool,
+    };
     var entries: std.ArrayList(Entry) = .empty;
     try entries.append(runtime.allocator, .{
         .id = "host",
         .running = true,
+        .health = .running,
         .shared_cursor = true,
         .nested = false,
     });
     while (try native.next_entry(directory_stream)) |name| {
         if (!valid_name(name)) continue;
         const session = load(runtime, name) catch continue;
+        const state = health(runtime, session);
         try entries.append(runtime.allocator, .{
             .id = session.name,
-            .running = running(session),
+            .running = state.usable(),
+            .health = state,
             .shared_cursor = false,
             .nested = session.nested,
         });

@@ -39,6 +39,13 @@ pub const ActionGuard = struct {
     }
 };
 
+/// Where a nested session's compositor shows its output on the host: the
+/// host IPC socket and the PID of the compositor that owns the host window.
+pub const NestedHost = struct {
+    socket: []const u8,
+    compositor_pid: c_int,
+};
+
 /// A check that only the caller's module knows how to run, with its context.
 pub const FrameCheck = struct {
     context: *anyopaque,
@@ -57,6 +64,8 @@ pub const Runtime = struct {
     /// Managed session directory (metadata, profiles, logs); null for host.
     session_directory: ?[]const u8 = null,
     session_id: []const u8 = "host",
+    /// Set for nested sessions only; see NestedHost.
+    nested_host: ?NestedHost = null,
     /// Set only while an input action runs; see ActionGuard.
     action: ?*ActionGuard = null,
 

@@ -207,25 +207,31 @@ fn execute(init: std.process.Init, arguments: args.Args) !void {
     }
 
     try sessions.route(&runtime, arguments.session);
-    if (arguments.mutates()) return audited(&runtime, arguments);
+    execute_routed(&runtime, arguments) catch |err| {
+        return sessions.explain_failure(&runtime, err);
+    };
+}
+
+fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
+    if (arguments.mutates()) return audited(runtime, arguments);
 
     switch (arguments.command) {
-        .doctor => try doctor(&runtime),
-        .state => try state(&runtime),
-        .monitors => try execute_query(&runtime, "monitors"),
-        .windows => try execute_query(&runtime, "clients"),
-        .workspaces => try execute_query(&runtime, "workspaces"),
-        .observe => try observation.observe_with_retry(&runtime, arguments),
+        .doctor => try doctor(runtime),
+        .state => try state(runtime),
+        .monitors => try execute_query(runtime, "monitors"),
+        .windows => try execute_query(runtime, "clients"),
+        .workspaces => try execute_query(runtime, "workspaces"),
+        .observe => try observation.observe_with_retry(runtime, arguments),
         .enable => try runtime.enable(arguments.indicator == .outline),
         .stop => try runtime.stop(),
-        .wait => try wait.run(&runtime, arguments),
-        .events => try operations.events(&runtime, arguments),
-        .logs => try operations.logs(&runtime, arguments),
-        .gc => try operations.collect(&runtime, arguments, true),
-        .accessibility => try accessibility.tree(&runtime, arguments),
-        ._a11y => try accessibility.worker(&runtime, arguments),
-        ._cursor_probe => try cursor_capture.probe(&runtime),
-        ._preview_frame, ._preview_stop => try preview.worker(&runtime, arguments),
+        .wait => try wait.run(runtime, arguments),
+        .events => try operations.events(runtime, arguments),
+        .logs => try operations.logs(runtime, arguments),
+        .gc => try operations.collect(runtime, arguments, true),
+        .accessibility => try accessibility.tree(runtime, arguments),
+        ._a11y => try accessibility.worker(runtime, arguments),
+        ._cursor_probe => try cursor_capture.probe(runtime),
+        ._preview_frame, ._preview_stop => try preview.worker(runtime, arguments),
         else => return error.CommandNotImplemented,
     }
 }
@@ -276,7 +282,29 @@ fn execute_query(runtime: *Runtime, command: []const u8) !void {
     });
 }
 
+/// Managed-session lifecycle hints, kept apart from the general table.
+fn hint_session(err: anyerror) ?[]const u8 {
+    return switch (err) {
+        error.NestedWindowHidden => "The nested session's window is not shown on the host " ++
+            "(another workspace, hidden or screen off), so its compositor renders nothing. " ++
+            "Ask the user to move it to a visible workspace; hyprhand never moves it. " ++
+            "Inspect state before retrying; partial input may have been delivered.",
+        error.NestedWindowClosed => "The nested session's host window was closed; its " ++
+            "compositor has no output left. Run hyprhand session destroy NAME, then create it.",
+        error.SessionDead => "A session with this name died (compositor exited or nested " ++
+            "window closed) but still holds processes. Run hyprhand session destroy NAME first.",
+        error.SessionExists => "A running session already uses this name. " ++
+            "Use it, or destroy it first.",
+        error.SessionNotRunning => "The session is destroyed or its compositor exited. " ++
+            "Check hyprhand sessions; destroy and recreate it.",
+        error.SessionStopTimeout => "Some session processes did not exit after SIGKILL " ++
+            "(uninterruptible sleep). Run hyprhand session destroy NAME again.",
+        else => null,
+    };
+}
+
 fn hint(err: anyerror) []const u8 {
+    if (hint_session(err)) |text| return text;
     return switch (err) {
         error.PreviewHelperMissing => "Build the optional viewer with zig build pip; " ++
             "keep hyprhand-pip beside hyprhand.",

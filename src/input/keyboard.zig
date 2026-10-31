@@ -69,21 +69,97 @@ pub fn modifier_index(name: []const u8) ?usize {
     return null;
 }
 
-// Keep data keys disjoint from the real modifier keycodes in every chunk.
-fn data_key(index: usize) u32 {
-    var remaining = index;
-    var key: u32 = 1;
-    while (true) : (key += 1) {
-        var reserved = false;
-        for (modifiers) |modifier| if (key == modifier.key) {
-            reserved = true;
-            break;
-        };
-        if (reserved) continue;
+// Applications do not only read the keysym of a key event. Chromium derives
+// its key code (accelerators, editing commands) from the evdev keycode for
+// anything that is not a letter or digit, and GTK 3 matches bindings by keycode
+// through a cache of an earlier keymap. A ">" sent on KEY_BACKSPACE therefore
+// deletes a character in Brave, "minus" on KEY_ESC makes ctrl+minus a no-op,
+// and Return on KEY_ESC cancels a GTK file chooser. Every symbol is placed on
+// its US-layout key when it has one, and otherwise on a free key that every
+// toolkit treats as printable. Modifier keycodes are never in either set.
 
-        if (remaining == 0) return key;
-        remaining -= 1;
+/// US-layout keys that produce characters: digits, the three letter rows and
+/// their punctuation, and the ISO key next to left Shift.
+const printable_keys = blk: {
+    const ranges = [_][2]u32{ .{ 2, 13 }, .{ 16, 27 }, .{ 30, 41 }, .{ 43, 53 }, .{ 86, 86 } };
+    var keys: [48]u32 = undefined;
+    var count: usize = 0;
+    for (ranges) |range| {
+        for (range[0]..range[1] + 1) |key| {
+            keys[count] = key;
+            count += 1;
+        }
     }
+    std.debug.assert(count == keys.len);
+    break :blk keys;
+};
+
+/// The key that types `character` on a US layout, shifted or not.
+fn us_key_ascii(character: u8) ?u32 {
+    const Row = struct { first: u32, characters: []const u8 };
+    const rows = [_]Row{
+        .{ .first = 2, .characters = "1234567890-=" },
+        .{ .first = 2, .characters = "!@#$%^&*()_+" },
+        .{ .first = 16, .characters = "qwertyuiop[]" },
+        .{ .first = 16, .characters = "QWERTYUIOP{}" },
+        .{ .first = 30, .characters = "asdfghjkl;'`" },
+        .{ .first = 30, .characters = "ASDFGHJKL:\"~" },
+        .{ .first = 43, .characters = "\\zxcvbnm,./" },
+        .{ .first = 43, .characters = "|ZXCVBNM<>?" },
+    };
+    if (character == ' ') return 57;
+    for (rows) |row| {
+        const index = std.mem.indexOfScalar(u8, row.characters, character) orelse continue;
+        return row.first + @as(u32, @intCast(index));
+    }
+    return null;
+}
+
+/// The evdev keycode of `symbol` on a US layout, if it has a dedicated key.
+fn us_key(symbol: u32) ?u32 {
+    if (symbol < 0x80) return us_key_ascii(@intCast(symbol));
+    if (symbol >= c.XKB_KEY_F1 and symbol <= c.XKB_KEY_F10) return 59 + (symbol - c.XKB_KEY_F1);
+    return switch (symbol) {
+        c.XKB_KEY_Escape => 1,
+        c.XKB_KEY_BackSpace => 14,
+        c.XKB_KEY_Tab, c.XKB_KEY_ISO_Left_Tab => 15,
+        c.XKB_KEY_Return => 28,
+        c.XKB_KEY_F11 => 87,
+        c.XKB_KEY_F12 => 88,
+        c.XKB_KEY_KP_Enter => 96,
+        c.XKB_KEY_Print => 99,
+        c.XKB_KEY_Home => 102,
+        c.XKB_KEY_Up => 103,
+        c.XKB_KEY_Prior => 104,
+        c.XKB_KEY_Left => 105,
+        c.XKB_KEY_Right => 106,
+        c.XKB_KEY_End => 107,
+        c.XKB_KEY_Down => 108,
+        c.XKB_KEY_Next => 109,
+        c.XKB_KEY_Insert => 110,
+        c.XKB_KEY_Delete => 111,
+        c.XKB_KEY_Pause => 119,
+        c.XKB_KEY_Menu => 127,
+        else => null,
+    };
+}
+
+const KeySet = std.StaticBitSet(256);
+
+/// The key `symbol` should use when the keys in `taken` are already assigned.
+fn free_key(symbol: u32, taken: *const KeySet) ?u32 {
+    if (us_key(symbol)) |key| {
+        if (!taken.isSet(key)) return key;
+    }
+    for (printable_keys) |key| {
+        if (!taken.isSet(key)) return key;
+    }
+    return null;
+}
+
+/// The key a chord's target symbol is pressed on.
+fn chord_key(symbol: u32) u32 {
+    return us_key(symbol) orelse printable_keys[0];
 }
 
 /// A parsed "mod+mod+Key" chord. Modifiers are indices into `modifiers`, in
@@ -132,21 +208,34 @@ const Keymap = struct {
     compiled: *c.struct_xkb_keymap,
     text: [:0]const u8,
 
-    fn init(allocator: std.mem.Allocator, symbols: []const u32) !Keymap {
-        return compile(allocator, symbols, false);
+    /// Exact text: `symbols[i]` on evdev key `keys[i]`, one level each.
+    fn init(allocator: std.mem.Allocator, symbols: []const u32, keys: []const u32) !Keymap {
+        return compile(allocator, symbols, keys, false);
     }
 
     fn init_chord(allocator: std.mem.Allocator, symbol: u32) !Keymap {
-        return compile(allocator, &.{symbol}, true);
+        return compile(allocator, &.{symbol}, &.{chord_key(symbol)}, true);
     }
 
-    fn compile(allocator: std.mem.Allocator, symbols: []const u32, chord_levels: bool) !Keymap {
+    fn compile(
+        allocator: std.mem.Allocator,
+        symbols: []const u32,
+        keys: []const u32,
+        chord_levels: bool,
+    ) !Keymap {
         if (symbols.len == 0) return error.InvalidKeymap;
         if (symbols.len > chunk_size) return error.InvalidKeymap;
+        if (keys.len != symbols.len) return error.InvalidKeymap;
+        for (keys) |key| {
+            // Keys come from us_key/printable_keys, never from input.
+            for (modifiers) |modifier| assert(key != modifier.key);
+            assert(key > 0);
+            assert(key + 8 <= 255);
+        }
 
         var source: std.ArrayList(u8) = .empty;
         defer source.deinit(allocator);
-        try compile_source(allocator, &source, symbols, chord_levels);
+        try compile_source(allocator, &source, symbols, keys, chord_levels);
         const source_terminated = try source.toOwnedSliceSentinel(allocator, 0);
         defer allocator.free(source_terminated);
 
@@ -172,14 +261,15 @@ const Keymap = struct {
         allocator: std.mem.Allocator,
         source: *std.ArrayList(u8),
         symbols: []const u32,
+        keys: []const u32,
         chord_levels: bool,
     ) !void {
         try source.appendSlice(
             allocator,
             "xkb_keymap { xkb_keycodes { minimum=8; maximum=255; ",
         );
-        for (symbols, 0..) |_, i| {
-            try source.print(allocator, "<K{d}>={d};", .{ i, data_key(i) + 8 });
+        for (keys, 0..) |key, i| {
+            try source.print(allocator, "<K{d}>={d};", .{ i, key + 8 });
         }
         for (modifiers) |modifier| {
             try source.print(allocator, "<{s}>={d};", .{ modifier.key_name, modifier.key + 8 });
@@ -314,15 +404,22 @@ const HeldKeys = struct {
     }
 };
 
+/// Up to `chunk_size` characters that share one keymap. A chunk also ends
+/// early when its next new symbol finds no free key.
 const TextChunk = struct {
+    /// Distinct symbols and the key each one is placed on.
     symbols: [chunk_size]u32 = undefined,
+    symbol_keys: [chunk_size]u32 = undefined,
+    /// The key of every character, in order.
     keys: [chunk_size]u32 = undefined,
     symbol_count: usize = 0,
     count: usize = 0,
+    taken: KeySet = .empty,
 
     fn next(iterator: *std.unicode.Utf8Iterator) TextChunk {
         var result = TextChunk{};
         while (result.count < chunk_size) {
+            const position = iterator.i;
             const codepoint = iterator.nextCodepoint() orelse break;
             // A CRLF pair is one line break; a lone CR or LF is one as well.
             const crlf = codepoint == '\r' and std.mem.eql(u8, iterator.peek(1), "\n");
@@ -334,17 +431,30 @@ const TextChunk = struct {
                 0x1b => c.XKB_KEY_Escape,
                 else => c.xkb_utf32_to_keysym(codepoint),
             };
-            const symbols_seen = result.symbols[0..result.symbol_count];
-            const index = std.mem.indexOfScalar(u32, symbols_seen, symbol) orelse blk: {
-                const index_appended = result.symbol_count;
-                result.symbols[index_appended] = symbol;
-                result.symbol_count += 1;
-                break :blk index_appended;
+            const key = result.key_for(symbol) orelse {
+                // No free key left: this character starts the next chunk.
+                assert(result.count > 0);
+                iterator.i = position;
+                break;
             };
-            result.keys[result.count] = data_key(index);
+            result.keys[result.count] = key;
             result.count += 1;
         }
         return result;
+    }
+
+    fn key_for(self: *TextChunk, symbol: u32) ?u32 {
+        const symbols_seen = self.symbols[0..self.symbol_count];
+        if (std.mem.indexOfScalar(u32, symbols_seen, symbol)) |index| {
+            return self.symbol_keys[index];
+        }
+        const key = free_key(symbol, &self.taken) orelse return null;
+        assert(self.symbol_count < self.symbols.len);
+        self.taken.set(key);
+        self.symbols[self.symbol_count] = symbol;
+        self.symbol_keys[self.symbol_count] = key;
+        self.symbol_count += 1;
+        return key;
     }
 };
 
@@ -539,7 +649,11 @@ pub const Keyboard = struct {
 
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
             defer arena.deinit();
-            var map = try Keymap.init(arena.allocator(), chunk.symbols[0..chunk.symbol_count]);
+            var map = try Keymap.init(
+                arena.allocator(),
+                chunk.symbols[0..chunk.symbol_count],
+                chunk.symbol_keys[0..chunk.symbol_count],
+            );
             defer map.deinit();
             try self.upload(runtime, &map);
 
@@ -562,7 +676,7 @@ pub const Keyboard = struct {
             const modifier = modifiers[index];
             keys[i] = .{ .code = modifier.key, .mask = try map.mask(modifier.name) };
         }
-        keys[parsed.count] = .{ .code = data_key(0) };
+        keys[parsed.count] = .{ .code = chord_key(parsed.symbol) };
 
         try self.upload(runtime, &map);
         var driver = Driver{ .keyboard = self, .runtime = runtime };
@@ -595,7 +709,7 @@ test "keyboard chord Shift levels translate Tab and letters without changing exa
         const state = c.xkb_state_new(compiled) orelse return error.OutOfMemory;
         defer c.xkb_state_unref(state);
 
-        const target = data_key(0) + 8;
+        const target = chord_key(pair[0]) + 8;
         const control = try map.mask("Control");
         const shift = try map.mask("Shift");
         const consumed_expected = if (pair[0] != pair[1]) shift else @as(u32, 0);
@@ -617,7 +731,7 @@ test "keyboard chord Shift levels translate Tab and letters without changing exa
         _ = c.xkb_state_update_key(state, 29 + 8, c.XKB_KEY_UP);
         try std.testing.expectEqual(@as(u32, 0), c.xkb_state_serialize_mods(state, depressed));
 
-        var exact = try Keymap.init(std.testing.allocator, &.{pair[0]});
+        var exact = try Keymap.init(std.testing.allocator, &.{pair[0]}, &.{target - 8});
         defer exact.deinit();
         const text_state = c.xkb_state_new(exact.compiled) orelse return error.OutOfMemory;
         defer c.xkb_state_unref(text_state);
@@ -659,7 +773,8 @@ test "keyboard parses documented modifiers and rejects malformed or duplicate ch
 }
 
 test "keyboard modifier masks match XKB actions and survive serialized keymap round trip" {
-    var map = try Keymap.init(std.testing.allocator, &.{c.XKB_KEY_z});
+    const z_key = chord_key(c.XKB_KEY_z);
+    var map = try Keymap.init(std.testing.allocator, &.{c.XKB_KEY_z}, &.{z_key});
     defer map.deinit();
     try std.testing.expectError(error.InvalidKeymap, map.mask("missing"));
 
@@ -677,7 +792,7 @@ test "keyboard modifier masks match XKB actions and survive serialized keymap ro
     defer c.xkb_state_unref(state);
 
     const depressed = c.XKB_STATE_MODS_DEPRESSED;
-    const target = data_key(0) + 8;
+    const target = z_key + 8;
     var expected: u32 = 0;
     for (modifiers) |modifier| {
         try std.testing.expectEqual(
@@ -768,7 +883,8 @@ const FakeKeyboard = struct {
 };
 
 test "keyboard emits modifier keys before target and releases target then modifiers" {
-    var map = try Keymap.init(std.testing.allocator, &.{c.XKB_KEY_z});
+    const z_key = chord_key(c.XKB_KEY_z);
+    var map = try Keymap.init(std.testing.allocator, &.{c.XKB_KEY_z}, &.{z_key});
     defer map.deinit();
     const control = try map.mask("Control");
     const shift = try map.mask("Shift");
@@ -778,15 +894,15 @@ test "keyboard emits modifier keys before target and releases target then modifi
     try held.chord(&fake, &.{
         .{ .code = 29, .mask = control },
         .{ .code = 42, .mask = shift },
-        .{ .code = data_key(0) },
+        .{ .code = z_key },
     });
     const expected = [_]FakeKeyboard.Event{
         .{ .key = .{ .code = 29, .state = 1 } },
         .{ .modifiers = control },
         .{ .key = .{ .code = 42, .state = 1 } },
         .{ .modifiers = control | shift },
-        .{ .key = .{ .code = data_key(0), .state = 1 } },
-        .{ .key = .{ .code = data_key(0), .state = 0 } },
+        .{ .key = .{ .code = z_key, .state = 1 } },
+        .{ .key = .{ .code = z_key, .state = 0 } },
         .{ .key = .{ .code = 42, .state = 0 } },
         .{ .modifiers = control },
         .{ .key = .{ .code = 29, .state = 0 } },
@@ -804,13 +920,14 @@ test "keyboard emits modifier keys before target and releases target then modifi
 }
 
 test "keyboard unwinds every guard and synchronization failure without guarded cleanup" {
-    var map = try Keymap.init(std.testing.allocator, &.{c.XKB_KEY_a});
+    const a_key = chord_key(c.XKB_KEY_a);
+    var map = try Keymap.init(std.testing.allocator, &.{c.XKB_KEY_a}, &.{a_key});
     defer map.deinit();
     var keys: [6]Key = undefined;
     for (modifiers, 0..) |modifier, i| {
         keys[i] = .{ .code = modifier.key, .mask = try map.mask(modifier.name) };
     }
-    keys[5] = .{ .code = data_key(0) };
+    keys[5] = .{ .code = a_key };
 
     for (0..keys.len) |stage| {
         var held = HeldKeys{};
@@ -842,7 +959,11 @@ test "keyboard Unicode chunks preserve scalars controls and repeated keys" {
     try std.testing.expectEqual(chunk.keys[1], chunk.keys[6]);
     try std.testing.expectEqual(chunk.keys[7], chunk.keys[8]);
 
-    var map = try Keymap.init(std.testing.allocator, chunk.symbols[0..chunk.symbol_count]);
+    var map = try Keymap.init(
+        std.testing.allocator,
+        chunk.symbols[0..chunk.symbol_count],
+        chunk.symbol_keys[0..chunk.symbol_count],
+    );
     defer map.deinit();
     const state = c.xkb_state_new(map.compiled) orelse return error.OutOfMemory;
     defer c.xkb_state_unref(state);
@@ -869,15 +990,21 @@ test "keyboard maximum Unicode chunks avoid modifier collisions and keycode limi
         try bytes.appendSlice(std.testing.allocator, encoded[0..encoded_length]);
     }
 
+    // Distinct symbols without a US key share the printable keys: a chunk
+    // ends when they run out and the next one resumes at the same character.
     var iterator = (try std.unicode.Utf8View.init(bytes.items)).iterator();
     var total: usize = 0;
-    for ([_]usize{ 128, 128, 1, 0 }) |size| {
+    for ([_]usize{ 48, 48, 48, 48, 48, 17, 0 }) |size| {
         const chunk = TextChunk.next(&iterator);
         try std.testing.expectEqual(size, chunk.count);
         try std.testing.expectEqual(size, chunk.symbol_count);
         if (size == 0) break;
 
-        var map = try Keymap.init(std.testing.allocator, chunk.symbols[0..size]);
+        var map = try Keymap.init(
+            std.testing.allocator,
+            chunk.symbols[0..size],
+            chunk.symbol_keys[0..size],
+        );
         defer map.deinit();
         const state = c.xkb_state_new(map.compiled) orelse return error.OutOfMemory;
         defer c.xkb_state_unref(state);
@@ -895,8 +1022,52 @@ test "keyboard maximum Unicode chunks avoid modifier collisions and keycode limi
 
     const allocator = std.testing.allocator;
     const oversized: [129]u32 = @splat(c.XKB_KEY_a);
-    try std.testing.expectError(error.InvalidKeymap, Keymap.init(allocator, &.{}));
-    try std.testing.expectError(error.InvalidKeymap, Keymap.init(allocator, &oversized));
+    const oversized_keys: [129]u32 = @splat(2);
+    try std.testing.expectError(error.InvalidKeymap, Keymap.init(allocator, &.{}, &.{}));
+    try std.testing.expectError(
+        error.InvalidKeymap,
+        Keymap.init(allocator, &oversized, &oversized_keys),
+    );
+}
+
+test "keyboard places text and chords on US keys, never on a different control key" {
+    // Brave regression: ">" landed on KEY_BACKSPACE and "minus" on KEY_ESC.
+    try std.testing.expectEqual(@as(u32, 12), chord_key(c.XKB_KEY_minus));
+    try std.testing.expectEqual(@as(u32, 20), chord_key(c.XKB_KEY_t));
+    try std.testing.expectEqual(@as(u32, 28), chord_key(c.XKB_KEY_Return));
+    try std.testing.expectEqual(@as(u32, 1), chord_key(c.XKB_KEY_Escape));
+    try std.testing.expectEqual(@as(u32, 15), chord_key(c.XKB_KEY_ISO_Left_Tab));
+    try std.testing.expectEqual(@as(u32, 88), chord_key(c.XKB_KEY_F12));
+    try std.testing.expectEqual(printable_keys[0], chord_key(c.XKB_KEY_eacute));
+
+    const text = "data:text/html,<h1>Zoom</h1>\n\tAa é";
+    var iterator = (try std.unicode.Utf8View.init(text)).iterator();
+    const chunk = TextChunk.next(&iterator);
+    try std.testing.expectEqual(try std.unicode.utf8CountCodepoints(text), chunk.count);
+    const control_keys = [_]struct { u32, u32 }{
+        .{ 1, c.XKB_KEY_Escape },
+        .{ 14, c.XKB_KEY_BackSpace },
+        .{ 15, c.XKB_KEY_Tab },
+        .{ 28, c.XKB_KEY_Return },
+    };
+    const symbols = chunk.symbols[0..chunk.symbol_count];
+    const keys = chunk.symbol_keys[0..chunk.symbol_count];
+    for (symbols, keys, 0..) |symbol, key, i| {
+        for (control_keys) |control| {
+            if (key == control[0]) try std.testing.expectEqual(control[1], symbol);
+        }
+        for (modifiers) |modifier| try std.testing.expect(key != modifier.key);
+        const printable = std.mem.indexOfScalar(u32, &printable_keys, key) != null;
+        const natural = us_key(symbol) orelse {
+            try std.testing.expect(printable);
+            continue;
+        };
+        if (natural == key) continue;
+        // Moved only because an earlier symbol (",", "a") holds the same key.
+        try std.testing.expect(printable);
+        try std.testing.expect(std.mem.indexOfScalar(u32, keys[0..i], natural) != null);
+    }
+    try std.testing.expectEqual(@as(u32, 52), chunk.keys[std.mem.indexOfScalar(u8, text, '>').?]);
 }
 
 test "keyboard cleanup is idempotent without a connection and invalid UTF8 sends nothing" {

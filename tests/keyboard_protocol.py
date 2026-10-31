@@ -26,6 +26,11 @@ import unittest
 
 import integration
 
+# Evdev keycodes. Chord targets sit on their US-layout key (Chromium and GTK 3
+# read the keycode, not only the keysym); modifiers keep their real keys.
+MODIFIER_KEYS = {29, 42, 56, 100, 125}
+KEY_O, KEY_Z, KEY_TAB = 24, 44, 15
+
 
 def uints(*values):
     return struct.pack("=" + "I" * len(values), *values)
@@ -164,7 +169,8 @@ class FakeWayland:
                             self.events.append(("key", key, state))
                             if state == 1 and self.mode == "lock":
                                 self.fixture.locked = True
-                            if state == 1 and key == 1 and self.mode == "focus_target":
+                            target = key not in MODIFIER_KEYS
+                            if state == 1 and target and self.mode == "focus_target":
                                 self.fixture.active = "0x456"
                             if state == 1 and self.mode == "remove_seat":
                                 connection.sendall(message(registry, 1, uints(11)))
@@ -278,8 +284,8 @@ class KeyboardProtocol(unittest.TestCase):
             self.assertEqual(keymap.lib.xkb_state_key_get_one_sym(keymap.state, key + 8), symbol)
             mask |= keymap.mask(name)
             expected.extend([("key", key, 1), ("modifiers", mask)])
-        expected.extend([("key", 1, 1), ("key", 1, 0)])
-        self.assertEqual(keymap.lib.xkb_state_key_get_utf32(keymap.state, 9), ord("z"))
+        expected.extend([("key", KEY_Z, 1), ("key", KEY_Z, 0)])
+        self.assertEqual(keymap.lib.xkb_state_key_get_utf32(keymap.state, KEY_Z + 8), ord("z"))
         for name, key, _ in reversed(mods):
             mask &= ~keymap.mask(name)
             expected.extend([("key", key, 0), ("modifiers", mask)])
@@ -357,7 +363,9 @@ class KeyboardProtocol(unittest.TestCase):
         value = "".join(chr(0x400 + i) for i in range(257)) + "é中😀e\u0301\n\r\t\x1b"
         self.fixture.cli("type", "--text", value, "--window", self.fixture.address,
                          "--session", "host", "--backend", "native")
-        self.assertEqual(len(server.maps), 3)
+        # 48 printable keys are shared by symbols without a US key of their own:
+        # 257 distinct Cyrillic letters need six keymaps, the tail fits the last.
+        self.assertEqual(len(server.maps), 6)
         decoded = []
         keymap = None
         try:
@@ -376,8 +384,10 @@ class KeyboardProtocol(unittest.TestCase):
 
     def test_shift_tab_and_shift_letters_translate_on_press_and_release(self):
         server = self.start()
-        for chord, symbol, mask in (("Tab", 0xFF09, 0), ("shift+Tab", 0xFE20, 1),
-                                    ("ctrl+shift+Tab", 0xFE20, 5), ("ctrl+shift+z", ord("Z"), 5)):
+        for chord, key, symbol, mask in (("Tab", KEY_TAB, 0xFF09, 0),
+                                         ("shift+Tab", KEY_TAB, 0xFE20, 1),
+                                         ("ctrl+shift+Tab", KEY_TAB, 0xFE20, 5),
+                                         ("ctrl+shift+z", KEY_Z, ord("Z"), 5)):
             with self.subTest(chord=chord):
                 mark = len(server.events)
                 self.key(chord)
@@ -390,8 +400,9 @@ class KeyboardProtocol(unittest.TestCase):
                         if event[0] == "modifiers":
                             depressed = event[1]
                             keymap.lib.xkb_state_update_mask(keymap.state, depressed, 0, 0, 0, 0, 0)
-                        elif event[0] == "key" and event[1] == 1:
-                            targets.append((event[2], keymap.lib.xkb_state_key_get_one_sym(keymap.state, 9), depressed))
+                        elif event[0] == "key" and event[1] == key:
+                            sym = keymap.lib.xkb_state_key_get_one_sym(keymap.state, key + 8)
+                            targets.append((event[2], sym, depressed))
                     self.assertEqual(targets, [(1, symbol, mask), (0, symbol, mask)])
                     if mask & 1:
                         self.assertIn(("key", 42, 1), events)
@@ -404,7 +415,7 @@ class KeyboardProtocol(unittest.TestCase):
         server = self.start("lock")
         result = self.key("ctrl+shift+z", ok=False)
         self.assertEqual(result["err"]["code"], "SessionLocked")
-        self.assertNotIn(("key", 1, 1), server.events)
+        self.assertNotIn(("key", KEY_Z, 1), server.events)
         self.assertIn(("key", 29, 1), server.events)
         self.assert_balanced(server.events)
 
@@ -412,7 +423,7 @@ class KeyboardProtocol(unittest.TestCase):
         server = self.start("remove_seat")
         result = self.key("ctrl+shift+z", ok=False)
         self.assertEqual(result["err"]["code"], "VirtualKeyboardUnavailable")
-        self.assertNotIn(("key", 1, 1), server.events)
+        self.assertNotIn(("key", KEY_Z, 1), server.events)
         self.assert_balanced(server.events)
 
     def test_failed_device_creation_sends_no_keymap_or_input(self):
@@ -425,7 +436,7 @@ class KeyboardProtocol(unittest.TestCase):
         server = self.start("focus_target")
         self.key("ctrl+o")
         self.assertEqual(self.fixture.active, "0x456")
-        self.assertIn(("key", 1, 1), server.events)
+        self.assertIn(("key", KEY_O, 1), server.events)
         self.assert_balanced(server.events)
 
 

@@ -18,6 +18,10 @@ Another workspace in `host` shares the compositor's input seat. It is not a
 replacement for a managed session. Opening or closing a nested window can affect
 host focus even though input within the child compositor is isolated.
 
+For long or unattended tasks prefer headless mode (with the bridge where your
+stack needs it): its output has a fixed 1920x1080 size and does not depend on a
+window the user can hide, resize or close. See [nested windows](#nested-windows).
+
 Headless mode still obtains its renderer through the parent Wayland compositor;
 it cannot boot a standalone desktop without a graphical session. On the recorded
 NVIDIA/Hyprland 0.56.2/Aquamarine 0.15.0 stack, an explicit
@@ -58,6 +62,44 @@ hyprhand observe --session agent
 Replace `WINDOW_ADDRESS` with the returned address. Application classes can vary;
 choose the class observed in your actual session.
 
+### Liveness
+
+`sessions` and `session inspect` report `running` and a `health` value:
+
+| `health` | `running` | Meaning |
+| --- | --- | --- |
+| `running` | `true` | Compositor and bus alive; a nested session still has its host window |
+| `unresponsive` | `true` | Processes alive, but the nested compositor did not answer IPC within 1 s |
+| `window_closed` | `false` | Nested only: the host window was closed. Hyprland keeps running on a zero-size fallback output |
+| `exited` | `false` | The compositor or its bus exited (crash, kill, logout) |
+| `destroyed` | `false` | `session destroy` already ran |
+
+Commands routed to a `window_closed` session fail with `NestedWindowClosed`, and
+to an `exited` or `destroyed` one with `SessionNotRunning`. `session create` with
+the name of a session that died on its own fails with `SessionDead` rather than
+`SessionExists`: its bus, registry and applications may still run, and only
+`session destroy NAME` stops them. Run it once, then create the session again.
+
+### Nested windows
+
+A nested compositor draws into an ordinary window on the host, and the host
+controls that window:
+
+- **Visibility.** Hyprland sends no frame callbacks to a window on a workspace
+  that no monitor shows. The nested compositor then renders nothing, its
+  applications stop painting, and `observe` would wait for a frame forever.
+  `observe` checks the host first and fails at once with `NestedWindowHidden`;
+  `wait stable --pixels` and other timeouts in a nested session report the same
+  code when the window turns out to be hidden. Keyboard input is still delivered
+  while hidden; only rendering and capture stop. Keep the window on a visible
+  workspace (or a shown special workspace). hyprhand never moves it: ask the user.
+- **Size.** The nested output follows the window's size. Tiling changes, floating
+  or resizing it change the monitor geometry (for example 945x1022 to 1280x960),
+  and every frame taken before is rejected with `StaleObservation`. Observe again
+  after any layout change on the host.
+- **Closing.** Closing the window does not stop the nested compositor; see
+  [liveness](#liveness).
+
 ## Environment and isolation
 
 - Generated configurations are independent of your personal Hyprland config.
@@ -75,9 +117,26 @@ choose the class observed in your actual session.
   overrides are rejected. Generic applications may still reuse another process;
   verify the actual window and PID.
 - The private bus does not activate host systemd user services or portals.
-  Desktop integration and portal-based file pickers may not work.
+  Desktop integration and portal-based file pickers may not work. See
+  [saving files](#saving-files).
 - An explicitly selected headless library is preloaded only into the newly
   created compositor, not hyprhand's bus, registry, or launched applications.
+
+### Saving files
+
+Without an `xdg-desktop-portal` on the session bus, Chromium-family browsers fall
+back to their in-process GTK 3 file chooser. It opens as a separate window in the
+session (often floating over the browser), starting in `~/Downloads`: `HOME` is
+shared with your desktop. The session's private `XDG_CONFIG_HOME` has no
+`user-dirs.dirs`, so a localized download folder of the desktop is not used.
+
+To save to a chosen place, focus the chooser window, select the **Name** field
+(`ctrl+a`), type an absolute path such as `/tmp/agent-output/report.csv`, and click
+**Save** in a fresh frame. On the recorded Brave/GTK 3.24 stack, Enter in that
+field did not confirm the dialog through either keyboard backend; Escape cancels
+it. Then verify the file on disk: `status: sent` never proves a download finished.
+Earlier builds sent a `key Return` on the Escape key position, which this chooser
+treated as Cancel: the download was recorded as cancelled and no file appeared.
 
 **This is not a security sandbox.** Files, credentials, network, user permissions,
 and potentially other services remain accessible. Do not treat managed sessions
@@ -99,7 +158,10 @@ applications and authorization unchanged. See [preview](preview.md).
 applications, AT-SPI registry, bus, and descendants still attributable to them.
 Launch and destruction share a lifecycle lock. Cleanup validates UID, PID, and
 start time using pidfd and applies bounded TERM/KILL handling. It does not kill
-by username or blindly by process group. Descendants that detach and can no
+by username or blindly by process group. `destroy` also succeeds when the
+compositor is already gone, and a process that cannot be frozen in time (stuck in
+a driver, or held by a crash reporter's ptrace stop) no longer aborts it; such a
+process is still terminated with the rest of the tree. Descendants that detach and can no
 longer be attributed after their recorded parent exits cannot safely be reclaimed.
 
 Profiles and logs remain at the path reported by `profiles_and_logs_retained`,
