@@ -51,7 +51,7 @@ the result before deciding what action is still needed.
 | `WaitTimeout` | Requested state did not become true within the total deadline; check exact class/address/workspace and application behavior |
 | `CommandTimeout` from `observe` | A slow compositor did not deliver a frame in time. `observe --retry 2` retries timeouts and stale frames with a 0.7 s pause |
 | `CommandTimeout`, `Cancelled` | Inspect the application for partial delivery. Native owned-input cleanup runs for ordinary cancellation; completed effects are not undone |
-| Empty AT-SPI tree | Bus/registry or app accessibility may be unavailable. Inspect the correct session; custom controls may expose no nodes. Chromium needs `ACCESSIBILITY_ENABLED=1`, which `launch` sets; a browser started another way shows no web nodes |
+| Empty AT-SPI tree | Bus/registry or app accessibility may be unavailable. Inspect the correct session; custom controls may expose no nodes. Chromium needs both `--force-renderer-accessibility` and `ACCESSIBILITY_ENABLED=1`, which `launch` sets; a browser started another way shows no web nodes |
 
 ## Unexpected target or geometry changes
 

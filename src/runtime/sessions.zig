@@ -1025,10 +1025,14 @@ fn browser_arguments(
             "--user-data-dir={s}/browser-profile",
             .{directory},
         );
+        // Chromium builds its web accessibility tree only with this flag; the
+        // ACCESSIBILITY_ENABLED variable set in `launch` exposes it over AT-SPI.
+        // Either one alone leaves `accessibility` with an empty web view.
         try argv.appendSlice(allocator, &.{
             profile_option,
             "--ozone-platform=wayland",
             "--no-first-run",
+            "--force-renderer-accessibility",
         });
     } else if (std.mem.indexOf(u8, program, "firefox") != null) {
         for (extra) |argument| {
@@ -1079,7 +1083,7 @@ pub fn launch(runtime: *Runtime, arguments: Args) !void {
     var environment = runtime.env;
     if (is_chromium(program_name)) {
         // Chromium exposes its AT-SPI tree only when it believes an assistive
-        // technology is active; otherwise `accessibility` sees no web content.
+        // technology is active; see `browser_arguments` for the matching flag.
         const copy = try runtime.allocator.create(std.process.Environ.Map);
         copy.* = try runtime.env.clone(runtime.allocator);
         try copy.put("ACCESSIBILITY_ENABLED", "1");
