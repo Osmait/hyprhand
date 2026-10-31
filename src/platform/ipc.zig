@@ -11,8 +11,8 @@ pub const Options = struct {
 
 fn ready(fd: c_int, events: c_short, deadline: i64, cancellable: bool) !bool {
     while (true) {
-        if (cancellable) try native.checkCancelled();
-        const remaining = deadline - native.nowMs();
+        if (cancellable) try native.check_cancelled();
+        const remaining = deadline - native.now_ms();
         if (remaining <= 0) return false;
         var pfd = c.struct_pollfd{ .fd = fd, .events = events, .revents = 0 };
         const result = c.poll(&pfd, 1, @intCast(@min(50, remaining)));
@@ -26,11 +26,11 @@ fn ready(fd: c_int, events: c_short, deadline: i64, cancellable: bool) !bool {
 }
 
 pub fn connect(path: []const u8) !c_int {
-    return connectUntil(path, native.nowMs() + 3000, true);
+    return connect_until(path, native.now_ms() + 3000, true);
 }
 
-fn connectUntil(path: []const u8, deadline: i64, cancellable: bool) !c_int {
-    if (cancellable) try native.checkCancelled();
+fn connect_until(path: []const u8, deadline: i64, cancellable: bool) !c_int {
+    if (cancellable) try native.check_cancelled();
     var addr = std.mem.zeroes(c.struct_sockaddr_un);
     if (path.len >= addr.sun_path.len) return error.SocketPathTooLong;
     if (path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null) return error.InvalidSocketPath;
@@ -50,15 +50,15 @@ fn connectUntil(path: []const u8, deadline: i64, cancellable: bool) !c_int {
     return fd;
 }
 
-pub fn request(a: std.mem.Allocator, path: []const u8, command: []const u8) ![]const u8 {
-    return requestWithOptions(a, path, command, .{});
+pub fn request(allocator: std.mem.Allocator, path: []const u8, command: []const u8) ![]const u8 {
+    return request_with_options(allocator, path, command, .{});
 }
 
-pub fn requestWithOptions(a: std.mem.Allocator, path: []const u8, command: []const u8, options: Options) ![]const u8 {
+pub fn request_with_options(allocator: std.mem.Allocator, path: []const u8, command: []const u8, options: Options) ![]const u8 {
     // One monotonic budget for connect, send and the entire reply. A peer
     // trickling bytes must not keep refreshing a per-read timeout forever.
-    const deadline = native.nowMs() + if (options.cancellable) try native.remainingMs(options.timeout_ms) else options.timeout_ms;
-    const fd = try connectUntil(path, deadline, options.cancellable);
+    const deadline = native.now_ms() + if (options.cancellable) try native.remaining_ms(options.timeout_ms) else options.timeout_ms;
+    const fd = try connect_until(path, deadline, options.cancellable);
     defer _ = c.close(fd);
     var sent: usize = 0;
     while (sent < command.len) {
@@ -69,7 +69,7 @@ pub fn requestWithOptions(a: std.mem.Allocator, path: []const u8, command: []con
         sent += @intCast(n);
     }
     var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(a);
+    errdefer out.deinit(allocator);
     var buf: [8192]u8 = undefined;
     while (true) {
         if (!try ready(fd, c.POLLIN, deadline, options.cancellable)) return error.IpcReadTimeout;
@@ -78,8 +78,8 @@ pub fn requestWithOptions(a: std.mem.Allocator, path: []const u8, command: []con
         if (n < 0) return error.IpcReadFailed;
         if (n == 0) break;
         if (out.items.len + @as(usize, @intCast(n)) > max_reply_bytes) return error.ReplyTooLarge;
-        try out.appendSlice(a, buf[0..@intCast(n)]);
+        try out.appendSlice(allocator, buf[0..@intCast(n)]);
     }
     if (out.items.len == 0) return error.EmptyReply;
-    return out.toOwnedSlice(a);
+    return out.toOwnedSlice(allocator);
 }

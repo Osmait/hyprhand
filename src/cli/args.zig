@@ -58,21 +58,21 @@ pub const Args = struct {
         };
     }
     /// The viewer launcher and the workers it spawns.
-    pub fn isPreview(self: Args) bool {
-        return self.command == .preview or self.isPreviewWorker();
+    pub fn is_preview(self: Args) bool {
+        return self.command == .preview or self.is_preview_worker();
     }
-    pub fn isPreviewWorker(self: Args) bool {
+    pub fn is_preview_worker(self: Args) bool {
         return switch (self.command) {
             ._preview_frame, ._preview_stop, ._preview_stream => true,
             else => false,
         };
     }
-    pub fn isAccessibility(self: Args) bool {
+    pub fn is_accessibility(self: Args) bool {
         return self.command == .accessibility or self.command == ._a11y;
     }
 };
 
-pub fn validName(name: []const u8) bool {
+pub fn valid_name(name: []const u8) bool {
     if (name.len == 0 or name.len > 32 or !std.ascii.isAlphabetic(name[0])) return false;
     for (name) |ch| if (!std.ascii.isAlphanumeric(ch) and ch != '-' and ch != '_') return false;
     return true;
@@ -92,23 +92,23 @@ fn only(comptime commands: []const Command) Allowed {
         }
     }.check;
 }
-fn pointerOnly(a: Args) bool {
+fn pointer_only(a: Args) bool {
     return a.pointer();
 }
-fn dryRunnable(a: Args) bool {
+fn dry_runnable(a: Args) bool {
     return a.mutates() or a.command == .gc;
 }
 fn windowed(a: Args) bool {
-    return a.pointer() or a.isAccessibility() or only(&.{ .type, .key, .wait })(a);
+    return a.pointer() or a.is_accessibility() or only(&.{ .type, .key, .wait })(a);
 }
 fn timed(a: Args) bool {
-    return a.isAccessibility() or only(&.{ .wait, .events })(a);
+    return a.is_accessibility() or only(&.{ .wait, .events })(a);
 }
 fn limited(a: Args) bool {
-    return a.isAccessibility() or only(&.{ .logs, .events })(a);
+    return a.is_accessibility() or only(&.{ .logs, .events })(a);
 }
-fn accessibilityOnly(a: Args) bool {
-    return a.isAccessibility();
+fn accessibility_only(a: Args) bool {
+    return a.is_accessibility();
 }
 
 /// One CLI option. The value is parsed according to the Args field type:
@@ -124,7 +124,7 @@ const options = [_]Option{
     .{ .name = "--session", .field = "session", .allowed = always },
     .{ .name = "--indicator", .field = "indicator", .allowed = only(&.{.enable}) },
     .{ .name = "--headless-bridge", .field = "headless_bridge", .allowed = only(&.{.session}) },
-    .{ .name = "--dry-run", .field = "dry_run", .allowed = dryRunnable },
+    .{ .name = "--dry-run", .field = "dry_run", .allowed = dry_runnable },
     .{ .name = "--monitor", .field = "monitor", .allowed = only(&.{ .observe, .wait, .preview, ._preview_frame, ._preview_stream }) },
     .{ .name = "--fps", .field = "fps", .allowed = only(&.{.preview}) },
     .{ .name = "--expected-instance", .field = "expected_instance", .allowed = only(&.{ ._preview_frame, ._preview_stop, ._preview_stream }) },
@@ -133,11 +133,11 @@ const options = [_]Option{
     .{ .name = "--scroll-mode", .field = "scroll_mode", .allowed = only(&.{.scroll}) },
     .{ .name = "--class", .field = "class", .allowed = only(&.{.wait}) },
     .{ .name = "--workspace", .field = "workspace_id", .allowed = only(&.{.wait}) },
-    .{ .name = "--frame", .field = "frame", .allowed = pointerOnly },
-    .{ .name = "--x", .field = "x", .allowed = pointerOnly },
-    .{ .name = "--y", .field = "y", .allowed = pointerOnly },
-    .{ .name = "--move-duration-ms", .field = "move_duration_ms", .allowed = pointerOnly },
-    .{ .name = "--no-aura", .field = "no_aura", .allowed = pointerOnly },
+    .{ .name = "--frame", .field = "frame", .allowed = pointer_only },
+    .{ .name = "--x", .field = "x", .allowed = pointer_only },
+    .{ .name = "--y", .field = "y", .allowed = pointer_only },
+    .{ .name = "--move-duration-ms", .field = "move_duration_ms", .allowed = pointer_only },
+    .{ .name = "--no-aura", .field = "no_aura", .allowed = pointer_only },
     .{ .name = "--to-x", .field = "to_x", .allowed = only(&.{.drag}) },
     .{ .name = "--to-y", .field = "to_y", .allowed = only(&.{.drag}) },
     .{ .name = "--duration-ms", .field = "duration_ms", .allowed = only(&.{ .drag, .scroll }) },
@@ -149,7 +149,7 @@ const options = [_]Option{
     .{ .name = "--stable-ms", .field = "stable_ms", .allowed = only(&.{.wait}) },
     .{ .name = "--pixels", .field = "pixels", .allowed = only(&.{.wait}) },
     .{ .name = "--limit", .field = "limit", .allowed = limited },
-    .{ .name = "--depth", .field = "depth", .allowed = accessibilityOnly },
+    .{ .name = "--depth", .field = "depth", .allowed = accessibility_only },
     .{ .name = "--older-than-ms", .field = "older_than_ms", .allowed = only(&.{.gc}) },
     .{ .name = "--nested", .field = "nested", .allowed = only(&.{.session}) },
     .{ .name = "--lua", .field = "lua", .allowed = only(&.{.session}) },
@@ -175,7 +175,7 @@ fn assign(a: *Args, comptime option: Option, argv: []const []const u8, index: *u
     if (index.* >= argv.len) return error.MissingOptionValue;
     const raw = argv[index.*];
     if (option.kind == .button) {
-        @field(a, option.field) = buttons.fromName(raw) orelse return error.InvalidButton;
+        @field(a, option.field) = buttons.from_name(raw) orelse return error.InvalidButton;
         return;
     }
     @field(a, option.field) = switch (@typeInfo(Value)) {
@@ -228,17 +228,17 @@ pub fn parse(argv: []const []const u8) !Args {
         if (!matched) return error.UnknownOption;
         if (eq(arg, "--session")) a.explicit_session = true;
     }
-    try validateValues(a);
-    try validateShape(a);
+    try validate_values(a);
+    try validate_shape(a);
     return a;
 }
 
 /// Ranges and enumerations, independent of the command.
-fn validateValues(a: Args) !void {
-    if (!validName(a.session)) return error.InvalidSessionName;
-    if (!text.oneOf(a.scroll_mode, &.{ "auto", "wheel", "continuous" })) return error.InvalidScrollMode;
-    if (!text.oneOf(a.indicator, &.{ "none", "outline" })) return error.InvalidIndicator;
-    if (!text.oneOf(a.backend, &.{ "auto", "native", "helper" })) return error.InvalidBackend;
+fn validate_values(a: Args) !void {
+    if (!valid_name(a.session)) return error.InvalidSessionName;
+    if (!text.one_of(a.scroll_mode, &.{ "auto", "wheel", "continuous" })) return error.InvalidScrollMode;
+    if (!text.one_of(a.indicator, &.{ "none", "outline" })) return error.InvalidIndicator;
+    if (!text.one_of(a.backend, &.{ "auto", "native", "helper" })) return error.InvalidBackend;
     if (a.headless_bridge) |path| {
         if (!std.fs.path.isAbsolute(path) or std.mem.indexOfAny(u8, path, " :\t\r\n\x00") != null or a.nested) return error.InvalidHeadlessBridge;
     }
@@ -257,13 +257,13 @@ fn validateValues(a: Args) !void {
 }
 
 /// Required arguments and option combinations for the chosen command.
-fn validateShape(a: Args) !void {
+fn validate_shape(a: Args) !void {
     if (a.mutates() and !a.explicit_session) return error.SessionRequired;
-    if (a.isPreview()) {
+    if (a.is_preview()) {
         if (!a.explicit_session) return error.SessionRequired;
         if (eq(a.session, "host")) return error.PreviewManagedSessionRequired;
         const identity = a.expected_instance orelse "";
-        if (a.isPreviewWorker() and identity.len == 0) return error.PreviewIdentityRequired;
+        if (a.is_preview_worker() and identity.len == 0) return error.PreviewIdentityRequired;
         if ((a.command == ._preview_frame or a.command == ._preview_stream) and a.monitor == null) return error.MonitorRequired;
     }
     if (a.pointer() and (a.frame == null or a.x == null or a.y == null)) return error.FrameCoordinatesRequired;
@@ -276,8 +276,8 @@ fn validateShape(a: Args) !void {
         .session => {
             const verb = a.value orelse return error.MissingArgument;
             const name = a.name orelse return error.MissingArgument;
-            if (!validName(name) or eq(name, "host")) return error.InvalidSessionName;
-            if (!text.oneOf(verb, &.{ "create", "inspect", "destroy" })) return error.UnknownSessionCommand;
+            if (!valid_name(name) or eq(name, "host")) return error.InvalidSessionName;
+            if (!text.one_of(verb, &.{ "create", "inspect", "destroy" })) return error.UnknownSessionCommand;
             if ((a.nested or a.lua or a.headless_bridge != null) and !eq(verb, "create")) return error.UnknownOption;
         },
         else => {},

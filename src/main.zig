@@ -34,39 +34,39 @@ const Doctor = struct {
     xkb_data: bool,
     enabled: bool,
 
-    fn probe(rt: *Runtime) !Doctor {
+    fn probe(runtime: *Runtime) !Doctor {
         var pointer: Pointer = undefined;
         const pointer_available = blk: {
-            pointer.init(try rt.displayPath()) catch break :blk false;
+            pointer.init(try runtime.display_path()) catch break :blk false;
             pointer.deinit();
             break :blk true;
         };
         var keyboard: Keyboard = undefined;
         const keyboard_available = blk: {
-            keyboard.init(try rt.displayPath()) catch break :blk false;
+            keyboard.init(try runtime.display_path()) catch break :blk false;
             keyboard.deinit();
             break :blk true;
         };
         const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, c.getpid(), @as(c_uint, 0)));
         if (pidfd >= 0) _ = c.close(pidfd);
         return .{
-            .display_matches = if (rt.validateDisplay()) true else |_| false,
+            .display_matches = if (runtime.validate_display()) true else |_| false,
             .pointer_available = pointer_available,
             .keyboard_available = keyboard_available,
-            .grim = try rt.executable("grim"),
-            .wtype = try rt.executable("wtype"),
-            .xdotool = try rt.executable("xdotool"),
-            .hyprland = try rt.executable("Hyprland"),
-            .dbus_daemon = try rt.executable("dbus-daemon"),
+            .grim = try runtime.executable("grim"),
+            .wtype = try runtime.executable("wtype"),
+            .xdotool = try runtime.executable("xdotool"),
+            .hyprland = try runtime.executable("Hyprland"),
+            .dbus_daemon = try runtime.executable("dbus-daemon"),
             .registry = c.access("/usr/lib/at-spi2-registryd", c.X_OK) == 0 or c.access("/usr/libexec/at-spi2-registryd", c.X_OK) == 0,
-            .bus_configured = if (rt.env.get("DBUS_SESSION_BUS_ADDRESS")) |address| address.len != 0 else false,
+            .bus_configured = if (runtime.env.get("DBUS_SESSION_BUS_ADDRESS")) |address| address.len != 0 else false,
             .pidfd_available = pidfd >= 0,
-            .xkb_data = hostKeymapCompiles(),
-            .enabled = if (rt.token()) |_| true else |_| false,
+            .xkb_data = host_keymap_compiles(),
+            .enabled = if (runtime.token()) |_| true else |_| false,
         };
     }
 
-    fn hostKeymapCompiles() bool {
+    fn host_keymap_compiles() bool {
         const context = c.xkb_context_new(c.XKB_CONTEXT_NO_FLAGS) orelse return false;
         defer c.xkb_context_unref(context);
         const map = c.xkb_keymap_new_from_names(context, null, c.XKB_KEYMAP_COMPILE_NO_FLAGS) orelse return false;
@@ -75,20 +75,20 @@ const Doctor = struct {
     }
 };
 
-fn doctor(rt: *Runtime) !void {
-    const hyprland_version = try rt.queryJson(std.json.Value, "version");
-    const provider = try rt.configProvider();
-    const d = try Doctor.probe(rt);
+fn doctor(runtime: *Runtime) !void {
+    const hyprland_version = try runtime.query_json(std.json.Value, "version");
+    const provider = try runtime.config_provider();
+    const d = try Doctor.probe(runtime);
     const capture = d.grim and d.display_matches;
     const managed_sessions = d.hyprland and d.dbus_daemon and d.pidfd_available and d.display_matches;
-    try rt.emit(.{
+    try runtime.emit(.{
         .ok = true,
         .version = version.string,
         .hyprland = hyprland_version,
         .config_provider = provider,
-        .session_id = rt.session_id,
-        .instance = rt.instance,
-        .wayland_display = rt.display,
+        .session_id = runtime.session_id,
+        .instance = runtime.instance,
+        .wayland_display = runtime.display,
         .display_matches = d.display_matches,
         .dependencies = .{
             .grim = d.grim,
@@ -119,77 +119,77 @@ fn doctor(rt: *Runtime) !void {
         },
         .verification_note = "Read-only prerequisite/protocol probes; no input, capture, accessibility request or compositor startup performed. operation_verified=false means not tested, not a demonstrated failure.",
         .control_enabled = d.enabled,
-        .shared_cursor = rt.isHost(),
-        .state_directory = rt.directory,
+        .shared_cursor = runtime.is_host(),
+        .state_directory = runtime.directory,
     });
 }
 
-fn state(rt: *Runtime) !void {
-    try rt.emit(.{
+fn state(runtime: *Runtime) !void {
+    try runtime.emit(.{
         .ok = true,
-        .session_id = rt.session_id,
-        .monitors = try rt.queryJson(std.json.Value, "monitors"),
-        .windows = try rt.queryJson(std.json.Value, "clients"),
-        .workspaces = try rt.queryJson(std.json.Value, "workspaces"),
-        .active_window = try rt.queryJson(std.json.Value, "activewindow"),
-        .cursor = try rt.queryJson(std.json.Value, "cursorpos"),
+        .session_id = runtime.session_id,
+        .monitors = try runtime.query_json(std.json.Value, "monitors"),
+        .windows = try runtime.query_json(std.json.Value, "clients"),
+        .workspaces = try runtime.query_json(std.json.Value, "workspaces"),
+        .active_window = try runtime.query_json(std.json.Value, "activewindow"),
+        .cursor = try runtime.query_json(std.json.Value, "cursorpos"),
     });
 }
 
 /// Runs one mutating command with an audit-log entry before and after it.
-fn audited(rt: *Runtime, opt: args.Args) !void {
-    const action = @tagName(opt.command);
-    try operations.log(rt, action, if (opt.dry_run) "dry_run" else "started");
-    actions.run(rt, opt) catch |err| {
-        operations.log(rt, action, @errorName(err)) catch {};
+fn audited(runtime: *Runtime, arguments: args.Args) !void {
+    const action = @tagName(arguments.command);
+    try operations.log(runtime, action, if (arguments.dry_run) "dry_run" else "started");
+    actions.run(runtime, arguments) catch |err| {
+        operations.log(runtime, action, @errorName(err)) catch {};
         return err;
     };
-    operations.log(rt, action, "completed") catch {};
+    operations.log(runtime, action, "completed") catch {};
 }
 
-fn execute(init: std.process.Init, opt: args.Args) !void {
+fn execute(init: std.process.Init, arguments: args.Args) !void {
     // Long-lived viewers/events and session lifecycle use their own budgets.
     // Ordinary composite commands share one budget across all IPC and helpers.
-    switch (opt.command) {
-        .wait => native.limitCommand(opt.timeout_ms, error.WaitTimeout),
-        .doctor, .state, .monitors, .windows, .workspaces, .observe => native.limitCommand(10_000, error.CommandTimeout),
-        .type => native.limitCommand(300_000, error.CommandTimeout),
-        .focus, .workspace, .key, .move, .click, .doubleclick, .drag, .scroll => native.limitCommand(30_000, error.CommandTimeout),
-        ._preview_frame => native.limitCommand(2000, error.HelperTimeout),
+    switch (arguments.command) {
+        .wait => native.limit_command(arguments.timeout_ms, error.WaitTimeout),
+        .doctor, .state, .monitors, .windows, .workspaces, .observe => native.limit_command(10_000, error.CommandTimeout),
+        .type => native.limit_command(300_000, error.CommandTimeout),
+        .focus, .workspace, .key, .move, .click, .doubleclick, .drag, .scroll => native.limit_command(30_000, error.CommandTimeout),
+        ._preview_frame => native.limit_command(2000, error.HelperTimeout),
         else => {},
     }
-    if (opt.isPreviewWorker()) {
+    if (arguments.is_preview_worker()) {
         // If a viewer is killed unexpectedly, cancel its worker and let the
         // existing child cleanup reap grim. No detached capture loop remains.
         if (c.prctl(c.PR_SET_PDEATHSIG, c.SIGTERM, @as(c_ulong, 0), @as(c_ulong, 0), @as(c_ulong, 0)) < 0 or c.getppid() == 1) return error.Cancelled;
     }
-    var rt = try Runtime.init(init);
-    switch (opt.command) {
-        .session => return sessions.command(&rt, opt),
-        .sessions => return sessions.list(&rt),
-        .preview => return preview.launch(&rt, opt),
-        ._preview_stream => return preview.stream(&rt, opt),
+    var runtime = try Runtime.init(init);
+    switch (arguments.command) {
+        .session => return sessions.command(&runtime, arguments),
+        .sessions => return sessions.list(&runtime),
+        .preview => return preview.launch(&runtime, arguments),
+        ._preview_stream => return preview.stream(&runtime, arguments),
         else => {},
     }
-    try sessions.route(&rt, opt.session);
-    if (opt.mutates()) return audited(&rt, opt);
-    switch (opt.command) {
-        .doctor => try doctor(&rt),
-        .state => try state(&rt),
-        .monitors => try rt.emit(.{ .ok = true, .session_id = rt.session_id, .data = try rt.queryJson(std.json.Value, "monitors") }),
-        .windows => try rt.emit(.{ .ok = true, .session_id = rt.session_id, .data = try rt.queryJson(std.json.Value, "clients") }),
-        .workspaces => try rt.emit(.{ .ok = true, .session_id = rt.session_id, .data = try rt.queryJson(std.json.Value, "workspaces") }),
-        .observe => try observation.observe(&rt, opt),
-        .enable => try rt.enable(opt.indicator),
-        .stop => try rt.stop(),
-        .wait => try wait.run(&rt, opt),
-        .events => try operations.events(&rt, opt),
-        .logs => try operations.logs(&rt, opt),
-        .gc => try operations.collect(&rt, opt, true),
-        .accessibility => try accessibility.tree(&rt, opt),
-        ._a11y => try accessibility.worker(&rt, opt),
-        ._cursor_probe => try cursor_capture.probe(&rt),
-        ._preview_frame, ._preview_stop => try preview.worker(&rt, opt),
+    try sessions.route(&runtime, arguments.session);
+    if (arguments.mutates()) return audited(&runtime, arguments);
+    switch (arguments.command) {
+        .doctor => try doctor(&runtime),
+        .state => try state(&runtime),
+        .monitors => try runtime.emit(.{ .ok = true, .session_id = runtime.session_id, .data = try runtime.query_json(std.json.Value, "monitors") }),
+        .windows => try runtime.emit(.{ .ok = true, .session_id = runtime.session_id, .data = try runtime.query_json(std.json.Value, "clients") }),
+        .workspaces => try runtime.emit(.{ .ok = true, .session_id = runtime.session_id, .data = try runtime.query_json(std.json.Value, "workspaces") }),
+        .observe => try observation.observe(&runtime, arguments),
+        .enable => try runtime.enable(arguments.indicator),
+        .stop => try runtime.stop(),
+        .wait => try wait.run(&runtime, arguments),
+        .events => try operations.events(&runtime, arguments),
+        .logs => try operations.logs(&runtime, arguments),
+        .gc => try operations.collect(&runtime, arguments, true),
+        .accessibility => try accessibility.tree(&runtime, arguments),
+        ._a11y => try accessibility.worker(&runtime, arguments),
+        ._cursor_probe => try cursor_capture.probe(&runtime),
+        ._preview_frame, ._preview_stop => try preview.worker(&runtime, arguments),
         else => return error.CommandNotImplemented,
     }
 }
@@ -249,11 +249,11 @@ pub fn main(init: std.process.Init) void {
         std.Io.File.stdout().writeStreamingAll(init.io, "hyprhand " ++ version.string ++ "\n") catch {};
         return;
     }
-    const opt = args.parse(argv[1..]) catch |err| {
+    const arguments = args.parse(argv[1..]) catch |err| {
         report(init, err);
         std.process.exit(2);
     };
-    execute(init, opt) catch |err| {
+    execute(init, arguments) catch |err| {
         report(init, err);
         std.process.exit(1);
     };

@@ -64,25 +64,25 @@ fn label(text: [*:0]const u8) void {
 // Observe the whole window, including controls, so crossing an overlay does not
 // flicker. Reveal before GTK moves keyboard focus: transparent containers may
 // otherwise be skipped during Tab navigation.
-fn updateControls() void {
+fn update_controls() void {
     const visible = c.gtk_event_controller_motion_contains_pointer(state.motion) != 0 or state.keyboard_controls;
     if (visible == state.controls_visible) return;
     state.controls_visible = visible;
     const widget: *c.GtkWidget = @ptrCast(state.window);
     if (visible) c.gtk_widget_add_css_class(widget, "controls-visible") else c.gtk_widget_remove_css_class(widget, "controls-visible");
 }
-fn pointerChanged(_: ?*c.GObject, _: ?*c.GParamSpec, _: ?*anyopaque) callconv(.c) void {
+fn pointer_changed(_: ?*c.GObject, _: ?*c.GParamSpec, _: ?*anyopaque) callconv(.c) void {
     state.keyboard_controls = false;
-    updateControls();
+    update_controls();
 }
-fn activeChanged(_: ?*c.GObject, _: ?*c.GParamSpec, _: ?*anyopaque) callconv(.c) void {
+fn active_changed(_: ?*c.GObject, _: ?*c.GParamSpec, _: ?*anyopaque) callconv(.c) void {
     if (c.gtk_window_is_active(state.window) == 0) state.keyboard_controls = false;
-    updateControls();
+    update_controls();
 }
-fn keyPressed(_: ?*c.GtkEventControllerKey, keyval: c_uint, _: c_uint, _: c.GdkModifierType, _: ?*anyopaque) callconv(.c) c_int {
+fn key_pressed(_: ?*c.GtkEventControllerKey, keyval: c_uint, _: c_uint, _: c.GdkModifierType, _: ?*anyopaque) callconv(.c) c_int {
     if (keyval == c.GDK_KEY_Tab or keyval == c.GDK_KEY_ISO_Left_Tab) {
         state.keyboard_controls = true;
-        updateControls();
+        update_controls();
     }
     return 0; // GTK still handles native focus traversal; no input forwarding.
 }
@@ -130,7 +130,7 @@ fn retire() void {
     }
 }
 
-fn frameDone(_: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callconv(.c) void {
+fn frame_done(_: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callconv(.c) void {
     const job: *Job = @ptrCast(@alignCast(c.g_task_get_task_data(@ptrCast(result.?)).?));
     state.frame_busy = false;
     c.g_object_unref(state.frame_cancel.?);
@@ -164,12 +164,12 @@ fn frameDone(_: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callconv(
     label(if (state.stop_process != null) "Stopping input…" else if (state.stop_failed) "Could not stop input · Try again" else if (enabled) "● Live · Input enabled" else "● Live · Input stopped");
 }
 
-fn requestFrame() void {
+fn request_frame() void {
     if (state.frame_process == null) state.frame_process = spawn("_preview_stream", true);
     if (state.frame_process) |process| {
         state.capture_started = now();
         state.frame_cancel = c.g_cancellable_new();
-        Job.start(process, state.png, state.frame_cancel.?, frameDone) catch {
+        Job.start(process, state.png, state.frame_cancel.?, frame_done) catch {
             c.g_object_unref(state.frame_cancel.?);
             state.frame_cancel = null;
             retire();
@@ -183,7 +183,7 @@ fn requestFrame() void {
     }
 }
 
-fn afterPaint(clock: ?*c.GdkFrameClock, _: ?*anyopaque) callconv(.c) void {
+fn after_paint(clock: ?*c.GdkFrameClock, _: ?*anyopaque) callconv(.c) void {
     if (state.paint_pending) |captured| {
         state.paint_pending = null;
         state.painted += 1;
@@ -258,11 +258,11 @@ fn tick(_: ?*anyopaque) callconv(.c) c_int {
     if (state.last_frame != 0 and now() - state.last_frame > protocol.max_age_ms) lost();
     if (state.frame_busy) {
         if (now() - state.capture_started > 2500) retire();
-    } else if (state.retiring_at == 0 and now() >= state.retry_after) requestFrame();
+    } else if (state.retiring_at == 0 and now() >= state.retry_after) request_frame();
     return c.G_SOURCE_CONTINUE;
 }
 
-fn stopDone(object: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callconv(.c) void {
+fn stop_done(object: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callconv(.c) void {
     const process: *c.GSubprocess = @ptrCast(object.?);
     defer c.g_object_unref(process);
     state.stop_process = null;
@@ -277,7 +277,7 @@ fn stopDone(object: ?*c.GObject, result: ?*c.GAsyncResult, _: ?*anyopaque) callc
     label(if (state.stop_failed) "Could not stop input · Try again" else "Input stopped · Applications remain open");
 }
 
-fn stopClicked(_: ?*c.GtkButton, _: ?*anyopaque) callconv(.c) void {
+fn stop_clicked(_: ?*c.GtkButton, _: ?*anyopaque) callconv(.c) void {
     if (state.stop_process != null or state.closing) return;
     state.stop_failed = false;
     state.stop_confirmed = false;
@@ -286,7 +286,7 @@ fn stopClicked(_: ?*c.GtkButton, _: ?*anyopaque) callconv(.c) void {
     state.stop_process = spawn("_preview_stop", false);
     state.stop_started = now();
     if (state.stop_process) |process| {
-        c.g_subprocess_wait_async(process, null, stopDone, null);
+        c.g_subprocess_wait_async(process, null, stop_done, null);
     } else {
         state.stop_failed = true;
         label("Could not stop input · Try again");
@@ -301,14 +301,14 @@ fn quit(_: ?*anyopaque) callconv(.c) c_int {
     retire();
     return c.G_SOURCE_CONTINUE;
 }
-fn closeRequested(_: ?*c.GtkWindow, _: ?*anyopaque) callconv(.c) c_int {
+fn close_requested(_: ?*c.GtkWindow, _: ?*anyopaque) callconv(.c) c_int {
     _ = quit(null);
     return 1;
 }
-fn closeClicked(_: ?*c.GtkButton, _: ?*anyopaque) callconv(.c) void {
+fn close_clicked(_: ?*c.GtkButton, _: ?*anyopaque) callconv(.c) void {
     _ = quit(null);
 }
-fn drawGrip(_: ?*c.GtkDrawingArea, cr: ?*c.cairo_t, _: c_int, _: c_int, _: ?*anyopaque) callconv(.c) void {
+fn draw_grip(_: ?*c.GtkDrawingArea, cr: ?*c.cairo_t, _: c_int, _: c_int, _: ?*anyopaque) callconv(.c) void {
     c.cairo_set_source_rgba(cr, 1, 1, 1, 0.75);
     c.cairo_set_line_width(cr, 1.5);
     c.cairo_move_to(cr, 9, 23);
@@ -317,7 +317,7 @@ fn drawGrip(_: ?*c.GtkDrawingArea, cr: ?*c.cairo_t, _: c_int, _: c_int, _: ?*any
     c.cairo_line_to(cr, 23, 16);
     c.cairo_stroke(cr);
 }
-fn resizePressed(gesture: ?*c.GtkGestureClick, _: c_int, _: f64, _: f64, data: ?*anyopaque) callconv(.c) void {
+fn resize_pressed(gesture: ?*c.GtkGestureClick, _: c_int, _: f64, _: f64, data: ?*anyopaque) callconv(.c) void {
     const controller: *c.GtkEventController = @ptrCast(gesture.?);
     const event = c.gtk_event_controller_get_current_event(controller) orelse return;
     const device = c.gtk_event_controller_get_current_event_device(controller) orelse return;
@@ -339,9 +339,9 @@ const Ui = struct {
 
 /// Undecorated window: picture, a header with title and close button, and a
 /// footer with status, stop button and a resize grip, all as overlays.
-fn buildUi(a: std.mem.Allocator, session: []const u8) !Ui {
+fn build_ui(allocator: std.mem.Allocator, session: []const u8) !Ui {
     const window: *c.GtkWindow = @ptrCast(c.gtk_window_new());
-    c.gtk_window_set_title(window, try std.fmt.allocPrintSentinel(a, "Hyprhand · {s}", .{session}, 0));
+    c.gtk_window_set_title(window, try std.fmt.allocPrintSentinel(allocator, "Hyprhand · {s}", .{session}, 0));
     c.gtk_window_set_default_size(window, 640, 360);
     c.gtk_widget_set_size_request(@ptrCast(window), 360, 203);
     c.gtk_window_set_decorated(window, 0);
@@ -358,11 +358,11 @@ fn buildUi(a: std.mem.Allocator, session: []const u8) !Ui {
     const header: *c.GtkBox = @ptrCast(c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 12));
     c.gtk_widget_add_css_class(@ptrCast(header), "pip-top");
     c.gtk_widget_set_valign(@ptrCast(header), c.GTK_ALIGN_START);
-    const title: *c.GtkLabel = @ptrCast(c.gtk_label_new(try std.fmt.allocPrintSentinel(a, "{s} · Read-only", .{session}, 0)));
+    const title: *c.GtkLabel = @ptrCast(c.gtk_label_new(try std.fmt.allocPrintSentinel(allocator, "{s} · Read-only", .{session}, 0)));
     c.gtk_label_set_xalign(title, 0);
     c.gtk_label_set_ellipsize(title, c.PANGO_ELLIPSIZE_END);
     c.gtk_widget_set_hexpand(@ptrCast(title), 1);
-    c.gtk_widget_set_tooltip_text(@ptrCast(title), try std.fmt.allocPrintSentinel(a, "{s} · Drag the image to move the viewer", .{session}, 0));
+    c.gtk_widget_set_tooltip_text(@ptrCast(title), try std.fmt.allocPrintSentinel(allocator, "{s} · Drag the image to move the viewer", .{session}, 0));
     const close = c.gtk_button_new_from_icon_name("window-close-symbolic").?;
     c.gtk_widget_add_css_class(close, "pip-close");
     c.gtk_widget_set_tooltip_text(close, "Close viewer (the agent keeps running)");
@@ -388,9 +388,9 @@ fn buildUi(a: std.mem.Allocator, session: []const u8) !Ui {
     c.gtk_widget_set_valign(grip, c.GTK_ALIGN_END);
     c.gtk_widget_set_cursor_from_name(grip, "se-resize");
     c.gtk_widget_set_tooltip_text(grip, "Drag to resize; Hyprland shortcuts also work");
-    c.gtk_drawing_area_set_draw_func(@ptrCast(grip), drawGrip, null, null);
+    c.gtk_drawing_area_set_draw_func(@ptrCast(grip), draw_grip, null, null);
     const resize = c.gtk_gesture_click_new();
-    _ = c.g_signal_connect_data(resize, "pressed", @ptrCast(&resizePressed), window, null, 0);
+    _ = c.g_signal_connect_data(resize, "pressed", @ptrCast(&resize_pressed), window, null, 0);
     c.gtk_widget_add_controller(grip, @ptrCast(resize));
     c.gtk_box_append(footer, grip);
     c.gtk_overlay_add_overlay(overlay, @ptrCast(footer));
@@ -413,7 +413,7 @@ pub fn main(init: std.process.Init) !void {
     c.gtk_css_provider_load_from_string(style, css);
     c.gtk_style_context_add_provider_for_display(c.gdk_display_get_default(), @ptrCast(style), c.GTK_STYLE_PROVIDER_PRIORITY_USER);
     c.g_object_unref(style);
-    const ui = try buildUi(a, argv[2]);
+    const ui = try build_ui(a, argv[2]);
     const motion = c.gtk_event_controller_motion_new();
     c.gtk_widget_add_controller(@ptrCast(ui.window), motion);
     state = .{
@@ -432,15 +432,15 @@ pub fn main(init: std.process.Init) !void {
         .metrics_started = now(),
         .metrics_emitted = now(),
     };
-    _ = c.g_signal_connect_data(motion, "notify::contains-pointer", @ptrCast(&pointerChanged), null, null, 0);
-    _ = c.g_signal_connect_data(ui.window, "notify::is-active", @ptrCast(&activeChanged), null, null, 0);
+    _ = c.g_signal_connect_data(motion, "notify::contains-pointer", @ptrCast(&pointer_changed), null, null, 0);
+    _ = c.g_signal_connect_data(ui.window, "notify::is-active", @ptrCast(&active_changed), null, null, 0);
     const keys = c.gtk_event_controller_key_new();
     c.gtk_event_controller_set_propagation_phase(keys, c.GTK_PHASE_CAPTURE);
-    _ = c.g_signal_connect_data(keys, "key-pressed", @ptrCast(&keyPressed), null, null, 0);
+    _ = c.g_signal_connect_data(keys, "key-pressed", @ptrCast(&key_pressed), null, null, 0);
     c.gtk_widget_add_controller(@ptrCast(ui.window), keys);
-    _ = c.g_signal_connect_data(ui.window, "close-request", @ptrCast(&closeRequested), null, null, 0);
-    _ = c.g_signal_connect_data(ui.stop, "clicked", @ptrCast(&stopClicked), null, null, 0);
-    _ = c.g_signal_connect_data(ui.close, "clicked", @ptrCast(&closeClicked), null, null, 0);
+    _ = c.g_signal_connect_data(ui.window, "close-request", @ptrCast(&close_requested), null, null, 0);
+    _ = c.g_signal_connect_data(ui.stop, "clicked", @ptrCast(&stop_clicked), null, null, 0);
+    _ = c.g_signal_connect_data(ui.close, "clicked", @ptrCast(&close_clicked), null, null, 0);
     const interrupt = c.g_unix_signal_add(c.SIGINT, quit, null);
     const terminate = c.g_unix_signal_add(c.SIGTERM, quit, null);
     const timer = c.g_timeout_add(25, tick, null);
@@ -450,7 +450,7 @@ pub fn main(init: std.process.Init) !void {
         const flags = c.fcntl(c.STDOUT_FILENO, c.F_GETFL);
         if (flags < 0 or c.fcntl(c.STDOUT_FILENO, c.F_SETFL, flags | c.O_NONBLOCK) < 0) state.metrics = false;
         state.clock = c.gtk_widget_get_frame_clock(@ptrCast(ui.window));
-        if (state.clock) |clock| _ = c.g_signal_connect_data(clock, "after-paint", @ptrCast(&afterPaint), null, null, 0);
+        if (state.clock) |clock| _ = c.g_signal_connect_data(clock, "after-paint", @ptrCast(&after_paint), null, null, 0);
     }
     _ = tick(null);
     c.g_main_loop_run(state.loop);

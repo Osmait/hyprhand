@@ -12,9 +12,9 @@ pub fn header(timestamp: i64, enabled: bool) [header_len]u8 {
     return result;
 }
 
-pub fn validatePng(png: []const u8) !void {
+pub fn validate_png(png: []const u8) !void {
     if (png.len > max_bytes) return error.InvalidScreenshot;
-    const size = try geometry.pngSize(png);
+    const size = try geometry.png_size(png);
     if (size.width > 1920 or size.height > 1920 or @as(u64, size.width) * size.height > 2_073_600) return error.InvalidScreenshot;
 }
 
@@ -22,7 +22,7 @@ pub fn decode(bytes: []const u8, now: i64) !struct { png: []const u8, enabled: b
     if (bytes.len < header_len or bytes.len > max_bytes + header_len or !std.mem.eql(u8, bytes[0..4], "DCP1") or bytes[4] > 1) return error.InvalidPreviewFrame;
     const timestamp = std.mem.readInt(i64, bytes[5..13], .little);
     if (timestamp < 0 or timestamp > now or now - timestamp > max_age_ms) return error.StalePreviewFrame;
-    try validatePng(bytes[header_len..]);
+    try validate_png(bytes[header_len..]);
     return .{ .png = bytes[header_len..], .enabled = bytes[4] == 1, .captured_ms = timestamp };
 }
 

@@ -63,7 +63,7 @@ pub const Frame = struct {
     }
 };
 
-pub fn pngSize(header: []const u8) !struct { width: u32, height: u32 } {
+pub fn png_size(header: []const u8) !struct { width: u32, height: u32 } {
     if (header.len < 24 or !std.mem.eql(u8, header[0..8], "\x89PNG\r\n\x1a\n") or !std.mem.eql(u8, header[12..16], "IHDR")) return error.InvalidScreenshot;
     const width = std.mem.readInt(u32, header[16..20], .big);
     const height = std.mem.readInt(u32, header[20..24], .big);

@@ -8,58 +8,58 @@ const observation = @import("../capture/observation.zig");
 const text = @import("../core/text.zig");
 const eq = text.eq;
 
-pub fn run(rt: *Runtime, opt: args.Args) !void {
-    const condition = opt.value.?;
-    if (!text.oneOf(condition, &.{ "stable", "window", "focus", "workspace" })) return error.InvalidWaitCondition;
-    if (eq(condition, "focus") and opt.window == null) return error.WindowRequired;
-    if (eq(condition, "window") and opt.window == null and opt.class == null) return error.WindowRequired;
-    if (eq(condition, "workspace") and opt.workspace_id == null) return error.InvalidWorkspace;
-    try rt.prepare();
-    try rt.validateDisplay();
-    const started = native.nowMs();
+pub fn run(runtime: *Runtime, arguments: args.Args) !void {
+    const condition = arguments.value.?;
+    if (!text.one_of(condition, &.{ "stable", "window", "focus", "workspace" })) return error.InvalidWaitCondition;
+    if (eq(condition, "focus") and arguments.window == null) return error.WindowRequired;
+    if (eq(condition, "window") and arguments.window == null and arguments.class == null) return error.WindowRequired;
+    if (eq(condition, "workspace") and arguments.workspace_id == null) return error.InvalidWorkspace;
+    try runtime.prepare();
+    try runtime.validate_display();
+    const started = native.now_ms();
     var last: ?[32]u8 = null;
     var stable_since = started;
-    const temp = try rt.statePath(try std.fmt.allocPrint(rt.allocator, "wait-{s}.png", .{try rt.randomToken()}));
+    const temp = try runtime.state_path(try std.fmt.allocPrint(runtime.allocator, "wait-{s}.png", .{try runtime.random_token()}));
     defer _ = c.unlink(temp);
-    while (native.nowMs() - started < opt.timeout_ms) {
-        try native.checkCancelled();
+    while (native.now_ms() - started < arguments.timeout_ms) {
+        try native.check_cancelled();
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
-        var scratch = rt.scratch(arena.allocator());
+        var scratch = runtime.scratch(arena.allocator());
         try scratch.unlocked();
-        const state = try observation.snapshot(&scratch, opt.monitor);
+        const state = try observation.snapshot(&scratch, arguments.monitor);
         var satisfied = false;
         if (eq(condition, "stable")) {
             var hash = std.crypto.hash.sha2.Sha256.init(.{});
             hash.update(state.revision);
-            if (opt.pixels) {
-                const monitor = try observation.monitorByName(state, opt.monitor);
-                try scratch.runHelper(&.{ "grim", "-o", monitor.name, temp }, null, false);
-                hash.update(try scratch.readFile(temp, 64 * 1024 * 1024));
+            if (arguments.pixels) {
+                const monitor = try observation.monitor_by_name(state, arguments.monitor);
+                try scratch.run_helper(&.{ "grim", "-o", monitor.name, temp }, null, false);
+                hash.update(try scratch.read_file(temp, 64 * 1024 * 1024));
             }
             const digest = hash.finalResult();
-            if (last == null or !std.mem.eql(u8, &last.?, &digest)) stable_since = native.nowMs();
+            if (last == null or !std.mem.eql(u8, &last.?, &digest)) stable_since = native.now_ms();
             last = digest;
-            satisfied = native.nowMs() - stable_since >= opt.stable_ms;
+            satisfied = native.now_ms() - stable_since >= arguments.stable_ms;
         } else if (eq(condition, "focus")) {
-            satisfied = eq(state.active, opt.window.?);
+            satisfied = eq(state.active, arguments.window.?);
         } else if (eq(condition, "window")) {
             for (state.clients) |client| {
                 if (!client.mapped or client.hidden) continue;
-                if (opt.window) |address| if (!eq(client.address, address)) continue;
-                if (opt.class) |class| if (!eq(client.class, class)) continue;
+                if (arguments.window) |address| if (!eq(client.address, address)) continue;
+                if (arguments.class) |class| if (!eq(client.class, class)) continue;
                 satisfied = true;
                 break;
             }
         } else {
-            const active = try scratch.queryJson(geometry.Workspace, "activeworkspace");
-            satisfied = active.id == opt.workspace_id.?;
+            const active = try scratch.query_json(geometry.Workspace, "activeworkspace");
+            satisfied = active.id == arguments.workspace_id.?;
         }
         if (satisfied) {
-            try rt.emit(.{ .ok = true, .session_id = rt.session_id, .condition = condition, .elapsed_ms = native.nowMs() - started, .pixels = opt.pixels });
+            try runtime.emit(.{ .ok = true, .session_id = runtime.session_id, .condition = condition, .elapsed_ms = native.now_ms() - started, .pixels = arguments.pixels });
             return;
         }
-        try rt.pause(50);
+        try runtime.pause(50);
     }
     return error.WaitTimeout;
 }

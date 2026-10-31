@@ -12,8 +12,8 @@ pub fn terminate(child: *std.process.Child, io: std.Io) void {
         _ = c.close(fd);
     };
     _ = c.kill(pid, c.SIGTERM);
-    const deadline = native.nowMs() + 250;
-    while (fd >= 0 and native.nowMs() < deadline) {
+    const deadline = native.now_ms() + 250;
+    while (fd >= 0 and native.now_ms() < deadline) {
         var pfd = c.struct_pollfd{ .fd = fd, .events = c.POLLIN, .revents = 0 };
         const ready = c.poll(&pfd, 1, 25);
         if (ready > 0) {

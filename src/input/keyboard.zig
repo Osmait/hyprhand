@@ -26,15 +26,15 @@ pub const modifiers = [_]Modifier{
 };
 const chunk_size = 128;
 
-pub fn modifierIndex(name: []const u8) ?usize {
+pub fn modifier_index(name: []const u8) ?usize {
     // "super" is accepted as a synonym of "logo".
-    if (eq(name, "super")) return modifierIndex("logo");
+    if (eq(name, "super")) return modifier_index("logo");
     for (modifiers, 0..) |mod, i| if (eq(name, mod.alias)) return i;
     return null;
 }
 
 // Keep data keys disjoint from the real modifier keycodes in every chunk.
-fn dataKey(index: usize) u32 {
+fn data_key(index: usize) u32 {
     var remaining = index;
     var key: u32 = 1;
     while (true) : (key += 1) {
@@ -57,20 +57,20 @@ pub const Chord = struct {
     mods: [modifiers.len]usize = undefined,
     count: usize = 0,
 
-    pub fn parse(a: std.mem.Allocator, value: []const u8) !Chord {
+    pub fn parse(allocator: std.mem.Allocator, value: []const u8) !Chord {
         var result = Chord{ .symbol = 0 };
         var parts = std.mem.splitScalar(u8, value, '+');
         while (parts.next()) |part| {
             if (part.len == 0) return error.InvalidKeyChord;
             if (parts.peek() != null) {
-                const index = modifierIndex(part) orelse return error.InvalidKeyChord;
+                const index = modifier_index(part) orelse return error.InvalidKeyChord;
                 for (result.mods[0..result.count]) |existing| if (existing == index) return error.InvalidKeyChord;
                 result.mods[result.count] = index;
                 result.count += 1;
             } else {
                 for (part) |ch| if (!std.ascii.isAlphanumeric(ch) and ch != '_') return error.InvalidKeyChord;
-                const name = try a.dupeSentinel(u8, part, 0);
-                defer a.free(name);
+                const name = try allocator.dupeSentinel(u8, part, 0);
+                defer allocator.free(name);
                 result.symbol = c.xkb_keysym_from_name(name, c.XKB_KEYSYM_CASE_INSENSITIVE);
                 result.key_name = part;
             }
@@ -79,7 +79,7 @@ pub const Chord = struct {
         return result;
     }
 
-    pub fn modifierSlice(self: *const Chord) []const usize {
+    pub fn modifier_slice(self: *const Chord) []const usize {
         return self.mods[0..self.count];
     }
 };
@@ -88,38 +88,38 @@ const Keymap = struct {
     compiled: *c.struct_xkb_keymap,
     text: [:0]const u8,
 
-    fn init(a: std.mem.Allocator, symbols: []const u32) !Keymap {
-        return compile(a, symbols, false);
+    fn init(allocator: std.mem.Allocator, symbols: []const u32) !Keymap {
+        return compile(allocator, symbols, false);
     }
 
-    fn initChord(a: std.mem.Allocator, symbol: u32) !Keymap {
-        return compile(a, &.{symbol}, true);
+    fn init_chord(allocator: std.mem.Allocator, symbol: u32) !Keymap {
+        return compile(allocator, &.{symbol}, true);
     }
 
-    fn compile(a: std.mem.Allocator, symbols: []const u32, chord_levels: bool) !Keymap {
+    fn compile(allocator: std.mem.Allocator, symbols: []const u32, chord_levels: bool) !Keymap {
         if (symbols.len == 0 or symbols.len > chunk_size) return error.InvalidKeymap;
         var source: std.ArrayList(u8) = .empty;
-        defer source.deinit(a);
-        try source.appendSlice(a, "xkb_keymap { xkb_keycodes { minimum=8; maximum=255; ");
-        for (symbols, 0..) |_, i| try source.print(a, "<K{d}>={d};", .{ i, dataKey(i) + 8 });
-        for (modifiers) |mod| try source.print(a, "<{s}>={d};", .{ mod.key_name, mod.key + 8 });
+        defer source.deinit(allocator);
+        try source.appendSlice(allocator, "xkb_keymap { xkb_keycodes { minimum=8; maximum=255; ");
+        for (symbols, 0..) |_, i| try source.print(allocator, "<K{d}>={d};", .{ i, data_key(i) + 8 });
+        for (modifiers) |mod| try source.print(allocator, "<{s}>={d};", .{ mod.key_name, mod.key + 8 });
         // Self-contained types/actions avoid host layout and include-file dependencies.
         // Text stays exact. Chords need real Shift levels: GTK's
         // gdk_key_event_matches expects ISO_Left_Tab and uppercase keysyms.
         // https://github.com/GNOME/gtk/blob/4.22.4/gdk/gdkevents.c
-        try source.appendSlice(a, "}; xkb_types { type \"ONE_LEVEL\" { modifiers=None; map[None]=Level1; }; type \"TWO_LEVEL\" { modifiers=Shift; map[None]=Level1; map[Shift]=Level2; }; }; xkb_compatibility {}; xkb_symbols { ");
+        try source.appendSlice(allocator, "}; xkb_types { type \"ONE_LEVEL\" { modifiers=None; map[None]=Level1; }; type \"TWO_LEVEL\" { modifiers=Shift; map[None]=Level1; map[Shift]=Level2; }; }; xkb_compatibility {}; xkb_symbols { ");
         for (symbols, 0..) |symbol, i| {
             const shifted: u32 = if (symbol == c.XKB_KEY_Tab) c.XKB_KEY_ISO_Left_Tab else c.xkb_keysym_to_upper(symbol);
             if (chord_levels and shifted != symbol) {
-                try source.print(a, "key <K{d}> {{ type=\"TWO_LEVEL\", [0x{x},0x{x}], repeat=no }};", .{ i, symbol, shifted });
+                try source.print(allocator, "key <K{d}> {{ type=\"TWO_LEVEL\", [0x{x},0x{x}], repeat=no }};", .{ i, symbol, shifted });
             } else {
-                try source.print(a, "key <K{d}> {{ type=\"ONE_LEVEL\", [0x{x}], repeat=no }};", .{ i, symbol });
+                try source.print(allocator, "key <K{d}> {{ type=\"ONE_LEVEL\", [0x{x}], repeat=no }};", .{ i, symbol });
             }
         }
-        for (modifiers) |mod| try source.print(a, "key <{s}> {{ type=\"ONE_LEVEL\", [{s}], actions=[SetMods(modifiers={s})], repeat=no }}; modifier_map {s} {{ <{s}> }};", .{ mod.key_name, mod.symbol, mod.name, mod.name, mod.key_name });
-        try source.appendSlice(a, "}; };");
-        const source_z = try source.toOwnedSliceSentinel(a, 0);
-        defer a.free(source_z);
+        for (modifiers) |mod| try source.print(allocator, "key <{s}> {{ type=\"ONE_LEVEL\", [{s}], actions=[SetMods(modifiers={s})], repeat=no }}; modifier_map {s} {{ <{s}> }};", .{ mod.key_name, mod.symbol, mod.name, mod.name, mod.key_name });
+        try source.appendSlice(allocator, "}; };");
+        const source_z = try source.toOwnedSliceSentinel(allocator, 0);
+        defer allocator.free(source_z);
         const context = c.xkb_context_new(c.XKB_CONTEXT_NO_DEFAULT_INCLUDES | c.XKB_CONTEXT_NO_ENVIRONMENT_NAMES) orelse return error.InvalidKeymap;
         defer c.xkb_context_unref(context);
         const compiled = c.xkb_keymap_new_from_string(context, source_z, c.XKB_KEYMAP_FORMAT_TEXT_V1, c.XKB_KEYMAP_COMPILE_NO_FLAGS) orelse return error.InvalidKeymap;
@@ -152,19 +152,19 @@ const HeldKeys = struct {
         if (self.count == self.keys.len) return error.TooManyHeldKeys;
         self.keys[self.count] = key;
         self.count += 1;
-        sink.sendKey(key.code, 1);
+        sink.send_key(key.code, 1);
         const mask = self.depressed | key.mask;
-        if (mask != self.depressed) sink.sendModifiers(mask);
+        if (mask != self.depressed) sink.send_modifiers(mask);
         self.depressed = mask;
     }
 
     fn pop(self: *HeldKeys, sink: anytype) void {
         if (self.count == 0) return;
         self.count -= 1;
-        sink.sendKey(self.keys[self.count].code, 0);
+        sink.send_key(self.keys[self.count].code, 0);
         var mask: u32 = 0;
         for (self.keys[0..self.count]) |key| mask |= key.mask;
-        if (mask != self.depressed) sink.sendModifiers(mask);
+        if (mask != self.depressed) sink.send_modifiers(mask);
         self.depressed = mask;
     }
 
@@ -222,7 +222,7 @@ const TextChunk = struct {
                 result.symbol_count += 1;
                 break :blk i;
             };
-            result.keys[result.count] = dataKey(index);
+            result.keys[result.count] = data_key(index);
             result.count += 1;
         }
         return result;
@@ -287,17 +287,17 @@ pub const Keyboard = struct {
         try self.available();
     }
 
-    fn sync(self: *Keyboard, rt: ?*Runtime) !void {
-        return self.syncChecked(rt, false);
+    fn sync(self: *Keyboard, runtime: ?*Runtime) !void {
+        return self.sync_checked(runtime, false);
     }
 
-    fn syncChecked(self: *Keyboard, rt: ?*Runtime, already_guarded: bool) !void {
+    fn sync_checked(self: *Keyboard, runtime: ?*Runtime, already_guarded: bool) !void {
         const connection = if (self.connection) |*value| value else return error.VirtualKeyboardUnavailable;
-        connection.runtime = rt;
+        connection.runtime = runtime;
         // Never retain a caller's runtime (in particular a stack-local scratch).
         defer connection.runtime = null;
-        if (already_guarded) try connection.syncAfterGuard() else try connection.syncWithCancellation(rt != null);
-        if (rt != null) try self.available();
+        if (already_guarded) try connection.sync_after_guard() else try connection.sync_with_cancellation(runtime != null);
+        if (runtime != null) try self.available();
     }
 
     pub fn release(self: *Keyboard) void {
@@ -317,15 +317,15 @@ pub const Keyboard = struct {
         self.* = .{};
     }
 
-    fn sendKey(self: *Keyboard, key: u32, state: u32) void {
-        c.zwp_virtual_keyboard_v1_key(self.device, native.timestampMs(), key, state);
+    fn send_key(self: *Keyboard, key: u32, state: u32) void {
+        c.zwp_virtual_keyboard_v1_key(self.device, native.timestamp_ms(), key, state);
     }
 
-    fn sendModifiers(self: *Keyboard, mask: u32) void {
+    fn send_modifiers(self: *Keyboard, mask: u32) void {
         c.zwp_virtual_keyboard_v1_modifiers(self.device, mask, 0, 0, 0);
     }
 
-    fn upload(self: *Keyboard, rt: *Runtime, map: *const Keymap) !void {
+    fn upload(self: *Keyboard, runtime: *Runtime, map: *const Keymap) !void {
         try self.available();
         if (self.device == null) return error.VirtualKeyboardUnavailable;
         if (self.held.count != 0) return error.KeyboardBusy;
@@ -342,32 +342,32 @@ pub const Keyboard = struct {
             written += @intCast(n);
         }
         if (c.lseek(fd, 0, c.SEEK_SET) < 0) return error.InputBufferFailed;
-        try rt.guard();
+        try runtime.guard();
         c.zwp_virtual_keyboard_v1_keymap(self.device, c.WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, @intCast(bytes.len));
         self.has_keymap = true;
-        self.sendModifiers(0);
-        try self.sync(rt);
+        self.send_modifiers(0);
+        try self.sync(runtime);
     }
 
     const Driver = struct {
         keyboard: *Keyboard,
-        rt: *Runtime,
+        runtime: *Runtime,
         fn guard(self: *@This()) !void {
             try self.keyboard.available();
-            try self.rt.guard();
+            try self.runtime.guard();
         }
-        fn sendKey(self: *@This(), key: u32, state: u32) void {
-            self.keyboard.sendKey(key, state);
+        fn send_key(self: *@This(), key: u32, state: u32) void {
+            self.keyboard.send_key(key, state);
         }
-        fn sendModifiers(self: *@This(), mask: u32) void {
-            self.keyboard.sendModifiers(mask);
+        fn send_modifiers(self: *@This(), mask: u32) void {
+            self.keyboard.send_modifiers(mask);
         }
         fn sync(self: *@This(), guarded: bool) !void {
-            try self.keyboard.sync(if (guarded) self.rt else null);
+            try self.keyboard.sync(if (guarded) self.runtime else null);
         }
     };
 
-    pub fn typeText(self: *Keyboard, rt: *Runtime, text: []const u8) !void {
+    pub fn type_text(self: *Keyboard, runtime: *Runtime, text: []const u8) !void {
         // Validate the entire string before sending any prefix.
         var iterator = (try std.unicode.Utf8View.init(text)).iterator();
         errdefer self.release();
@@ -378,28 +378,28 @@ pub const Keyboard = struct {
             defer arena.deinit();
             var map = try Keymap.init(arena.allocator(), chunk.symbols[0..chunk.symbol_count]);
             defer map.deinit();
-            try self.upload(rt, &map);
+            try self.upload(runtime, &map);
             for (chunk.keys[0..chunk.count]) |key| {
-                try rt.guard();
+                try runtime.guard();
                 try self.held.press(self, .{ .code = key });
                 self.held.pop(self);
-                try self.syncChecked(rt, true);
+                try self.sync_checked(runtime, true);
             }
         }
     }
 
-    pub fn chord(self: *Keyboard, rt: *Runtime, value: []const u8) !void {
-        const parsed = try Chord.parse(rt.allocator, value);
-        var map = try Keymap.initChord(rt.allocator, parsed.symbol);
+    pub fn chord(self: *Keyboard, runtime: *Runtime, value: []const u8) !void {
+        const parsed = try Chord.parse(runtime.allocator, value);
+        var map = try Keymap.init_chord(runtime.allocator, parsed.symbol);
         defer map.deinit();
         var keys: [modifiers.len + 1]Key = undefined;
-        for (parsed.modifierSlice(), 0..) |index, i| {
+        for (parsed.modifier_slice(), 0..) |index, i| {
             const mod = modifiers[index];
             keys[i] = .{ .code = mod.key, .mask = try map.mask(mod.name) };
         }
-        keys[parsed.count] = .{ .code = dataKey(0) };
-        try self.upload(rt, &map);
-        var driver = Driver{ .keyboard = self, .rt = rt };
+        keys[parsed.count] = .{ .code = data_key(0) };
+        try self.upload(runtime, &map);
+        var driver = Driver{ .keyboard = self, .runtime = runtime };
         try self.held.chord(&driver, keys[0 .. parsed.count + 1]);
     }
 };
@@ -412,7 +412,7 @@ test "keyboard chord Shift levels translate Tab and letters without changing exa
         .{ c.XKB_KEY_Right, c.XKB_KEY_Right },
     };
     for (cases) |pair| {
-        var map = try Keymap.initChord(std.testing.allocator, pair[0]);
+        var map = try Keymap.init_chord(std.testing.allocator, pair[0]);
         defer map.deinit();
         // Compile the exact serialized map sent to the compositor.
         const context = c.xkb_context_new(c.XKB_CONTEXT_NO_DEFAULT_INCLUDES) orelse return error.OutOfMemory;
@@ -421,7 +421,7 @@ test "keyboard chord Shift levels translate Tab and letters without changing exa
         defer c.xkb_keymap_unref(compiled);
         const state = c.xkb_state_new(compiled) orelse return error.OutOfMemory;
         defer c.xkb_state_unref(state);
-        const target = dataKey(0) + 8;
+        const target = data_key(0) + 8;
         const ctrl = try map.mask("Control");
         const shift = try map.mask("Shift");
         try std.testing.expectEqual(pair[0], c.xkb_state_key_get_one_sym(state, target));
@@ -481,8 +481,8 @@ test "keyboard modifier masks match XKB actions and survive serialized keymap ro
         _ = c.xkb_state_update_key(state, mod.key + 8, c.XKB_KEY_DOWN);
         expected |= try map.mask(mod.name);
         try std.testing.expectEqual(expected, c.xkb_state_serialize_mods(state, c.XKB_STATE_MODS_DEPRESSED));
-        try std.testing.expectEqual(@as(u32, c.XKB_KEY_z), c.xkb_state_key_get_one_sym(state, dataKey(0) + 8));
-        try std.testing.expectEqual(@as(u32, 0), c.xkb_state_key_get_consumed_mods(state, dataKey(0) + 8));
+        try std.testing.expectEqual(@as(u32, c.XKB_KEY_z), c.xkb_state_key_get_one_sym(state, data_key(0) + 8));
+        try std.testing.expectEqual(@as(u32, 0), c.xkb_state_key_get_consumed_mods(state, data_key(0) + 8));
         try std.testing.expectEqual(@as(c_int, 0), c.xkb_keymap_key_repeats(roundtrip, mod.key + 8));
     }
     var i = modifiers.len;
@@ -504,11 +504,11 @@ const FakeKeyboard = struct {
     fail_guard: ?usize = null,
     fail_sync: ?usize = null,
 
-    fn sendKey(self: *@This(), key: u32, state: u32) void {
+    fn send_key(self: *@This(), key: u32, state: u32) void {
         self.events[self.count] = .{ .key = .{ .code = key, .state = state } };
         self.count += 1;
     }
-    fn sendModifiers(self: *@This(), mask: u32) void {
+    fn send_modifiers(self: *@This(), mask: u32) void {
         self.events[self.count] = .{ .modifiers = mask };
         self.count += 1;
     }
@@ -523,7 +523,7 @@ const FakeKeyboard = struct {
         if (!guarded) self.cleanup_syncs += 1;
         if (self.fail_sync == n) return error.WaylandUnavailable;
     }
-    fn expectBalanced(self: *@This()) !void {
+    fn expect_balanced(self: *@This()) !void {
         var stack: [6]u32 = undefined;
         var count: usize = 0;
         var mask: u32 = 0;
@@ -552,18 +552,18 @@ test "keyboard emits modifier keys before target and releases target then modifi
     const shift = try map.mask("Shift");
     var held = HeldKeys{};
     var fake = FakeKeyboard{};
-    try held.chord(&fake, &.{ .{ .code = 29, .mask = ctrl }, .{ .code = 42, .mask = shift }, .{ .code = dataKey(0) } });
+    try held.chord(&fake, &.{ .{ .code = 29, .mask = ctrl }, .{ .code = 42, .mask = shift }, .{ .code = data_key(0) } });
     const expected = [_]FakeKeyboard.Event{
-        .{ .key = .{ .code = 29, .state = 1 } },         .{ .modifiers = ctrl },
-        .{ .key = .{ .code = 42, .state = 1 } },         .{ .modifiers = ctrl | shift },
-        .{ .key = .{ .code = dataKey(0), .state = 1 } }, .{ .key = .{ .code = dataKey(0), .state = 0 } },
-        .{ .key = .{ .code = 42, .state = 0 } },         .{ .modifiers = ctrl },
-        .{ .key = .{ .code = 29, .state = 0 } },         .{ .modifiers = 0 },
+        .{ .key = .{ .code = 29, .state = 1 } },          .{ .modifiers = ctrl },
+        .{ .key = .{ .code = 42, .state = 1 } },          .{ .modifiers = ctrl | shift },
+        .{ .key = .{ .code = data_key(0), .state = 1 } }, .{ .key = .{ .code = data_key(0), .state = 0 } },
+        .{ .key = .{ .code = 42, .state = 0 } },          .{ .modifiers = ctrl },
+        .{ .key = .{ .code = 29, .state = 0 } },          .{ .modifiers = 0 },
     };
     try std.testing.expectEqualDeep(expected[0..], fake.events[0..fake.count]);
     try std.testing.expectEqual(@as(usize, 3), fake.guards);
     try std.testing.expectEqual(@as(usize, 3), fake.syncs);
-    try fake.expectBalanced();
+    try fake.expect_balanced();
     const previous_count = fake.count;
     held.release(&fake);
     held.release(&fake);
@@ -575,12 +575,12 @@ test "keyboard unwinds every guard and synchronization failure without guarded c
     defer map.deinit();
     var keys: [6]Key = undefined;
     for (modifiers, 0..) |mod, i| keys[i] = .{ .code = mod.key, .mask = try map.mask(mod.name) };
-    keys[5] = .{ .code = dataKey(0) };
+    keys[5] = .{ .code = data_key(0) };
     for (0..keys.len) |stage| {
         var held = HeldKeys{};
         var fake = FakeKeyboard{ .fail_guard = stage };
         try std.testing.expectError(error.ControlStopped, held.chord(&fake, &keys));
-        try fake.expectBalanced();
+        try fake.expect_balanced();
         try std.testing.expectEqual(@as(usize, 0), held.count);
         try std.testing.expectEqual(@as(u32, 0), held.depressed);
         try std.testing.expectEqual(@as(usize, 1), fake.cleanup_syncs);
@@ -590,7 +590,7 @@ test "keyboard unwinds every guard and synchronization failure without guarded c
         var held = HeldKeys{};
         var fake = FakeKeyboard{ .fail_sync = stage };
         try std.testing.expectError(error.WaylandUnavailable, held.chord(&fake, &keys));
-        try fake.expectBalanced();
+        try fake.expect_balanced();
         try std.testing.expectEqual(@as(usize, 0), held.count);
         try std.testing.expectEqual(@as(u32, 0), held.depressed);
         try std.testing.expect(fake.cleanup_syncs > 0);
@@ -656,9 +656,9 @@ test "keyboard cleanup is idempotent without a connection and invalid UTF8 sends
     var keyboard = Keyboard{};
     try std.testing.expectError(error.VirtualKeyboardUnavailable, keyboard.create());
     // No runtime field may be accessed before full UTF8 validation, or for empty text.
-    var rt: Runtime = undefined;
-    try std.testing.expectError(error.InvalidUtf8, keyboard.typeText(&rt, "valid prefix\xff"));
-    try keyboard.typeText(&rt, "");
+    var runtime: Runtime = undefined;
+    try std.testing.expectError(error.InvalidUtf8, keyboard.type_text(&runtime, "valid prefix\xff"));
+    try keyboard.type_text(&runtime, "");
     keyboard.release();
     keyboard.deinit();
     keyboard.deinit();

@@ -59,8 +59,8 @@ pub const Capture = struct {
         const s = self(data);
         if (value & c.WL_SEAT_CAPABILITY_POINTER != 0 and s.pointer == null) s.pointer = c.wl_seat_get_pointer(seat);
     }
-    fn seatName(_: ?*anyopaque, _: ?*c.struct_wl_seat, _: [*c]const u8) callconv(.c) void {}
-    const seat_listener = c.struct_wl_seat_listener{ .capabilities = capabilities, .name = seatName };
+    fn seat_name(_: ?*anyopaque, _: ?*c.struct_wl_seat, _: [*c]const u8) callconv(.c) void {}
+    const seat_listener = c.struct_wl_seat_listener{ .capabilities = capabilities, .name = seat_name };
 
     fn enter(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_cursor_session_v1) callconv(.c) void {
         self(data).entered = true;
@@ -69,15 +69,15 @@ pub const Capture = struct {
         self(data).entered = false;
     }
     fn position(_: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_cursor_session_v1, _: i32, _: i32) callconv(.c) void {}
-    fn hotspotEvent(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_cursor_session_v1, x: i32, y: i32) callconv(.c) void {
+    fn hotspot_event(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_cursor_session_v1, x: i32, y: i32) callconv(.c) void {
         self(data).pending_hotspot = .{ .x = x, .y = y };
     }
-    const cursor_listener = c.struct_ext_image_copy_capture_cursor_session_v1_listener{ .enter = enter, .leave = leave, .position = position, .hotspot = hotspotEvent };
+    const cursor_listener = c.struct_ext_image_copy_capture_cursor_session_v1_listener{ .enter = enter, .leave = leave, .position = position, .hotspot = hotspot_event };
     fn size(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_session_v1, w: u32, h: u32) callconv(.c) void {
         self(data).width = w;
         self(data).height = h;
     }
-    fn formatEvent(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_session_v1, format: u32) callconv(.c) void {
+    fn format_event(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_session_v1, format: u32) callconv(.c) void {
         // Both have alpha in the high byte, which is all the glow needs.
         if (format == c.WL_SHM_FORMAT_ARGB8888 or format == c.WL_SHM_FORMAT_ABGR8888) self(data).format = format;
     }
@@ -86,23 +86,23 @@ pub const Capture = struct {
     fn done(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_session_v1) callconv(.c) void {
         self(data).constraints = true;
     }
-    fn stoppedEvent(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_session_v1) callconv(.c) void {
+    fn stopped_event(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_session_v1) callconv(.c) void {
         self(data).stopped = true;
     }
-    const session_listener = c.struct_ext_image_copy_capture_session_v1_listener{ .buffer_size = size, .shm_format = formatEvent, .dmabuf_device = device, .dmabuf_format = dmabuf, .done = done, .stopped = stoppedEvent };
+    const session_listener = c.struct_ext_image_copy_capture_session_v1_listener{ .buffer_size = size, .shm_format = format_event, .dmabuf_device = device, .dmabuf_format = dmabuf, .done = done, .stopped = stopped_event };
     fn transform(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_frame_v1, value: u32) callconv(.c) void {
         if (value != 0) self(data).stopped = true;
     }
     fn damage(_: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_frame_v1, _: i32, _: i32, _: i32, _: i32) callconv(.c) void {}
     fn time(_: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_frame_v1, _: u32, _: u32, _: u32) callconv(.c) void {}
-    fn readyEvent(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_frame_v1) callconv(.c) void {
+    fn ready_event(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_frame_v1) callconv(.c) void {
         self(data).ready = true;
         self(data).hotspot = self(data).pending_hotspot;
     }
-    fn failedEvent(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_frame_v1, _: u32) callconv(.c) void {
+    fn failed_event(data: ?*anyopaque, _: ?*c.struct_ext_image_copy_capture_frame_v1, _: u32) callconv(.c) void {
         self(data).failed = true;
     }
-    const frame_listener = c.struct_ext_image_copy_capture_frame_v1_listener{ .transform = transform, .damage = damage, .presentation_time = time, .ready = readyEvent, .failed = failedEvent };
+    const frame_listener = c.struct_ext_image_copy_capture_frame_v1_listener{ .transform = transform, .damage = damage, .presentation_time = time, .ready = ready_event, .failed = failed_event };
 
     pub fn init(s: *Capture, connection: *Connection, output: *c.struct_wl_output) !void {
         s.* = .{ .connection = connection };
@@ -123,7 +123,7 @@ pub const Capture = struct {
 
     pub fn request(s: *Capture) !void {
         if (s.stopped or s.frame != null) return error.CursorCaptureUnavailable;
-        s.freeBuffer();
+        s.free_buffer();
         if (s.width == 0 or s.height == 0 or s.width > 256 or s.height > 256) return error.CursorCaptureUnsupported;
         s.length = @as(usize, s.width) * s.height * 4;
         const fd = c.memfd_create("hyprhand-cursor-shape", c.MFD_CLOEXEC);
@@ -152,7 +152,7 @@ pub const Capture = struct {
         if (s.frame) |f| c.ext_image_copy_capture_frame_v1_destroy(f);
         s.frame = null;
     }
-    fn freeBuffer(s: *Capture) void {
+    fn free_buffer(s: *Capture) void {
         if (s.buffer) |b| c.wl_buffer_destroy(b);
         if (s.memory) |m| _ = c.munmap(m, s.length);
         s.buffer = null;
@@ -165,7 +165,7 @@ pub const Capture = struct {
         if (s.source) |v| c.ext_image_capture_source_v1_destroy(v);
         if (s.pointer) |v| c.wl_pointer_release(v);
         if (s.seat) |v| c.wl_seat_release(v);
-        s.freeBuffer();
+        s.free_buffer();
         if (s.manager) |v| c.ext_image_copy_capture_manager_v1_destroy(v);
         if (s.sources) |v| c.ext_output_image_capture_source_manager_v1_destroy(v);
         if (s.shm) |v| c.wl_shm_destroy(v);
@@ -173,37 +173,37 @@ pub const Capture = struct {
     }
 };
 
-pub fn probe(rt: *Runtime) !void {
-    try rt.validateDisplay();
-    try rt.unlocked();
+pub fn probe(runtime: *Runtime) !void {
+    try runtime.validate_display();
+    try runtime.unlocked();
     var pointer: Pointer = undefined;
-    try pointer.init(try rt.displayPath());
+    try pointer.init(try runtime.display_path());
     defer pointer.deinit();
     var halo: aura.Aura = undefined;
-    const monitors = try rt.queryJson([]geometry.Monitor, "monitors");
+    const monitors = try runtime.query_json([]geometry.Monitor, "monitors");
     try halo.init(&pointer.connection, monitors);
     defer halo.deinit();
-    const p = try rt.queryJson(Point, "cursorpos");
+    const p = try runtime.query_json(Point, "cursorpos");
     for (halo.outputs[0..halo.count]) |*output| {
         if (!aura.contains(output.rect orelse continue, p)) continue;
         var capture: Capture = undefined;
         try capture.init(&pointer.connection, output.output.?);
         defer capture.deinit();
         try capture.request();
-        const deadline = native.nowMs() + 2000;
-        while (!capture.ready and !capture.failed and !capture.stopped and native.nowMs() < deadline) {
+        const deadline = native.now_ms() + 2000;
+        while (!capture.ready and !capture.failed and !capture.stopped and native.now_ms() < deadline) {
             try pointer.sync();
-            native.sleepMs(10);
+            native.sleep_ms(10);
         }
         if (!capture.ready or capture.stopped) return error.CursorCaptureUnavailable;
-        const shape = inspectAlpha(capture.pixels());
-        try rt.emit(.{ .ok = true, .width = capture.width, .height = capture.height, .hotspot = capture.hotspot, .transparent = shape.transparent, .nontransparent = shape.nontransparent, .usable_shape = shape.usable_shape, .entered = capture.entered });
+        const shape = inspect_alpha(capture.pixels());
+        try runtime.emit(.{ .ok = true, .width = capture.width, .height = capture.height, .hotspot = capture.hotspot, .transparent = shape.transparent, .nontransparent = shape.nontransparent, .usable_shape = shape.usable_shape, .entered = capture.entered });
         return;
     }
     return error.CursorCaptureUnavailable;
 }
 
-pub fn inspectAlpha(values: []const u32) struct { transparent: usize, nontransparent: usize, usable_shape: bool } {
+pub fn inspect_alpha(values: []const u32) struct { transparent: usize, nontransparent: usize, usable_shape: bool } {
     var transparent: usize = 0;
     for (values) |value| if (value >> 24 == 0) {
         transparent += 1;
@@ -214,10 +214,10 @@ pub fn inspectAlpha(values: []const u32) struct { transparent: usize, nontranspa
 }
 
 test "cursor probe does not claim a contour from empty or redacted buffers" {
-    try std.testing.expect(!inspectAlpha(&.{}).usable_shape);
-    try std.testing.expect(!inspectAlpha(&.{ 0, 0, 0 }).usable_shape);
-    try std.testing.expect(!inspectAlpha(&.{ 0xff000000, 0xff000000 }).usable_shape);
-    const shape = inspectAlpha(&.{ 0, 0xffffffff, 0x80123456 });
+    try std.testing.expect(!inspect_alpha(&.{}).usable_shape);
+    try std.testing.expect(!inspect_alpha(&.{ 0, 0, 0 }).usable_shape);
+    try std.testing.expect(!inspect_alpha(&.{ 0xff000000, 0xff000000 }).usable_shape);
+    const shape = inspect_alpha(&.{ 0, 0xffffffff, 0x80123456 });
     try std.testing.expect(shape.usable_shape);
     try std.testing.expectEqual(@as(usize, 1), shape.transparent);
     try std.testing.expectEqual(@as(usize, 2), shape.nontransparent);

@@ -29,7 +29,7 @@ pub const Connection = struct {
     /// Detaches the guard for input that is already owed to the compositor
     /// (releases, acknowledgements). Callers restore the returned value with
     /// `defer connection.runtime = saved;`.
-    pub fn suspendGuard(self: *Connection) ?*Runtime {
+    pub fn suspend_guard(self: *Connection) ?*Runtime {
         const saved = self.runtime;
         self.runtime = null;
         return saved;
@@ -43,36 +43,36 @@ pub const Connection = struct {
     const callback_listener = c.struct_wl_callback_listener{ .done = done };
 
     pub fn sync(self: *Connection) !void {
-        return self.syncChecked(true, false);
+        return self.sync_checked(true, false);
     }
 
     // Bootstrap waits must honor cancellation even before a Runtime is bound.
     // Only delivery/release of already queued owned input opts out.
-    pub fn syncWithCancellation(self: *Connection, cancellable: bool) !void {
-        return self.syncChecked(cancellable, false);
+    pub fn sync_with_cancellation(self: *Connection, cancellable: bool) !void {
+        return self.sync_checked(cancellable, false);
     }
 
     /// Only for callers that just guarded, then queued non-blocking requests.
     /// No cached authorization: checks resume on the first wait iteration.
-    pub fn syncAfterGuard(self: *Connection) !void {
-        return self.syncChecked(true, true);
+    pub fn sync_after_guard(self: *Connection) !void {
+        return self.sync_checked(true, true);
     }
 
-    fn syncChecked(self: *Connection, cancellable: bool, already_guarded: bool) !void {
+    fn sync_checked(self: *Connection, cancellable: bool, already_guarded: bool) !void {
         var finished = false;
         const callback = c.wl_display_sync(self.display) orelse return error.WaylandUnavailable;
         // Destroying the callback on errors prevents a later callback into this stack.
         errdefer if (!finished) c.wl_callback_destroy(callback);
         if (c.wl_callback_add_listener(callback, &callback_listener, &finished) != 0) return error.WaylandUnavailable;
-        const deadline = native.nowMs() + 3000;
+        const deadline = native.now_ms() + 3000;
         var first = true;
         while (!finished) {
-            if (cancellable) try native.checkCancelled();
-            if (!first or !already_guarded) if (self.runtime) |rt| try rt.guard();
+            if (cancellable) try native.check_cancelled();
+            if (!first or !already_guarded) if (self.runtime) |runtime| try runtime.guard();
             first = false;
             if (c.wl_display_dispatch_pending(self.display) < 0) return error.WaylandUnavailable;
             if (finished) break;
-            if (native.nowMs() >= deadline) return error.WaylandTimeout;
+            if (native.now_ms() >= deadline) return error.WaylandTimeout;
             // read_events reads available bytes, including partial messages;
             // dispatch() may instead block internally waiting for a full event.
             if (c.wl_display_prepare_read(self.display) < 0) {

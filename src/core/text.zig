@@ -6,7 +6,7 @@ pub fn eq(a: []const u8, b: []const u8) bool {
 }
 
 /// True when `value` equals one of `candidates`.
-pub fn oneOf(value: []const u8, candidates: []const []const u8) bool {
+pub fn one_of(value: []const u8, candidates: []const []const u8) bool {
     for (candidates) |candidate| if (eq(value, candidate)) return true;
     return false;
 }

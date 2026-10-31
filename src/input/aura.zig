@@ -75,18 +75,18 @@ const Output = struct {
     height: u32 = 0,
     visible: bool = false,
 
-    fn outputName(data: ?*anyopaque, _: ?*c.struct_wl_output, name: [*c]const u8) callconv(.c) void {
+    fn output_name(data: ?*anyopaque, _: ?*c.struct_wl_output, name: [*c]const u8) callconv(.c) void {
         const self: *Output = @ptrCast(@alignCast(data.?));
         const value = std.mem.span(name);
         if (value.len >= self.name.len) return;
         @memcpy(self.name[0..value.len], value);
     }
-    fn outputGeometry(_: ?*anyopaque, _: ?*c.struct_wl_output, _: i32, _: i32, _: i32, _: i32, _: i32, _: [*c]const u8, _: [*c]const u8, _: i32) callconv(.c) void {}
-    fn outputMode(_: ?*anyopaque, _: ?*c.struct_wl_output, _: u32, _: i32, _: i32, _: i32) callconv(.c) void {}
-    fn outputDone(_: ?*anyopaque, _: ?*c.struct_wl_output) callconv(.c) void {}
-    fn outputScale(_: ?*anyopaque, _: ?*c.struct_wl_output, _: i32) callconv(.c) void {}
-    fn outputDescription(_: ?*anyopaque, _: ?*c.struct_wl_output, _: [*c]const u8) callconv(.c) void {}
-    const output_listener = c.struct_wl_output_listener{ .geometry = outputGeometry, .mode = outputMode, .done = outputDone, .scale = outputScale, .name = outputName, .description = outputDescription };
+    fn output_geometry(_: ?*anyopaque, _: ?*c.struct_wl_output, _: i32, _: i32, _: i32, _: i32, _: i32, _: [*c]const u8, _: [*c]const u8, _: i32) callconv(.c) void {}
+    fn output_mode(_: ?*anyopaque, _: ?*c.struct_wl_output, _: u32, _: i32, _: i32, _: i32) callconv(.c) void {}
+    fn output_done(_: ?*anyopaque, _: ?*c.struct_wl_output) callconv(.c) void {}
+    fn output_scale(_: ?*anyopaque, _: ?*c.struct_wl_output, _: i32) callconv(.c) void {}
+    fn output_description(_: ?*anyopaque, _: ?*c.struct_wl_output, _: [*c]const u8) callconv(.c) void {}
+    const output_listener = c.struct_wl_output_listener{ .geometry = output_geometry, .mode = output_mode, .done = output_done, .scale = output_scale, .name = output_name, .description = output_description };
 
     fn configure(data: ?*anyopaque, layer: ?*c.struct_zwlr_layer_surface_v1, serial: u32, width: u32, height: u32) callconv(.c) void {
         const self: *Output = @ptrCast(@alignCast(data.?));
@@ -160,16 +160,16 @@ pub const Aura = struct {
         try self.buffer.create(self.shm.?, pixels, pixels, true);
     }
 
-    fn passThrough(self: *Aura, surface: *c.struct_wl_surface) !void {
+    fn pass_through(self: *Aura, surface: *c.struct_wl_surface) !void {
         const empty = c.wl_compositor_create_region(self.compositor) orelse return error.AuraUnavailable;
         defer c.wl_region_destroy(empty);
         c.wl_surface_set_input_region(surface, empty);
         c.wl_surface_set_opaque_region(surface, empty);
     }
 
-    fn mapOutput(self: *Aura, output: *Output) !void {
+    fn map_output(self: *Aura, output: *Output) !void {
         output.parent = c.wl_compositor_create_surface(self.compositor) orelse return error.AuraUnavailable;
-        try self.passThrough(output.parent.?);
+        try self.pass_through(output.parent.?);
         output.layer = c.zwlr_layer_shell_v1_get_layer_surface(self.shell, output.parent, output.output, c.ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, namespace) orelse return error.AuraUnavailable;
         if (c.zwlr_layer_surface_v1_add_listener(output.layer, &Output.layer_listener, output) != 0) return error.AuraUnavailable;
         c.zwlr_layer_surface_v1_set_keyboard_interactivity(output.layer, c.ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
@@ -183,7 +183,7 @@ pub const Aura = struct {
         if (output.width != @as(u32, @intFromFloat(rect.width)) or output.height != @as(u32, @intFromFloat(rect.height))) return error.AuraGeometryUnsupported;
         try output.transparent.create(self.shm.?, output.width, output.height, false);
         output.child = c.wl_compositor_create_surface(self.compositor) orelse return error.AuraUnavailable;
-        try self.passThrough(output.child.?);
+        try self.pass_through(output.child.?);
         c.wl_surface_set_buffer_scale(output.child, scale);
         output.subsurface = c.wl_subcompositor_get_subsurface(self.subcompositor, output.child, output.parent) orelse return error.AuraUnavailable;
         c.wl_surface_attach(output.parent, output.transparent.object, 0, 0);
@@ -197,7 +197,7 @@ pub const Aura = struct {
             const inside = contains(rect, p);
             if (inside) {
                 if (output.closed) return error.AuraUnavailable;
-                if (output.parent == null) try self.mapOutput(output);
+                if (output.parent == null) try self.map_output(output);
                 const x: i32 = @intFromFloat(@as(f64, @floatFromInt(p.x)) - rect.x);
                 const y: i32 = @intFromFloat(@as(f64, @floatFromInt(p.y)) - rect.y);
                 c.wl_subsurface_set_position(output.subsurface, x - extent / 2, y - extent / 2);
@@ -221,7 +221,7 @@ pub const Aura = struct {
     pub fn deinit(self: *Aura) void {
         // Hide before destroy so compositor close animations cannot retain a
         // painted halo. Cleanup must run even after stop or a caught signal.
-        const saved = self.connection.suspendGuard();
+        const saved = self.connection.suspend_guard();
         defer self.connection.runtime = saved;
         for (self.outputs[0..self.count]) |*output| {
             if (output.child) |child| {

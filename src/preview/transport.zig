@@ -69,7 +69,7 @@ pub const Job = struct {
     }
 };
 
-fn testProcess(mode: [:0]const u8) !*c.GSubprocess {
+fn test_process(mode: [:0]const u8) !*c.GSubprocess {
     const script =
         \\import sys,struct,time,zlib,binascii
         \\def chunk(tag,data):
@@ -90,26 +90,26 @@ fn testProcess(mode: [:0]const u8) !*c.GSubprocess {
     return c.g_subprocess_newv(@ptrCast(&argv), c.G_SUBPROCESS_FLAGS_STDIN_PIPE | c.G_SUBPROCESS_FLAGS_STDOUT_PIPE | c.G_SUBPROCESS_FLAGS_STDERR_SILENCE, &err) orelse error.TestProcessFailed;
 }
 
-fn endTestProcess(process: *c.GSubprocess) void {
+fn end_test_process(process: *c.GSubprocess) void {
     c.g_subprocess_force_exit(process);
     _ = c.g_subprocess_wait(process, null, null);
     c.g_object_unref(process);
 }
 
-fn testJob(process: *c.GSubprocess, previous: ?*c.GBytes) !*Job {
+fn test_job(process: *c.GSubprocess, previous: ?*c.GBytes) !*Job {
     const job = try std.heap.c_allocator.create(Job);
     job.* = .{ .process = process, .previous = if (previous) |p| c.g_bytes_ref(p) else null };
     return job;
 }
 
 test "transport decodes without a display and reuses identical PNG storage" {
-    const process = try testProcess("valid");
-    defer endTestProcess(process);
-    const first = try testJob(process, null);
+    const process = try test_process("valid");
+    defer end_test_process(process);
+    const first = try test_job(process, null);
     defer Job.destroy(first);
     try first.receive(null);
     try std.testing.expect(first.ok and first.texture != null);
-    const second = try testJob(process, first.png);
+    const second = try test_job(process, first.png);
     defer Job.destroy(second);
     try second.receive(null);
     try std.testing.expect(second.ok and second.texture == null);
@@ -117,9 +117,9 @@ test "transport decodes without a display and reuses identical PNG storage" {
 
 test "transport rejects oversized lengths, truncated payloads and invalid PNG" {
     for ([_][:0]const u8{ "oversize", "partial", "invalid" }, [_]anyerror{ error.InvalidPreviewFrame, error.PreviewStreamClosed, error.InvalidScreenshot }) |mode, expected| {
-        const process = try testProcess(mode);
-        defer endTestProcess(process);
-        const job = try testJob(process, null);
+        const process = try test_process(mode);
+        defer end_test_process(process);
+        const job = try test_job(process, null);
         defer Job.destroy(job);
         try std.testing.expectError(expected, job.receive(null));
         try std.testing.expect(!job.ok);
@@ -127,9 +127,9 @@ test "transport rejects oversized lengths, truncated payloads and invalid PNG" {
 }
 
 test "transport honors a cancelled request" {
-    const process = try testProcess("valid");
-    defer endTestProcess(process);
-    const job = try testJob(process, null);
+    const process = try test_process("valid");
+    defer end_test_process(process);
+    const job = try test_job(process, null);
     defer Job.destroy(job);
     const cancel = c.g_cancellable_new();
     defer c.g_object_unref(cancel);
