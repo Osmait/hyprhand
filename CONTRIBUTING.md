@@ -55,7 +55,10 @@ or protocol contracts, discuss the approach in an issue before a large rewrite.
   input, switches to the host, or authorizes repeating an action with side effects.
 - Keep functions focused and modules organized by domain. Avoid generic `utils`
   folders and forwarding-only layers.
-- Run `zig fmt build.zig build src`; preserve existing snake_case file names.
+- Follow [docs/STYLE.md](docs/STYLE.md): 100-column lines, functions of at most
+  70 lines, snake_case, no abbreviations, enums instead of strings, and comments
+  that say why. `zig build check` runs `zig fmt --check` and
+  `scripts/check_style.py`; run `zig fmt build.zig build src` before committing.
   Keep mechanical changes separate from behavior changes where possible.
 - Never log typed text, credentials, application content, or window titles.
   Unicode samples in tests are intentional and should retain Unicode coverage.
