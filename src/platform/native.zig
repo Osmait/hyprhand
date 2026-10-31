@@ -1,36 +1,4 @@
-pub const c = @cImport({
-    // glibc 2.44's fortify inline wrappers use GCC-only diagnostics that
-    // translate-c cannot import. Use libc declarations here; Zig callers
-    // retain ReleaseSafe bounds/overflow checks. Native libraries are unchanged.
-    @cUndef("_FORTIFY_SOURCE");
-    @cDefine("_FORTIFY_SOURCE", "0");
-    @cDefine("_GNU_SOURCE", "1");
-    @cInclude("sys/socket.h");
-    @cInclude("sys/un.h");
-    @cInclude("sys/stat.h");
-    @cInclude("sys/file.h");
-    @cInclude("sys/mman.h");
-    @cInclude("sys/wait.h");
-    @cInclude("sys/syscall.h");
-    @cInclude("sys/random.h");
-    @cInclude("sys/prctl.h");
-    @cInclude("poll.h");
-    @cInclude("fcntl.h");
-    @cInclude("unistd.h");
-    @cInclude("errno.h");
-    @cInclude("time.h");
-    @cInclude("stdio.h");
-    @cInclude("stdlib.h");
-    @cInclude("signal.h");
-    @cInclude("dirent.h");
-    @cInclude("wayland-client.h");
-    @cInclude("xkbcommon/xkbcommon.h");
-    @cInclude("virtual-pointer.h");
-    @cInclude("virtual-keyboard.h");
-    @cInclude("layer-shell.h");
-    @cInclude("ext-image-copy-capture-v1.h");
-    @cInclude("ext-image-capture-source-v1.h");
-});
+pub const c = @import("native_c");
 
 const std = @import("std");
 

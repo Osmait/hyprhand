@@ -8,6 +8,10 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
         .optimize = optimize,
         .link_libc = true,
     });
+    const gtk_c = b.addTranslateC(.{ .root_source_file = b.path("src/preview/gtk_c.h"), .target = target, .optimize = optimize });
+    gtk_c.addIncludePath(b.path("src/preview"));
+    const gtk_module = gtk_c.createModule();
+    module.addImport("gtk_c", gtk_module);
     module.linkSystemLibrary("gtk4", .{});
     module.addIncludePath(b.path("src/preview"));
     module.addCSourceFile(.{ .file = b.path("src/preview/pip_gtk_check.c"), .flags = &.{"-std=c11"} });
@@ -20,6 +24,7 @@ pub fn add(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
         .optimize = optimize,
         .link_libc = true,
     });
+    test_module.addImport("gtk_c", gtk_module);
     test_module.linkSystemLibrary("gtk4", .{});
     test_module.addIncludePath(b.path("src/preview"));
     test_module.addCSourceFile(.{ .file = b.path("src/preview/pip_gtk_check.c"), .flags = &.{"-std=c11"} });

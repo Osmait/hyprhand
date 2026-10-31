@@ -102,13 +102,13 @@ pub fn collect(rt: *Runtime, opt: Args, report: bool) !void {
     if (!report and c.lstat(stamp, &stamp_stat) == 0 and
         (stamp_stat.st_mode & c.S_IFMT) == c.S_IFREG and stamp_stat.st_uid == c.getuid() and
         seconds >= stamp_stat.st_mtim.tv_sec and seconds - stamp_stat.st_mtim.tv_sec < 30) return;
-    const dir = c.opendir(try rt.allocator.dupeZ(u8, rt.directory)) orelse return error.StateDirectoryFailed;
+    const dir = c.opendir(try rt.allocator.dupeSentinel(u8, rt.directory, 0)) orelse return error.StateDirectoryFailed;
     defer _ = c.closedir(dir);
     var count: usize = 0;
     while (try native.nextEntry(dir)) |name| {
         if (!frameName(name)) continue;
         var path_buffer: [4096]u8 = undefined;
-        const path = try std.fmt.bufPrintZ(&path_buffer, "{s}/{s}", .{ rt.directory, name });
+        const path = try std.mem.printSentinel(&path_buffer, "{s}/{s}", .{ rt.directory, name }, 0);
         var st: c.struct_stat = undefined;
         if (c.lstat(path, &st) != 0 or (st.st_mode & c.S_IFMT) != c.S_IFREG or st.st_uid != c.getuid()) continue;
         const age = c.time(null) * 1000 - (st.st_mtim.tv_sec * 1000 + @divTrunc(st.st_mtim.tv_nsec, 1_000_000));

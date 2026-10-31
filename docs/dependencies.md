@@ -8,7 +8,7 @@ executables. See [compatibility](compatibility.md) and [packaging](../packaging/
 
 | Scope | Dependencies |
 | --- | --- |
-| CLI build | Zig 0.16.x (CI/package pin: **0.16.0**), `pkg-config`, `wayland-scanner`, libc and headers for Wayland client, xkbcommon, AT-SPI, GLib/GObject |
+| CLI build | Zig 0.17.x (CI/package pin: **0.17.0**), `pkg-config`, `wayland-scanner`, libc and headers for Wayland client, xkbcommon, AT-SPI, GLib/GObject |
 | Offline tests and packaging | Python 3.11+ (CI uses 3.12), Git, `readelf` and `strip` from binutils |
 | CLI runtime | Linux with pidfd support (5.3+), matching ELF loader/library ABIs, Hyprland IPC and the selected session's Wayland socket |
 | Screenshots | `grim` |
@@ -34,7 +34,7 @@ sudo apt-get install -y libwayland-dev libwayland-bin libxkbcommon-dev \
   libatspi2.0-dev libglib2.0-dev pkg-config libc6-dev python3 binutils curl xz-utils
 ```
 
-Install Zig 0.16.0 separately and ensure `zig version` matches `.zigversion`.
+Install Zig 0.17.0 separately and ensure `zig version` matches `.zigversion`.
 The workflow downloads the pinned toolchain and verifies its checksum.
 These packages prepare a build; they do not create a working Hyprland desktop.
 Ubuntu 22.04 also needs Python 3.11+ selected for the lifecycle suite's

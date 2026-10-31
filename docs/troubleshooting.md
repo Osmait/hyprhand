@@ -11,7 +11,7 @@ the result before deciding what action is still needed.
 
 | Error or symptom | Meaning and next step |
 | --- | --- |
-| Zig compile-time version error | Use Zig 0.16.x; CI/package verification expects exactly 0.16.0 |
+| Zig compile-time version error | Use Zig 0.17.x; CI/package verification expects exactly 0.17.0 |
 | Missing pkg-config module or header | Install the feature's development packages from [dependencies](dependencies.md) |
 | `MissingRuntimeDir`, missing display/instance | Run inside the original Hyprland session environment; do not invent socket names or use an unrelated `DISPLAY` |
 | `SessionRequired` | Add an explicit `--session host` or managed session name |

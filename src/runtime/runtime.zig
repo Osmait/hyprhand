@@ -70,12 +70,12 @@ pub const Runtime = struct {
     }
 
     pub fn displayPath(self: *Runtime) ![:0]const u8 {
-        if (std.fs.path.isAbsolute(self.display)) return self.allocator.dupeZ(u8, self.display);
+        if (std.fs.path.isAbsolute(self.display)) return self.allocator.dupeSentinel(u8, self.display, 0);
         return std.fmt.allocPrintSentinel(self.allocator, "{s}/{s}", .{ self.env.get("XDG_RUNTIME_DIR").?, self.display }, 0);
     }
 
     pub fn prepare(self: *Runtime) !void {
-        const path_z = try self.allocator.dupeZ(u8, self.directory);
+        const path_z = try self.allocator.dupeSentinel(u8, self.directory, 0);
         if (c.mkdir(path_z, 0o700) < 0 and native.errno() != c.EEXIST) return error.StateDirectoryFailed;
         var st: c.struct_stat = undefined;
         if (c.lstat(path_z, &st) < 0 or (st.st_mode & c.S_IFMT) != c.S_IFDIR or st.st_uid != c.getuid() or (st.st_mode & 0o077) != 0) return error.UnsafeStateDirectory;

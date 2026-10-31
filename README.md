@@ -93,7 +93,7 @@ documents commands, options, JSON, coordinates, and cancellation.
 ## Requirements
 
 - Linux with pidfd support (kernel 5.3+) and a working Hyprland session.
-- **Zig 0.16.x** to build; CI and packaging pin **0.16.0** in `.zigversion`.
+- **Zig 0.17.x** to build; CI and packaging pin **0.17.0** in `.zigversion`.
 - `pkg-config`, `wayland-scanner`, libc development files, and headers/libraries
   for Wayland client, xkbcommon, AT-SPI, and GLib/GObject.
 - `grim` for screenshots. `xdotool` for XWayland keyboard/scroll;
@@ -111,15 +111,23 @@ feature-specific requirements, and binary compatibility limits.
 ```sh
 git clone https://github.com/Osmait/hyprhand.git
 cd hyprhand
-zig version                       # Expected: 0.16.0 for the pinned workflow
+zig version                       # Expected: 0.17.0 for the pinned workflow
 zig build -Doptimize=ReleaseSafe
 ./zig-out/bin/hyprhand --help
 ./zig-out/bin/hyprhand doctor --session host
 
-# Install for the current user:
-zig build -Doptimize=ReleaseSafe --prefix "$HOME/.local"
+# Install for the current user (CLI, viewer, completions, agent skill links):
+scripts/install.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+`scripts/install.sh` checks the toolchain and libraries, runs the unit tests,
+installs into `~/.local` (`--prefix DIR` to change it), adds the optional viewer
+when GTK4 >= 4.8 is present, and symlinks the skill into `~/.claude/skills` and
+`~/.codex/skills` when those directories exist. Re-run it to rebuild, use
+`--update` to `git pull --ff-only` first, `--remove-legacy` to drop a pre-rename
+`deskctl` install, and `--uninstall` to remove what it recorded. The manual
+equivalent is `zig build install pip -Doptimize=ReleaseSafe --prefix "$HOME/.local"`.
 
 Run `doctor` from a terminal inside the target Hyprland desktop. It reports
 prerequisites and protocol availability without injecting input. An available

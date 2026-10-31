@@ -24,7 +24,7 @@ in its repository. Read `--help`, `doctor`, and `sessions` before acting.
 
 `preview --session NAME [--monitor NAME] [--fps 1..15]` opens a read-only host
 PiP for an existing managed session. It needs the optional `hyprhand-pip` sibling
-binary (`zig build pip`), GTK4 >= 4.8 and a Hyprlang host. The command stays in the
+binary (`zig build pip`), GTK4 >= 4.8 and a Hyprlang or Lua host. The command stays in the
 foreground while the viewer is open; use an ongoing terminal session when needed.
 It never authorizes input. Closing it leaves the agent and applications running;
 its stop button disables hyprhand input, and must be respected like any human stop.
