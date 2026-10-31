@@ -20,7 +20,7 @@ OPAQUE(GdkEvent);
 OPAQUE(GTask); OPAQUE(GInputStream); OPAQUE(GOutputStream);
 OPAQUE(GdkFrameClock); OPAQUE(GdkFrameTimings);
 OPAQUE(GtkEventControllerMotion); OPAQUE(GParamSpec);
-OPAQUE(GtkEventControllerKey);
+OPAQUE(GtkEventControllerKey); OPAQUE(GSubprocessLauncher);
 typedef struct _cairo cairo_t;
 #undef OPAQUE
 typedef int gboolean;
@@ -38,6 +38,11 @@ typedef unsigned int GdkSurfaceEdge;
 typedef unsigned int GtkEventSequenceState;
 typedef unsigned int GtkPropagationPhase;
 typedef unsigned int GdkModifierType;
+typedef unsigned int GdkEventType;
+typedef unsigned int GdkScrollDirection;
+typedef unsigned int GdkScrollUnit;
+typedef unsigned int GIOCondition;
+typedef gboolean (*GUnixFDSourceFunc)(int, GIOCondition, void *);
 typedef void (*GDestroyNotify)(void *);
 typedef void (*GtkDrawingAreaDrawFunc)(GtkDrawingArea *, cairo_t *, int, int, void *);
 typedef void (*GCallback)(void);
@@ -64,6 +69,19 @@ typedef void (*GTaskThreadFunc)(GTask *, void *, void *, GCancellable *);
 #define GDK_KEY_Tab 0xff09
 #define GDK_KEY_ISO_Left_Tab 0xfe20
 #define GTK_STYLE_PROVIDER_PRIORITY_USER 800
+#define GDK_BUTTON_PRESS 2
+#define GDK_BUTTON_RELEASE 3
+#define GDK_SCROLL 15
+#define GDK_SCROLL_UP 0
+#define GDK_SCROLL_DOWN 1
+#define GDK_SCROLL_LEFT 2
+#define GDK_SCROLL_RIGHT 3
+#define GDK_SCROLL_SMOOTH 4
+#define GDK_SCROLL_UNIT_WHEEL 0
+#define GDK_SCROLL_UNIT_SURFACE 1
+#define G_IO_IN 1
+#define G_IO_ERR 8
+#define G_IO_HUP 16
 #else
 _Static_assert(GTK_ORIENTATION_HORIZONTAL == 0 && GTK_ORIENTATION_VERTICAL == 1, "orientation ABI");
 _Static_assert(GTK_CONTENT_FIT_CONTAIN == 1, "fit ABI");
@@ -72,6 +90,13 @@ _Static_assert(GTK_ALIGN_END == 2 && GTK_ALIGN_START == 1 && PANGO_ELLIPSIZE_END
 _Static_assert(GDK_SURFACE_EDGE_SOUTH_EAST == 7 && GTK_EVENT_SEQUENCE_CLAIMED == 1, "resize ABI");
 _Static_assert(GTK_PHASE_CAPTURE == 1 && GDK_KEY_Tab == 0xff09 && GDK_KEY_ISO_Left_Tab == 0xfe20, "keyboard controller ABI");
 _Static_assert(GTK_STYLE_PROVIDER_PRIORITY_USER == 800, "style priority ABI");
+_Static_assert(GDK_BUTTON_PRESS == 2 && GDK_BUTTON_RELEASE == 3 && GDK_SCROLL == 15, "event type ABI");
+_Static_assert(GDK_SCROLL_UP == 0 && GDK_SCROLL_DOWN == 1 && GDK_SCROLL_LEFT == 2, "scroll ABI");
+_Static_assert(GDK_SCROLL_RIGHT == 3 && GDK_SCROLL_SMOOTH == 4, "scroll direction ABI");
+_Static_assert(GDK_SCROLL_UNIT_WHEEL == 0 && GDK_SCROLL_UNIT_SURFACE == 1, "scroll unit ABI");
+_Static_assert(G_IO_IN == 1 && G_IO_ERR == 8 && G_IO_HUP == 16, "fd watch ABI");
+_Static_assert(sizeof(GdkEventType) == sizeof(unsigned int), "event type size");
+_Static_assert(sizeof(GIOCondition) == sizeof(unsigned int), "condition size");
 #endif
 gboolean gtk_init_check(void);
 GtkWidget *gtk_window_new(void);
@@ -188,3 +213,22 @@ gint64 gdk_frame_timings_get_presentation_time(GdkFrameTimings *);
 gboolean g_subprocess_get_successful(GSubprocess *);
 void g_subprocess_communicate_async(GSubprocess *, GBytes *, GCancellable *, GAsyncReadyCallback, void *);
 gboolean g_subprocess_communicate_finish(GSubprocess *, GAsyncResult *, GBytes **, GBytes **, GError **);
+/* Human takeover: event translation and the input worker's private pipes. */
+GtkEventController *gtk_event_controller_legacy_new(void);
+GdkEventType gdk_event_get_event_type(GdkEvent *);
+guint gdk_button_event_get_button(GdkEvent *);
+GdkScrollDirection gdk_scroll_event_get_direction(GdkEvent *);
+void gdk_scroll_event_get_deltas(GdkEvent *, double *, double *);
+GdkScrollUnit gdk_scroll_event_get_unit(GdkEvent *);
+gboolean gdk_scroll_event_is_stop(GdkEvent *);
+int gtk_widget_get_width(GtkWidget *);
+int gtk_widget_get_height(GtkWidget *);
+int gdk_texture_get_width(GdkTexture *);
+int gdk_texture_get_height(GdkTexture *);
+void gtk_window_present(GtkWindow *);
+void gtk_button_set_label(GtkButton *, const char *);
+GSubprocessLauncher *g_subprocess_launcher_new(GSubprocessFlags);
+void g_subprocess_launcher_take_stdin_fd(GSubprocessLauncher *, int);
+void g_subprocess_launcher_take_stdout_fd(GSubprocessLauncher *, int);
+GSubprocess *g_subprocess_launcher_spawnv(GSubprocessLauncher *, const char *const *, GError **);
+guint g_unix_fd_add(int, GIOCondition, GUnixFDSourceFunc, void *);

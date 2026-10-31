@@ -17,6 +17,7 @@ const observation = @import("capture/observation.zig");
 const cursor_capture = @import("capture/cursor_capture.zig");
 const accessibility = @import("accessibility/tree.zig");
 const preview = @import("preview/controller.zig");
+const takeover = @import("preview/takeover.zig");
 
 /// Read-only prerequisite and protocol probes. Nothing here sends input,
 /// captures, or starts a compositor.
@@ -200,7 +201,17 @@ fn state(runtime: *Runtime) !void {
         .workspaces = try runtime.query_json(std.json.Value, "workspaces"),
         .active_window = try runtime.query_json(std.json.Value, "activewindow"),
         .cursor = try runtime.query_json(std.json.Value, "cursorpos"),
+        .control_enabled = try state_control_enabled(runtime),
+        .human_takeover = try runtime.takeover_active(),
     });
+}
+
+fn state_control_enabled(runtime: *Runtime) !bool {
+    _ = runtime.token() catch |err| switch (err) {
+        error.ControlStopped => return false,
+        else => return err,
+    };
+    return true;
 }
 
 /// Runs one mutating command with an audit-log entry before and after it.
@@ -226,6 +237,7 @@ fn execute(init: std.process.Init, arguments: args.Args) !void {
         .sessions => return sessions.list(&runtime),
         .preview => return preview.launch(&runtime, arguments),
         ._preview_stream => return preview.stream(&runtime, arguments),
+        ._preview_input => return takeover.run(&runtime, arguments),
         else => {},
     }
 
@@ -305,6 +317,22 @@ fn execute_query(runtime: *Runtime, command: []const u8) !void {
     });
 }
 
+/// Hints for control that a human holds through the preview's takeover.
+fn hint_takeover(err: anyerror) ?[]const u8 {
+    return switch (err) {
+        error.ControlStopped => "Input is disabled. If state reports human_takeover, a human " ++
+            "controls the session from the preview: wait until it is false. " ++
+            "Otherwise run hyprhand enable --session NAME; launch, focus and workspace " ++
+            "count as input.",
+        error.HumanTakeoverActive => "A human took over this session from the preview. " ++
+            "Wait until hyprhand state reports human_takeover false; Return re-enables control.",
+        error.TakeoverBusy => "Another preview already holds a takeover of this session.",
+        error.TakeoverParentRejected => "Takeover input is reserved for the hyprhand-pip viewer " ++
+            "beside this binary. Agents use enable and the guarded input commands.",
+        else => null,
+    };
+}
+
 /// Managed-session lifecycle hints, kept apart from the general table.
 fn hint_session(err: anyerror) ?[]const u8 {
     return switch (err) {
@@ -327,6 +355,7 @@ fn hint_session(err: anyerror) ?[]const u8 {
 }
 
 fn hint(err: anyerror) []const u8 {
+    if (hint_takeover(err)) |text| return text;
     if (hint_session(err)) |text| return text;
     return switch (err) {
         error.PreviewHelperMissing => "Build the optional viewer with zig build pip; " ++
@@ -335,8 +364,6 @@ fn hint(err: anyerror) []const u8 {
             "never host.",
         error.PreviewIdentityMismatch => "The original preview session ended or changed. " ++
             "Close the viewer and explicitly open a new one.",
-        error.ControlStopped => "Input is disabled for this session; launch, focus and " ++
-            "workspace count as input. Run hyprhand enable --session NAME.",
         error.StaleObservation => "The frame expired or desktop layout/focus changed. " ++
             "Observe again.",
         error.WindowNotFocused => "Focus the target window first, then verify it before typing.",
@@ -458,6 +485,9 @@ test {
     _ = @import("cli/args.zig");
     _ = @import("runtime/operations.zig");
     _ = @import("preview/protocol.zig");
+    _ = @import("preview/takeover_protocol.zig");
+    _ = @import("preview/takeover.zig");
+    _ = @import("preview/takeover_keys.zig");
     _ = @import("preview/cadence.zig");
     _ = @import("input/actions.zig");
     _ = @import("capture/observation.zig");

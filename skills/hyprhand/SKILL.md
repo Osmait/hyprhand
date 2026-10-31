@@ -1,6 +1,6 @@
 ---
 name: hyprhand
-description: Control Linux Hyprland desktop applications using the hyprhand CLI, screenshots, native input, and accessibility observations. Use for computer-use tasks on an existing desktop or a managed hyprhand session, including browser workflows, forms, and spreadsheet UI. No MCP server is required.
+description: Control Linux Hyprland desktop applications using the hyprhand CLI, screenshots, native input, and accessibility observations. Use for computer-use tasks on an existing desktop or a managed hyprhand session, including browser workflows, forms, and spreadsheet UI; hand logins, passwords and captchas to the human through the preview's Take over. No MCP server is required.
 ---
 
 # Hyprhand
@@ -32,15 +32,36 @@ in its repository. Read `--help`, `doctor`, and `sessions` before acting.
 
 ## Optional owner preview
 
-`preview --session NAME [--monitor NAME] [--fps 1..15]` opens a read-only host
-PiP for an existing managed session. It needs the optional `hyprhand-pip` sibling
+`preview --session NAME [--monitor NAME] [--fps 1..15]` opens a host PiP for an
+existing managed session. It needs the optional `hyprhand-pip` sibling
 binary (`zig build pip`), GTK4 >= 4.8 and a Hyprlang or Lua host. The command stays in the
 foreground while the viewer is open; use an ongoing terminal session when needed.
-It never authorizes input. Closing it leaves the agent and applications running;
+It never authorizes agent input. Closing it leaves the agent and applications running;
 its stop button disables hyprhand input, and must be respected like any human stop.
 Do not automatically reopen a viewer the owner closed. It cannot watch `host`
 or reconnect to a recreated session. Its scaled images are not actionable frames:
 continue using `observe` and the normal frame contract for all agent input.
+
+## Hand logins and captchas to the human
+
+Never type passwords, one-time codes or other secrets the human has not given you
+for that purpose, and never try to solve a captcha or bypass a security challenge.
+When a site needs a sign-in, a captcha or a second factor, hand that step to the human:
+
+1. Ask the owner to open `preview --session NAME` (or use their open viewer) and
+   press **Take over**. Say exactly which page is waiting and what they need to do.
+2. While they hold the session, `state --session NAME` reports `"human_takeover": true`
+   and `"control_enabled": false`. Input commands fail with `ControlStopped` and
+   `enable` fails with `HumanTakeoverActive`. Do not retry input or `enable`; poll
+   `state` every few seconds instead.
+3. When the owner presses **Return**, `human_takeover` becomes false. If control was
+   enabled when they took over, it is enabled again automatically
+   (`control_enabled: true`). If it stays false (they closed the viewer, or input
+   was already stopped), ask before running `enable` again.
+4. The page changed while you waited: run `observe` again before any action and
+   verify the result of their step instead of assuming it succeeded.
+
+The human's keys are never shown to you: neither `logs` nor any output contains them.
 
 ## Observe → act → verify
 
@@ -83,6 +104,10 @@ continue using `observe` and the normal frame contract for all agent input.
   Frames expire after 30 seconds and on geometry/focus/layout changes.
 - `WindowNotFocused`: inspect state; do not continue typing into another window.
 - `SessionLocked`, `ControlStopped`, or `Cancelled`: stop the input sequence.
+  Check `state`: with `human_takeover: true` the owner is working in the session;
+  wait for it to become false (see the takeover section above).
+- `HumanTakeoverActive`: the owner holds the session from the preview. Do not
+  retry `enable`; wait for `human_takeover: false`.
 - `ControlBusy`: another action owns the session; do not race or kill it.
 - `WaitTimeout`: inspect the current UI and report what remains unverified.
 - `HeadlessRenderUnavailable`: report compositor/GPU incompatibility; request

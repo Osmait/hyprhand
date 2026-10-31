@@ -150,9 +150,13 @@ hyprhand stop --session agent
 hyprhand session destroy agent
 ```
 
-Preview is read-only and requires the optional GTK executable. Its **Stop input**
-button revokes the source session's hyprhand permission. Closing it leaves source
-applications and authorization unchanged. See [preview](preview.md).
+Preview requires the optional GTK executable. Its **Stop input** button revokes
+the source session's hyprhand permission. **Take over** lets the owner use the
+session with their own mouse and keyboard (for sign-ins and captchas) while agent
+input is stopped; `state` reports `human_takeover`, and **Return** restores control
+as it was. Closing it leaves source applications and authorization unchanged,
+except that closing during a takeover leaves agent input stopped.
+See [preview](preview.md).
 
 `stop` leaves applications open; `destroy` closes the tracked compositor, launched
 applications, AT-SPI registry, bus, and descendants still attributable to them.

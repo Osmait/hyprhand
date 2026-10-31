@@ -21,7 +21,8 @@ src/
   input/                 action coordination, keyboard, pointer, button codes, motion, scroll, aura
   capture/               observation, layout revision, cursor capture
   accessibility/         AT-SPI traversal and narrow C bridge
-  preview/               controller, bounded transport, cadence, protocol, GTK, C ABI
+  preview/               controller, bounded transport, cadence, protocol, GTK, C ABI,
+                         human takeover (viewer channel, worker, session keymap)
 tests/                   offline and opt-in live runners
 protocols/               vendored Wayland XML; C/headers generated in build cache
 scripts/                 checks, benchmarks, local packaging and verification
@@ -118,6 +119,17 @@ before allocation and decoded off the GTK thread by `transport.zig`.
 `cadence.zig` allows one request at a time and reduces static-image capture to
 1 fps. Image freshness, lock state and session identity are checked independently
 of image equality. GTK is never a dependency of the default CLI build.
+
+Human takeover keeps the same split. The viewer (`takeover_input.zig`) only
+translates GTK events into fixed-size records (`takeover_protocol.zig`) on a
+private pipe. The CLI worker `_preview_input` (`takeover.zig`) owns the
+authority change: it holds `takeover.lock`, revokes the control token with
+`Runtime.revoke`, waits on the action lock for running actions to fail their
+guards, and re-checks identity, lock state and geometry every 250 ms. Its
+virtual devices send without an `ActionGuard`, which is why the worker accepts
+only the `hyprhand-pip` parent installed beside it and why `Runtime.grant`
+refuses while any takeover lock is held. `takeover_keys.zig` keeps the session
+keymap that gives each host key the symbol the host resolved.
 See [preview](preview.md) for the complete transport and UI contract.
 
 ## Design influences

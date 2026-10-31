@@ -3,10 +3,15 @@ const std = @import("std");
 pub const Cadence = struct {
     interval_ms: i64,
     unchanged: u32 = 0,
+    /// While a human controls the source, unchanged images keep the full rate:
+    /// their next keystroke or click must show without an idle back-off.
+    responsive: bool = false,
 
     pub fn completed(self: *Cadence, started: i64, finished: i64, changed: bool) i64 {
         self.unchanged = if (changed) 0 else self.unchanged +| 1;
-        const idle_ms: i64 = if (self.unchanged >= 30)
+        const idle_ms: i64 = if (self.responsive)
+            0
+        else if (self.unchanged >= 30)
             1000
         else if (self.unchanged >= 10)
             400
@@ -26,4 +31,10 @@ test "cadence bounds idle age, leaves slow-capture headroom and resumes on chang
     for (0..30) |_| _ = cadence.completed(0, 20, false);
     try std.testing.expectEqual(@as(i64, 1000), cadence.completed(0, 20, false));
     try std.testing.expectEqual(@as(i64, 67), cadence.completed(0, 20, true));
+}
+
+test "cadence keeps the target period without back-off while responsive" {
+    var cadence = Cadence{ .interval_ms = 67, .responsive = true };
+    for (0..40) |_| _ = cadence.completed(0, 20, false);
+    try std.testing.expectEqual(@as(i64, 67), cadence.completed(0, 20, false));
 }

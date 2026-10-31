@@ -38,7 +38,9 @@ pub const text = "hyprhand " ++ version.string ++
     \\  preview --session NAME [--monitor NAME] [--host-monitor NAME] [--fps 1..15]
     \\    --monitor is the session's monitor; --host-monitor places the PiP on the host.
     \\    Maximum capture rate; unchanged images back off to 1 fps.
-    \\    Optional GTK4 host PiP; read-only, close leaves agent running.
+    \\    Optional GTK4 host PiP; close leaves agent running. Take over lets the
+    \\    human type (logins, captchas) while agent input is stopped; Return
+    \\    restores it. state reports human_takeover and control_enabled.
     \\
     \\Input accepts --dry-run. Coordinates are screenshot pixels, not desktop pixels.
     \\Pointer approach is smooth (auto 200..600ms); --move-duration-ms 50..10000

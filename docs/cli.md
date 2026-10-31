@@ -37,7 +37,9 @@ Example error shape:
 
 Parse `ok` and `err.code`, not English error messages. Successful response fields
 vary by command. `state` returns `session_id`, `monitors`, `windows`, `workspaces`,
-`active_window`, and `cursor`. `windows`, `monitors`, and `workspaces` put their
+`active_window`, `cursor`, `control_enabled` (hyprhand input is enabled) and
+`human_takeover` (a human holds the session through the preview's Take over; see
+[preview](preview.md#human-takeover)). `windows`, `monitors`, and `workspaces` put their
 respective Hyprland data in `data`. Hyprland-provided fields can vary by version.
 
 ## Inspection and observation

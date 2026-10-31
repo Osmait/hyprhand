@@ -37,6 +37,14 @@ pub const Connection = struct {
         return saved;
     }
 
+    /// Sends queued requests without waiting for replies. A full socket
+    /// buffer falls back to a cancellable roundtrip, which waits for it to drain.
+    pub fn flush(self: *Connection) !void {
+        if (c.wl_display_flush(self.display) >= 0) return;
+        if (native.errno() != c.EAGAIN) return error.WaylandUnavailable;
+        try self.sync_with_cancellation(true);
+    }
+
     fn done(data: ?*anyopaque, callback: ?*c.struct_wl_callback, _: u32) callconv(.c) void {
         const finished: *bool = @ptrCast(@alignCast(data.?));
         finished.* = true;

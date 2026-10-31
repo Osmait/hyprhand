@@ -53,7 +53,7 @@ verification, full recording, and edit timeline.
 | Verify | Expiring frames, focus/layout validation during actions, cursor interference detection, dry runs |
 | Synchronize | Wait for windows, focus, workspace, geometry or pixel stability; NDJSON compositor events |
 | Isolate input | Create, inspect, list, launch into, and destroy managed nested or headless sessions |
-| Monitor | Optional read-only GTK4 preview with source cursor and an input-stop control |
+| Monitor | Optional GTK4 preview with source cursor, an input-stop control and human takeover for logins and captchas |
 | Accessibility | Bounded, read-only AT-SPI tree; password values and children are omitted |
 | Integrate | JSON errors, Bash/Fish completions, an agent skill, offline tests, checksummed local packages |
 
@@ -303,6 +303,10 @@ at up to 1–15 fps (5 by default), backing off to 1 fps when unchanged.
 
 - **Stop input** revokes hyprhand input permission in the source session. It leaves
   applications and external agent processes running.
+- **Take over** pauses the agent and forwards your own mouse and keyboard into the
+  session, for sign-ins, captchas and second factors the agent must not handle.
+  Your keys are never logged or shown to the agent. **Return** gives control back
+  as it was; closing the viewer during a takeover leaves agent input stopped.
 - Controls and status appear on hover or Tab navigation; at rest, only the
   session image is shown.
 - **Close** closes only the viewer. It does not stop input or terminate the agent.

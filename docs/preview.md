@@ -46,8 +46,9 @@ See the compositor's [window-rule API](https://wiki.hypr.land/configuring/core/r
   Truncated session/status
   text has its full description in a tooltip. Styles affect only this viewer.
 - It does not request activation on opening or follow pointer hover. Clicking
-  its controls can focus the viewer normally, but never forwards input to the
-  source. The host's input authorization token is never enabled or changed.
+  its controls can focus the viewer normally. It forwards input to the source
+  only during a human takeover (below). The host's input authorization token
+  is never enabled or changed.
 - The image includes the source cursor, preserves aspect ratio and updates at
   up to 5 fps by default (configurable 1–15). Captures fit within 960 × 540;
   resizing the viewer does not increase source resolution. This is a monitoring
@@ -70,6 +71,72 @@ See the compositor's [window-rule API](https://wiki.hypr.land/configuring/core/r
   after failure. A viewer never attaches to a recreated session of the same name:
   close it and explicitly open a new preview.
 
+## Human takeover
+
+Some steps belong to the human: signing in, a captcha, a second factor. **Take
+over** lets the owner do them inside the session with their own mouse and
+keyboard, without the agent ever seeing what they type.
+
+- **Take over** (next to Stop input, available while the image is live) first
+  stops agent control of that session, then forwards the human's pointer,
+  buttons, scrolling and keys. While it lasts, agent input commands fail with
+  `ControlStopped`, `enable` fails with `HumanTakeoverActive`, and
+  `hyprhand state --session NAME` reports `"human_takeover": true` and
+  `"control_enabled": false`. A second viewer cannot take over the same session.
+- The viewer marks takeover with an amber frame and the status
+  `You are in control · Agent paused`. The header hides and the controls become
+  a solid bar below the image, so no part of the image is covered. Captures run
+  at the 15 fps maximum without the idle back-off while the human is in control.
+- Clicks start only on the image; letterbox bars are ignored, and a drag that
+  leaves the image continues at its edge. Image coordinates are mapped onto the
+  source monitor, accounting for the viewer's scale and letterbox offsets.
+- Keys go to the session while the viewer has keyboard focus. Clicking Take over
+  normally gives it focus despite the viewer's `no_initial_focus` and
+  `no_follow_mouse` rules; if it did not, the viewer asks for activation once.
+  Every key is forwarded, including Tab, Escape, Enter and shortcuts such as
+  ctrl+a, ctrl+c and ctrl+v. Compositor bindings (for example Super shortcuts)
+  stay with the host. When the viewer loses focus, held keys and buttons are
+  released; click the image to continue.
+- **Return** stops forwarding and gives control back **as it was taken**: if the
+  agent had control when the human took over, it is enabled again with a new
+  token; if input was already stopped, it stays stopped. The agent detects the
+  change through `state` (`human_takeover: false`, `control_enabled: true`) and
+  the audit log (`takeover` `started`, then `returned`). The viewer stops
+  capturing keys; keyboard focus moves away when the human clicks elsewhere.
+- Closing the viewer, a crash, the session locking, closing or being replaced,
+  or a worker that stops reading all end the takeover **without** re-enabling the
+  agent: closing is not consent to resume. Use `enable` deliberately afterwards.
+
+Keys travel as one event each: the host's physical key code plus the symbol
+GTK resolved for it, with the human's own layout, Shift, AltGr and Caps Lock
+already applied. The worker resolves dead keys and Compose sequences with the
+host user's Compose table (locale, `XCOMPOSEFILE`, `~/.XCompose`), then builds a
+session keymap that gives each physical key its symbol with real Shift levels.
+Shifted characters and non-ASCII text (é, ñ, Ñ) therefore type exactly as on the
+host, and code and symbol can never be paired with a stale keymap. Host input
+methods (IBus/Fcitx composition) are bypassed; keys with codes above XKB's 255
+limit and sequences composing more than one symbol are not forwarded.
+
+### Takeover security
+
+- Typed keys are never logged, echoed, written to files, put in argv or sent to
+  the agent. The audit log records only `takeover` with `started`, `returned`,
+  `ended` or an error name.
+- The private `_preview_input` worker accepts input only from a parent whose
+  executable is the `hyprhand-pip` installed beside it, reading a pipe on stdin,
+  so agents have no command that injects unguarded input. Like control tokens,
+  this is a cooperative check, not a boundary against malicious same-user
+  processes (see [SECURITY.md](../SECURITY.md)).
+- The worker connects its devices before revoking control, so a setup failure
+  leaves agent control unchanged. It then removes the token, waits for running
+  agent actions to notice and exit, and only then reports ready.
+- Every 250 ms, and before it reports ready, it re-routes the session from the
+  original owner environment and requires the pinned compositor instance, an
+  unlocked session and the selected monitor. It revokes any token that appears.
+  Any failure ends the takeover with agent control stopped.
+- `takeover.lock` in the session state directory is held by an open descriptor
+  for the worker's lifetime, so a crash cannot leave a stale takeover.
+
 ## UI maintenance
 
 The desktop owner monitors a managed session while continuing work on the host.
@@ -78,6 +145,8 @@ to stop input. Close and stop must retain their distinct behavior described abov
 
 `src/preview/pip.css` defines the scoped palette: dark canvas `#080c12`, white
 labels, neutral controls `#121821`, muted red stop `#943546` and focus `#8ac4ff`.
+Take over is blue `#24476b`; during takeover Return is amber `#8a5a12` and the
+image carries a 2px `#e0a24a` frame.
 Use the native font family with 12px labels and 6px button corners. Status uses
 text as well as color. Session labels ellipsize; status wraps to at most two lines,
 with complete text available in tooltips.
@@ -106,7 +175,8 @@ and rejected at 8 MiB, before a faulty helper can grow an unbounded memory file.
 Each grim invocation has a 1.5-second deadline and is reaped on cancellation.
 Each complete capture request has a two-second cooperative budget. Headers, PNG dimensions,
 byte size and monotonic timestamps are checked before GTK decodes an image.
-There is no image input handler, virtual keyboard or pointer device in the viewer.
+The GTK process itself holds no virtual keyboard or pointer device; takeover input
+goes through a separate worker, described below.
 
 The private `_preview_stream` protocol accepts one `F` byte per request and
 returns a little-endian u32 length followed by the existing DCP1 frame. Only one
@@ -129,6 +199,32 @@ normal compositor config reload. SIGKILL/crashes of the launcher can leave its
 rule enabled; it only matches that launcher's unique viewer class. Rules are not
 a substitute for a compositor-level security boundary.
 
+### Takeover transport
+
+Take over starts one long-lived `_preview_input` worker with the same session,
+pinned instance and monitor as the capture worker, on two private pipes created
+by the viewer (close-on-exec, so no other child inherits them). The worker
+replies with one byte: `R` once control is revoked and its virtual pointer and
+keyboard exist, then `E` (control re-enabled) or `S` (stays stopped) after
+Return. Any other byte is its JSON error report.
+
+The viewer writes fixed-size little-endian records (`takeover_protocol.zig`):
+`M` motion with a normalized u16 position in the frame, `B` button and state,
+`S` scroll (wheel in 1/120 detents, or surface pixels in 1/256), `T` scroll stop,
+`K` key (physical code, keysym, state), `A` release everything and `Q` Return.
+Records are at most 10 bytes, below `PIPE_BUF`, and the event pipe is
+non-blocking: a write that does not fit ends the takeover instead of blocking
+GTK or queuing input without bound. The worker validates every record (known
+tag, 0/1 flags, known buttons, key code ≤ 247, keysym range, bounded deltas) and
+exits on the first invalid one. Its stdin buffer never holds more than one partial
+record. EOF without `Q` is a close, not a Return.
+
+Pointer positions use `zwlr_virtual_pointer_v1.motion_absolute` against the
+bounding box of all enabled monitors, which is how Hyprland maps an unbound
+virtual pointer. Wheel detents and continuous axes use the same requests as
+`scroll`. Host key repeats are dropped; the session application repeats held
+keys itself.
+
 ## Verification
 
 ```sh
@@ -143,6 +239,25 @@ python3 tests/viewer_broadway.py
 Worker tests use fake IPC, managed metadata and disposable processes, without a
 desktop: identity mismatch, missing outputs, lock-before/after capture, bounded
 PNG, memory-only capture, timeout/cancel reaping, and stop-with-apps-alive.
+Takeover adds: the worker refuses any parent but `hyprhand-pip`, identity and
+device failures leave control enabled, and `enable` is refused while
+`takeover.lock` is held (`state` reports it). Zig unit tests cover record
+encoding and validation, letterbox and absolute-motion mapping, Shift levels,
+host repeats, shared modifiers, Compose sequences and full release.
+
+Takeover was checked live on Hyprland 0.57 / GTK 4.24 with two disposable
+headless sessions: the real viewer ran inside one of them, standing in for the
+host, and showed the other, which ran the GTK note demo. Driving the stand-in
+host with hyprhand: Take over revoked the source's control (`state` reported
+the takeover, agent `key` failed with `ControlStopped`, `enable` with
+`HumanTakeoverActive`, a second takeover with `TakeoverBusy`); clicks through
+the letterboxed image landed on the entry; ctrl+a, `Contraseña é! Ñ#2`,
+BackSpace, Tab and Enter typed and applied exactly; a drag selected text without
+moving the viewer; Return re-enabled control, or kept it stopped when it had
+been stopped; closing the viewer during takeover left control stopped. A
+recorded stream checked dead-key composition and dropped host repeats. The
+audit log held only `takeover` entries. This stand-in host had no physical
+keyboard, so the human-keyboard path on a real host desktop was not exercised.
 
 Manual native checks on Hyprland 0.56.2 / GTK 4.22.4: live source text and cursor,
 floating/pinned flags, unchanged Brave focus, 640 × 360 and 360 × 203 layouts,

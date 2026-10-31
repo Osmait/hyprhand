@@ -153,6 +153,45 @@ pub const Pointer = struct {
         try self.sync();
     }
 
+    /// Queues an absolute position, in `zwlr_virtual_pointer_v1` units. The
+    /// queue_* requests are unguarded: only the preview takeover worker uses
+    /// them, to forward a human's own pointer after revoking agent control.
+    pub fn queue_motion_absolute(
+        self: *Pointer,
+        x: u32,
+        y: u32,
+        x_extent: u32,
+        y_extent: u32,
+    ) void {
+        const time = native.timestamp_ms();
+        c.zwlr_virtual_pointer_v1_motion_absolute(self.device, time, x, y, x_extent, y_extent);
+        c.zwlr_virtual_pointer_v1_frame(self.device);
+    }
+
+    pub fn queue_button(self: *Pointer, button: u32, pressed: bool) void {
+        const button_state: u32 = @intFromBool(pressed);
+        c.zwlr_virtual_pointer_v1_button(self.device, native.timestamp_ms(), button, button_state);
+        c.zwlr_virtual_pointer_v1_frame(self.device);
+    }
+
+    /// Queues whole wheel detents, as `scroll` sends them.
+    pub fn queue_wheel(self: *Pointer, dx: i32, dy: i32) void {
+        self.axis_discrete(.vertical, dy);
+        self.axis_discrete(.horizontal, dx);
+        c.zwlr_virtual_pointer_v1_frame(self.device);
+    }
+
+    /// Queues continuous (touchpad-like) axis distances in wl_fixed units.
+    pub fn queue_continuous(self: *Pointer, dx: i32, dy: i32) void {
+        self.axis_continuous(.vertical, dy);
+        self.axis_continuous(.horizontal, dx);
+        c.zwlr_virtual_pointer_v1_frame(self.device);
+    }
+
+    pub fn flush(self: *Pointer) !void {
+        try self.connection.flush();
+    }
+
     pub fn end_scroll(self: *Pointer, dx: i32, dy: i32) void {
         const saved = self.connection.suspend_guard();
         defer self.connection.runtime = saved;
