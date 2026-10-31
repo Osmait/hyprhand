@@ -154,7 +154,7 @@ fn focused_monitor_name(runtime: *Runtime) ![]const u8 {
 }
 
 pub fn observe(runtime: *Runtime, arguments: args.Args) !void {
-    if (eq(arguments.backend, "native")) return error.NativeCaptureUnavailable;
+    if (arguments.backend == .native) return error.NativeCaptureUnavailable;
     // Opportunistic cleanup under its own lock: never contends with an input
     // action, and another observer already collecting is not an error.
     operations.collect(runtime, arguments, false) catch |err| switch (err) {

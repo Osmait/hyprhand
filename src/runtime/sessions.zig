@@ -531,14 +531,14 @@ fn create(runtime: *Runtime, arguments: Args) !void {
     if (arguments.headless_bridge) |path| try validate_headless_bridge(runtime, path);
     // Hyprland 0.57+ only reads Lua configs. Follow the host's provider so the
     // child compositor (same installed binary) accepts its generated config.
-    const lua = arguments.lua or eq(try runtime.config_provider(), "lua");
+    const lua = arguments.lua or try runtime.config_provider() == .lua;
 
-    const directory = try named(runtime, arguments.name.?);
+    const directory = try named(runtime, arguments.session_name.?);
     try ensure_directory(runtime, directory);
     var scoped = runtime.with_directory(directory);
     const lock = try scoped.lock();
     defer _ = c.close(lock);
-    if (load(runtime, arguments.name.?)) |existing| {
+    if (load(runtime, arguments.session_name.?)) |existing| {
         if (!existing.destroyed) return error.SessionExists;
     } else |err| if (err != error.SessionNotFound) return err;
 
@@ -571,7 +571,7 @@ fn create(runtime: *Runtime, arguments: Args) !void {
     try create_compositor_ready(runtime, socket, arguments.nested);
 
     const session = Session{
-        .name = arguments.name.?,
+        .name = arguments.session_name.?,
         .compositor = compositor,
         .bus = bus,
         .runtime = runtime_directory,
@@ -766,24 +766,31 @@ fn session_roots(runtime: *Runtime, session: Session) !std.ArrayList(Process) {
 }
 
 pub fn command(runtime: *Runtime, arguments: Args) !void {
-    const verb = arguments.value.?;
-    if (eq(verb, "create")) return create(runtime, arguments);
-    var session = try load(runtime, arguments.name.?);
-    if (eq(verb, "inspect")) {
-        return runtime.emit(.{
-            .ok = true,
-            .session = session,
-            .running = running(session),
-            .filesystem_sandbox = false,
-        });
+    const name = arguments.session_name.?;
+    switch (arguments.session_verb.?) {
+        .create => return create(runtime, arguments),
+        .inspect => {
+            const session = try load(runtime, name);
+            return runtime.emit(.{
+                .ok = true,
+                .session = session,
+                .running = running(session),
+                .filesystem_sandbox = false,
+            });
+        },
+        .destroy => return command_destroy(runtime, name),
     }
+}
+
+fn command_destroy(runtime: *Runtime, name: []const u8) !void {
+    var session = try load(runtime, name);
 
     var scoped = runtime.with_directory(session.directory);
     const lock = try scoped.lock();
     defer _ = c.close(lock);
     // Creation and launch share this lock; metadata loaded before acquiring it
     // may refer to an earlier incarnation of the same session name.
-    session = try load(runtime, arguments.name.?);
+    session = try load(runtime, name);
     if (!session.destroyed) {
         var roots = try session_roots(runtime, session);
         defer roots.deinit(runtime.allocator);

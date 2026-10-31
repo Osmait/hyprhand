@@ -134,17 +134,17 @@ fn scroll(
     dx: i32,
     dy: i32,
     duration_ms: u32,
-    mode: []const u8,
+    mode: args.ScrollMode,
 ) !void {
     const active = try runtime.active_window();
     runtime.target_window = active;
-    const wheel = eq(mode, "wheel") or (eq(mode, "auto") and duration_ms == 0);
+    const wheel = mode == .wheel or (mode == .auto and duration_ms == 0);
 
     const clients = try runtime.query_json([]Client, "clients");
     for (clients) |client| {
         if (!eq(client.address, active)) continue;
         if (!client.xwayland) continue;
-        if (eq(mode, "continuous")) return error.ContinuousScrollUnavailable;
+        if (mode == .continuous) return error.ContinuousScrollUnavailable;
         // XWayland does not consistently translate virtual Wayland axis events.
         // XTEST wheel buttons are used only inside the verified focused client.
         if (!client.contains(point)) return error.WindowNotFocused;
@@ -231,12 +231,7 @@ const MotionDriver = struct {
         if (self.expected_position) |expected| try expect_cursor_at(&scratch, expected);
 
         // Each sample preserves the existing stop/signal/session-lock guards.
-        const cursor_argument = try std.fmt.allocPrint(
-            scratch.allocator,
-            "{d} {d}",
-            .{ point.x, point.y },
-        );
-        try scratch.dispatch("movecursor", cursor_argument);
+        try scratch.dispatch(.{ .move_cursor = .{ .x = point.x, .y = point.y } });
         try self.pointer.refresh_position();
 
         const actual = try scratch.query_json(geometry.Point, "cursorpos");
@@ -293,7 +288,7 @@ fn resolve_pointer_target(
     }
 
     const continuous_scroll = arguments.command == .scroll and
-        eq(arguments.scroll_mode, "continuous");
+        arguments.scroll_mode == .continuous;
     if (continuous_scroll) {
         for (snapshot.clients) |client| {
             if (!eq(client.address, runtime.target_window.?)) continue;
@@ -376,40 +371,62 @@ fn run_pointer_action(runtime: *Runtime, arguments: args.Args, target: *PointerT
     if (hold_feedback) try runtime.pause(@intCast(100 - aura_elapsed));
 }
 
-fn type_text(runtime: *Runtime, arguments: args.Args) !void {
-    const x11 = try x11_keyboard(runtime, arguments.window.?);
-    if (!x11 and !eq(arguments.backend, "helper")) {
-        var device: Keyboard = undefined;
-        try device.init(try runtime.display_path());
-        defer device.deinit();
-        try device.create();
-        return device.type_text(runtime, arguments.text.?);
-    }
-    if (x11 and eq(arguments.backend, "native")) return error.NativeX11Unavailable;
+/// How keyboard input reaches the target window.
+const KeyboardRoute = enum {
+    /// Our own zwp_virtual_keyboard_v1 device.
+    native,
+    /// The wtype helper, for Wayland clients when `--backend helper` is asked for.
+    wtype,
+    /// XTEST through xdotool. XWayland clients need it: the virtual keyboard
+    /// protocol does not reach them reliably.
+    xdotool,
+};
 
-    const argv: []const []const u8 = if (x11)
-        &.{ "xdotool", "type", "--delay", "12", "--file", "-" }
-    else
-        &.{ "wtype", "-" };
-    try runtime.run_helper(argv, arguments.text.?, true);
+fn keyboard_route(runtime: *Runtime, arguments: args.Args) !KeyboardRoute {
+    const x11 = try x11_keyboard(runtime, arguments.window.?);
+    if (x11) {
+        if (arguments.backend == .native) return error.NativeX11Unavailable;
+        return .xdotool;
+    }
+    if (arguments.backend == .helper) return .wtype;
+    return .native;
+}
+
+fn type_text(runtime: *Runtime, arguments: args.Args) !void {
+    const text = arguments.text.?;
+    switch (try keyboard_route(runtime, arguments)) {
+        .native => {
+            var device: Keyboard = undefined;
+            try device.init(try runtime.display_path());
+            defer device.deinit();
+            try device.create();
+            try device.type_text(runtime, text);
+        },
+        .wtype => try runtime.run_helper(&.{ "wtype", "-" }, text, true),
+        .xdotool => {
+            const argv = &.{ "xdotool", "type", "--delay", "12", "--file", "-" };
+            try runtime.run_helper(argv, text, true);
+        },
+    }
 }
 
 fn press_chord(runtime: *Runtime, arguments: args.Args, wtype_argv: []const []const u8) !void {
-    const x11 = try x11_keyboard(runtime, arguments.window.?);
-    if (!x11 and !eq(arguments.backend, "helper")) {
-        var device: Keyboard = undefined;
-        try device.init(try runtime.display_path());
-        defer device.deinit();
-        try device.create();
-        return device.chord(runtime, arguments.value.?);
+    const chord = arguments.key_chord.?;
+    switch (try keyboard_route(runtime, arguments)) {
+        .native => {
+            var device: Keyboard = undefined;
+            try device.init(try runtime.display_path());
+            defer device.deinit();
+            try device.create();
+            try device.chord(runtime, chord);
+        },
+        .wtype => try runtime.run_helper(wtype_argv, null, true),
+        .xdotool => {
+            const x11_spelling = try x11_chord(runtime.allocator, chord);
+            const argv = &.{ "xdotool", "key", "--delay", "0", x11_spelling };
+            try runtime.run_helper(argv, null, true);
+        },
     }
-    if (x11 and eq(arguments.backend, "native")) return error.NativeX11Unavailable;
-
-    const argv: []const []const u8 = if (x11)
-        &.{ "xdotool", "key", "--delay", "0", try x11_chord(runtime.allocator, arguments.value.?) }
-    else
-        wtype_argv;
-    try runtime.run_helper(argv, null, true);
 }
 
 pub fn run(runtime: *Runtime, arguments: args.Args) !void {
@@ -432,9 +449,10 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
     const point: ?geometry.Point = if (target) |pointer_target| pointer_target.point else null;
     // Validate every argument before the dry-run report and before any input.
     var key_argv: ?[]const []const u8 = null;
+    var workspace_number: ?u32 = null;
     switch (arguments.command) {
-        .focus => try check_window(runtime, arguments.value.?, false),
-        .workspace => try run_validate_workspace(arguments.value.?),
+        .focus => try check_window(runtime, arguments.focus_window.?, false),
+        .workspace => workspace_number = try run_validate_workspace(arguments.workspace_target.?),
         .type => {
             runtime.target_window = arguments.window;
             try check_window(runtime, arguments.window.?, true);
@@ -443,7 +461,7 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         .key => {
             runtime.target_window = arguments.window;
             try check_window(runtime, arguments.window.?, true);
-            key_argv = try key_args(runtime.allocator, arguments.value.?);
+            key_argv = try key_args(runtime.allocator, arguments.key_chord.?);
         },
         else => {},
     }
@@ -456,7 +474,7 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
             .session_id = runtime.session_id,
             .desktop_point = point,
             .window = arguments.window,
-            .target = arguments.value,
+            .target = arguments.target(),
         });
         return;
     }
@@ -464,8 +482,8 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
     if (target) |*pointer_target| {
         try run_pointer_action(runtime, arguments, pointer_target);
     } else switch (arguments.command) {
-        .focus => try run_focus(runtime, arguments.value.?),
-        .workspace => try run_workspace(runtime, arguments.value.?),
+        .focus => try run_focus(runtime, arguments.focus_window.?),
+        .workspace => try run_workspace(runtime, workspace_number.?),
         .type => try type_text(runtime, arguments),
         .key => try press_chord(runtime, arguments, key_argv.?),
         .launch => return sessions.launch(runtime, arguments),
@@ -482,10 +500,11 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
     });
 }
 
-fn run_validate_workspace(value: []const u8) !void {
+fn run_validate_workspace(value: []const u8) !u32 {
     const workspace_number = std.fmt.parseInt(u32, value, 10) catch return error.InvalidWorkspace;
     if (workspace_number == 0) return error.InvalidWorkspace;
     if (workspace_number > std.math.maxInt(i32)) return error.InvalidWorkspace;
+    return workspace_number;
 }
 
 fn run_validate_text(text: []const u8) !void {
@@ -495,16 +514,14 @@ fn run_validate_text(text: []const u8) !void {
 }
 
 fn run_focus(runtime: *Runtime, address: []const u8) !void {
-    const focus_argument = try std.fmt.allocPrint(runtime.allocator, "address:{s}", .{address});
-    try runtime.dispatch("focuswindow", focus_argument);
+    try runtime.dispatch(.{ .focus_window = address });
     try check_window(runtime, address, true);
 }
 
-fn run_workspace(runtime: *Runtime, value: []const u8) !void {
-    try runtime.dispatch("workspace", value);
+fn run_workspace(runtime: *Runtime, number: u32) !void {
+    try runtime.dispatch(.{ .workspace = number });
     const active = try runtime.query_json(geometry.Workspace, "activeworkspace");
-    const requested = try std.fmt.parseInt(i64, value, 10);
-    if (active.id != requested) return error.WorkspaceVerificationFailed;
+    if (active.id != number) return error.WorkspaceVerificationFailed;
 }
 
 test "key chords emit explicit modifier releases and reject malformed input" {
