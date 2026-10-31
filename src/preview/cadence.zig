@@ -6,7 +6,12 @@ pub const Cadence = struct {
 
     pub fn completed(self: *Cadence, started: i64, finished: i64, changed: bool) i64 {
         self.unchanged = if (changed) 0 else self.unchanged +| 1;
-        const idle_ms: i64 = if (self.unchanged >= 30) 1000 else if (self.unchanged >= 10) 400 else 0;
+        const idle_ms: i64 = if (self.unchanged >= 30)
+            1000
+        else if (self.unchanged >= 10)
+            400
+        else
+            0;
         // Backpressure leaves headroom when capture itself exceeds the target
         // period. Timers are wakeups, not a source of queued capture work.
         const cost = @max(0, finished - started);

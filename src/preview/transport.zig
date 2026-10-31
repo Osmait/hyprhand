@@ -15,54 +15,101 @@ pub const Job = struct {
 
     fn destroy(data: ?*anyopaque) callconv(.c) void {
         const self: *Job = @ptrCast(@alignCast(data.?));
-        if (self.previous) |p| c.g_bytes_unref(p);
-        if (self.png) |p| c.g_bytes_unref(p);
-        if (self.texture) |t| c.g_object_unref(t);
+        if (self.previous) |previous| c.g_bytes_unref(previous);
+        if (self.png) |png| c.g_bytes_unref(png);
+        if (self.texture) |texture| c.g_object_unref(texture);
         std.heap.c_allocator.destroy(self);
     }
 
-    fn read(self: *Job, bytes: []u8, cancel: ?*c.GCancellable) !void {
+    fn read(self: *Job, bytes: []u8, cancellable: ?*c.GCancellable) !void {
         var count: usize = 0;
-        var err: ?*c.GError = null;
-        defer if (err) |e| c.g_error_free(e);
-        if (c.g_input_stream_read_all(c.g_subprocess_get_stdout_pipe(self.process), bytes.ptr, bytes.len, &count, cancel, &err) == 0 or count != bytes.len) return error.PreviewStreamClosed;
+        var glib_error: ?*c.GError = null;
+        defer if (glib_error) |value| c.g_error_free(value);
+
+        const stdout = c.g_subprocess_get_stdout_pipe(self.process);
+        const succeeded = c.g_input_stream_read_all(
+            stdout,
+            bytes.ptr,
+            bytes.len,
+            &count,
+            cancellable,
+            &glib_error,
+        );
+        if (succeeded == 0) return error.PreviewStreamClosed;
+        if (count != bytes.len) return error.PreviewStreamClosed;
     }
 
-    fn receive(self: *Job, cancel: ?*c.GCancellable) !void {
-        var err: ?*c.GError = null;
-        defer if (err) |e| c.g_error_free(e);
+    fn receive(self: *Job, cancellable: ?*c.GCancellable) !void {
+        var glib_error: ?*c.GError = null;
+        defer if (glib_error) |value| c.g_error_free(value);
+
         var count: usize = 0;
-        if (c.g_output_stream_write_all(c.g_subprocess_get_stdin_pipe(self.process), "F", 1, &count, cancel, &err) == 0 or count != 1) return error.PreviewStreamClosed;
+        const stdin = c.g_subprocess_get_stdin_pipe(self.process);
+        const written = c.g_output_stream_write_all(
+            stdin,
+            "F",
+            1,
+            &count,
+            cancellable,
+            &glib_error,
+        );
+        if (written == 0) return error.PreviewStreamClosed;
+        if (count != 1) return error.PreviewStreamClosed;
+
         var prefix: [4]u8 = undefined;
-        try self.read(&prefix, cancel);
+        try self.read(&prefix, cancellable);
         const length = std.mem.readInt(u32, &prefix, .little);
-        if (length < protocol.header_len or length > protocol.header_len + protocol.max_bytes) return error.InvalidPreviewFrame;
+        if (length < protocol.header_len) return error.InvalidPreviewFrame;
+        if (length > protocol.header_len + protocol.max_bytes) return error.InvalidPreviewFrame;
+
         const memory = c.g_try_malloc(length) orelse return error.OutOfMemory;
         const bytes = c.g_bytes_new_take(memory, length);
         defer c.g_bytes_unref(bytes);
         const data = @as([*]u8, @ptrCast(memory))[0..length];
-        try self.read(data, cancel);
+        try self.read(data, cancellable);
         const frame = try protocol.decode(data, @divTrunc(c.g_get_monotonic_time(), 1000));
-        self.png = c.g_bytes_new_from_bytes(bytes, protocol.header_len, length - protocol.header_len);
+
+        self.png = c.g_bytes_new_from_bytes(
+            bytes,
+            protocol.header_len,
+            length - protocol.header_len,
+        );
         self.captured_ms = frame.captured_ms;
         self.enabled = frame.enabled;
         // Exact equality, not a hash: never mistake new pixels for old content.
-        if (self.previous == null or c.g_bytes_equal(self.previous.?, self.png.?) == 0)
-            self.texture = c.gdk_texture_new_from_bytes(self.png.?, &err) orelse return error.InvalidScreenshot;
+        const changed = self.previous == null or
+            c.g_bytes_equal(self.previous.?, self.png.?) == 0;
+        if (changed) {
+            self.texture = c.gdk_texture_new_from_bytes(self.png.?, &glib_error) orelse
+                return error.InvalidScreenshot;
+        }
         self.ok = true;
     }
 
-    fn run(task: ?*c.GTask, _: ?*anyopaque, data: ?*anyopaque, cancel: ?*c.GCancellable) callconv(.c) void {
+    fn run(
+        task: ?*c.GTask,
+        _: ?*anyopaque,
+        data: ?*anyopaque,
+        cancellable: ?*c.GCancellable,
+    ) callconv(.c) void {
         const self: *Job = @ptrCast(@alignCast(data.?));
-        self.receive(cancel) catch {};
+        self.receive(cancellable) catch {};
         c.g_task_return_boolean(task, @intFromBool(self.ok));
     }
 
-    pub fn start(process: *c.GSubprocess, previous: ?*c.GBytes, cancel: *c.GCancellable, callback: c.GAsyncReadyCallback) !void {
+    pub fn start(
+        process: *c.GSubprocess,
+        previous: ?*c.GBytes,
+        cancellable: *c.GCancellable,
+        callback: c.GAsyncReadyCallback,
+    ) !void {
         const self = try std.heap.c_allocator.create(Job);
-        self.* = .{ .process = process, .previous = if (previous) |p| c.g_bytes_ref(p) else null };
+        self.* = .{
+            .process = process,
+            .previous = if (previous) |bytes| c.g_bytes_ref(bytes) else null,
+        };
         // GTask keeps source_object/process and cancellable alive until done.
-        const task = c.g_task_new(process, cancel, callback, null);
+        const task = c.g_task_new(process, cancellable, callback, null);
         c.g_task_set_task_data(task, self, destroy);
         c.g_task_run_in_thread(task, run);
         c.g_object_unref(task);
@@ -72,22 +119,31 @@ pub const Job = struct {
 fn test_process(mode: [:0]const u8) !*c.GSubprocess {
     const script =
         \\import sys,struct,time,zlib,binascii
+        \\out=sys.stdout.buffer
         \\def chunk(tag,data):
-        \\ return struct.pack('>I',len(data))+tag+data+struct.pack('>I',binascii.crc32(tag+data)&0xffffffff)
-        \\png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',1,1,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(b'\x00\x2f\x6f\xe3\xff'))+chunk(b'IEND',b'')
+        \\ crc=binascii.crc32(tag+data)&0xffffffff
+        \\ return struct.pack('>I',len(data))+tag+data+struct.pack('>I',crc)
+        \\ihdr=chunk(b'IHDR',struct.pack('>IIBBBBB',1,1,8,6,0,0,0))
+        \\idat=chunk(b'IDAT',zlib.compress(b'\x00\x2f\x6f\xe3\xff'))
+        \\png=b'\x89PNG\r\n\x1a\n'+ihdr+idat+chunk(b'IEND',b'')
         \\while sys.stdin.buffer.read(1):
         \\ if sys.argv[1]=='oversize':
-        \\  sys.stdout.buffer.write(struct.pack('<I',8*1024*1024+14));sys.stdout.buffer.flush();break
+        \\  out.write(struct.pack('<I',8*1024*1024+14));out.flush();break
         \\ if sys.argv[1]=='partial':
-        \\  sys.stdout.buffer.write(struct.pack('<I',1000)+b'abc');sys.stdout.buffer.flush();break
+        \\  out.write(struct.pack('<I',1000)+b'abc');out.flush();break
         \\ if sys.argv[1]=='invalid': png=png[:24]
         \\ data=b'DCP1\1'+struct.pack('<q',int(time.monotonic()*1000))+png
-        \\ sys.stdout.buffer.write(struct.pack('<I',len(data))+data);sys.stdout.buffer.flush()
+        \\ out.write(struct.pack('<I',len(data))+data);out.flush()
     ;
     const argv = [_:null]?[*:0]const u8{ "python3", "-c", script, mode };
-    var err: ?*c.GError = null;
-    defer if (err) |e| c.g_error_free(e);
-    return c.g_subprocess_newv(@ptrCast(&argv), c.G_SUBPROCESS_FLAGS_STDIN_PIPE | c.G_SUBPROCESS_FLAGS_STDOUT_PIPE | c.G_SUBPROCESS_FLAGS_STDERR_SILENCE, &err) orelse error.TestProcessFailed;
+    var glib_error: ?*c.GError = null;
+    defer if (glib_error) |value| c.g_error_free(value);
+
+    const flags = c.G_SUBPROCESS_FLAGS_STDIN_PIPE |
+        c.G_SUBPROCESS_FLAGS_STDOUT_PIPE |
+        c.G_SUBPROCESS_FLAGS_STDERR_SILENCE;
+    return c.g_subprocess_newv(@ptrCast(&argv), flags, &glib_error) orelse
+        error.TestProcessFailed;
 }
 
 fn end_test_process(process: *c.GSubprocess) void {
@@ -98,17 +154,22 @@ fn end_test_process(process: *c.GSubprocess) void {
 
 fn test_job(process: *c.GSubprocess, previous: ?*c.GBytes) !*Job {
     const job = try std.heap.c_allocator.create(Job);
-    job.* = .{ .process = process, .previous = if (previous) |p| c.g_bytes_ref(p) else null };
+    job.* = .{
+        .process = process,
+        .previous = if (previous) |bytes| c.g_bytes_ref(bytes) else null,
+    };
     return job;
 }
 
 test "transport decodes without a display and reuses identical PNG storage" {
     const process = try test_process("valid");
     defer end_test_process(process);
+
     const first = try test_job(process, null);
     defer Job.destroy(first);
     try first.receive(null);
     try std.testing.expect(first.ok and first.texture != null);
+
     const second = try test_job(process, first.png);
     defer Job.destroy(second);
     try second.receive(null);
@@ -116,7 +177,13 @@ test "transport decodes without a display and reuses identical PNG storage" {
 }
 
 test "transport rejects oversized lengths, truncated payloads and invalid PNG" {
-    for ([_][:0]const u8{ "oversize", "partial", "invalid" }, [_]anyerror{ error.InvalidPreviewFrame, error.PreviewStreamClosed, error.InvalidScreenshot }) |mode, expected| {
+    const modes = [_][:0]const u8{ "oversize", "partial", "invalid" };
+    const errors_expected = [_]anyerror{
+        error.InvalidPreviewFrame,
+        error.PreviewStreamClosed,
+        error.InvalidScreenshot,
+    };
+    for (modes, errors_expected) |mode, expected| {
         const process = try test_process(mode);
         defer end_test_process(process);
         const job = try test_job(process, null);
@@ -131,8 +198,9 @@ test "transport honors a cancelled request" {
     defer end_test_process(process);
     const job = try test_job(process, null);
     defer Job.destroy(job);
-    const cancel = c.g_cancellable_new();
-    defer c.g_object_unref(cancel);
-    c.g_cancellable_cancel(cancel);
-    try std.testing.expectError(error.PreviewStreamClosed, job.receive(cancel));
+
+    const cancellable = c.g_cancellable_new();
+    defer c.g_object_unref(cancellable);
+    c.g_cancellable_cancel(cancellable);
+    try std.testing.expectError(error.PreviewStreamClosed, job.receive(cancellable));
 }

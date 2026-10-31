@@ -13,14 +13,16 @@ pub const Connection = struct {
     runtime: ?*Runtime = null,
 
     pub fn connect(display_path: [:0]const u8) !Connection {
-        var self = Connection{ .display = c.wl_display_connect(display_path) orelse return error.WaylandUnavailable };
+        const display = c.wl_display_connect(display_path) orelse return error.WaylandUnavailable;
+        var self = Connection{ .display = display };
         errdefer self.deinit();
-        self.registry = c.wl_display_get_registry(self.display) orelse return error.WaylandUnavailable;
+        self.registry = c.wl_display_get_registry(self.display) orelse
+            return error.WaylandUnavailable;
         return self;
     }
 
     pub fn deinit(self: *Connection) void {
-        if (self.registry) |r| c.wl_registry_destroy(r);
+        if (self.registry) |registry| c.wl_registry_destroy(registry);
         self.registry = null;
         _ = c.wl_display_flush(self.display);
         c.wl_display_disconnect(self.display);
@@ -63,12 +65,17 @@ pub const Connection = struct {
         const callback = c.wl_display_sync(self.display) orelse return error.WaylandUnavailable;
         // Destroying the callback on errors prevents a later callback into this stack.
         errdefer if (!finished) c.wl_callback_destroy(callback);
-        if (c.wl_callback_add_listener(callback, &callback_listener, &finished) != 0) return error.WaylandUnavailable;
+        const listener_added = c.wl_callback_add_listener(callback, &callback_listener, &finished);
+        if (listener_added != 0) return error.WaylandUnavailable;
+
         const deadline = native.now_ms() + 3000;
         var first = true;
         while (!finished) {
             if (cancellable) try native.check_cancelled();
-            if (!first or !already_guarded) if (self.runtime) |runtime| try runtime.guard();
+            const guard_needed = !first or !already_guarded;
+            if (guard_needed) {
+                if (self.runtime) |runtime| try runtime.guard();
+            }
             first = false;
             if (c.wl_display_dispatch_pending(self.display) < 0) return error.WaylandUnavailable;
             if (finished) break;
@@ -86,14 +93,28 @@ pub const Connection = struct {
                 if (native.errno() != c.EAGAIN) return error.WaylandUnavailable;
                 events |= c.POLLOUT;
             }
-            var pfd = c.struct_pollfd{ .fd = c.wl_display_get_fd(self.display), .events = events, .revents = 0 };
-            const ready = c.poll(&pfd, 1, 50);
+            var poll_descriptor = c.struct_pollfd{
+                .fd = c.wl_display_get_fd(self.display),
+                .events = events,
+                .revents = 0,
+            };
+            const ready = c.poll(&poll_descriptor, 1, 50);
             if (ready < 0 and native.errno() != c.EINTR) return error.WaylandUnavailable;
-            if (ready > 0 and pfd.revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
+
+            const revents = poll_descriptor.revents;
+            const readable = revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0;
+            const invalid = revents & c.POLLNVAL != 0;
+            if (ready > 0 and readable) {
                 prepared = false;
-                if (c.wl_display_read_events(self.display) < 0) return error.WaylandUnavailable;
-                if (c.wl_display_dispatch_pending(self.display) < 0) return error.WaylandUnavailable;
-            } else if (ready > 0 and pfd.revents & c.POLLNVAL != 0) return error.WaylandUnavailable;
+                if (c.wl_display_read_events(self.display) < 0) {
+                    return error.WaylandUnavailable;
+                }
+                if (c.wl_display_dispatch_pending(self.display) < 0) {
+                    return error.WaylandUnavailable;
+                }
+            } else if (ready > 0 and invalid) {
+                return error.WaylandUnavailable;
+            }
         }
     }
 };
