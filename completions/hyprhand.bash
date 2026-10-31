@@ -10,7 +10,7 @@ _hyprhand_complete() {
     elif [[ ${COMP_WORDS[1]} == preview ]]; then
         COMPREPLY=( $(compgen -W '--session --monitor --host-monitor --fps' -- "$cur") )
     elif [[ ${COMP_WORDS[COMP_CWORD-1]} == --backend ]]; then
-        COMPREPLY=( $(compgen -W 'auto native helper' -- "$cur") )
+        COMPREPLY=( $(compgen -W 'auto native helper clipboard' -- "$cur") )
     elif [[ ${COMP_WORDS[COMP_CWORD-1]} == --scroll-mode ]]; then
         COMPREPLY=( $(compgen -W 'auto wheel continuous' -- "$cur") )
     elif [[ ${COMP_WORDS[COMP_CWORD-1]} == --indicator ]]; then

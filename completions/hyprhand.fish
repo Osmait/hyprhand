@@ -6,7 +6,7 @@ complete -c hyprhand -n '__fish_seen_subcommand_from observe' -l retry -r -a '0 
 complete -c hyprhand -n '__fish_seen_subcommand_from session' -a 'create inspect destroy'
 complete -c hyprhand -n '__fish_seen_subcommand_from wait' -a 'stable window focus workspace'
 complete -c hyprhand -l session -r -d 'Explicit target session'
-complete -c hyprhand -l backend -r -a 'auto native helper'
+complete -c hyprhand -l backend -r -a 'auto native helper clipboard'
 complete -c hyprhand -l scroll-mode -r -a 'auto wheel continuous'
 complete -c hyprhand -l indicator -r -a 'none outline'
 complete -c hyprhand -l headless-bridge -r -F -d 'Experimental trusted library, new headless compositor only'

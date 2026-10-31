@@ -26,6 +26,9 @@ the result before deciding what action is still needed.
 | `CursorPositionMismatch` | Human movement, pointer locking/recentering, or compositor constraints interrupted the expected path. Inspect state and resolve interference before acting |
 | `NativeCaptureUnavailable` | Screenshots use `grim` in 0.4.0. Use `--backend auto` or `helper` |
 | `XWaylandHelperMissing`, `X11TargetMismatch` | X11 keyboard/scroll needs `xdotool` and the target's matching `DISPLAY`/focus. Managed sessions currently disable XWayland |
+| `ClipboardHelperMissing` | `type --backend clipboard` needs `wl-copy` from wl-clipboard. Install it or use `--backend auto`; nothing was typed |
+| `ClipboardManagedSessionRequired` | The clipboard backend only writes a managed session's clipboard, never the host's. Use a managed `--session` or `--backend auto` |
+| Characters missing in Chromium-based browsers (`Ñ`, spaces) | Fixed in the native keyboard, which now sends each character on its US-layout or a printable key. `wtype` (`--backend helper`) still can lose them; use `auto`, or `--backend clipboard` in a managed session |
 | `ContinuousScrollUnavailable` | Explicit continuous scrolling is unsupported on XWayland. Select wheel mode if suitable; verify visible results |
 | `HeadlessRenderUnavailable` | GPU buffer allocation failed (seen on NVIDIA). Build the [format bridge](experimental-bridges.md) with `scripts/install.sh --with-bridge` and pass `--headless-bridge PATH`, or use explicit nested mode. Read the session's `compositor.log` |
 | `ProgramNotFound` | `launch` resolves the program in the session `PATH` first. Check the executable name (`brave`, not `brave-browser`) |
