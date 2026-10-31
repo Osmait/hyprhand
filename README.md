@@ -393,7 +393,6 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull requests,
 
 ## License and third-party notices
 
-A project license has not yet been selected. Public visibility alone does not
-grant redistribution rights. The repository owner must select a license before
-an open-source release. Vendored Wayland protocols retain their original notices;
-see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Hyprhand is released under the [MIT License](LICENSE). Vendored Wayland
+protocols retain their original notices; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
