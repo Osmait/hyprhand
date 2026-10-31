@@ -24,6 +24,7 @@ first session. Commands and documentation refer to source version **0.4.0**.
 
 - [Contributing](../CONTRIBUTING.md): development workflow, conventions and reviews.
 - [Architecture](architecture.md): source map, runtime checks and resource ownership.
+- [Style](STYLE.md): TigerStyle-based rules for layout, naming, types and assertions.
 - [Testing](testing.md): offline, private GTK, and explicitly enabled live suites.
 - [Packaging](../packaging/README.md): local archives, manifests and verification.
 - [Security](../SECURITY.md): trust boundaries, data handling and reporting.

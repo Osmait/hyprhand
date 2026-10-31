@@ -18,10 +18,10 @@ pub fn configure(b: *std.Build, module: *std.Build.Module, target: std.Build.Res
         const h = header.addOutputFileArg(b.fmt("{s}.h", .{protocol[1]}));
         module.addIncludePath(h.dirname());
         native_c.addIncludePath(h.dirname());
-        addCode(b, module, source, protocol[1]);
+        add_code(b, module, source, protocol[1]);
     }
     // Layer shell refers to xdg_popup even though hyprhand creates no popups.
-    addCode(b, module, b.path("protocols/xdg-shell.xml"), "xdg-shell");
+    add_code(b, module, b.path("protocols/xdg-shell.xml"), "xdg-shell");
     for ([_][]const u8{ "wayland-client", "xkbcommon", "atspi-2", "gobject-2.0" }) |library|
         module.linkSystemLibrary(library, .{});
     for ([_][]const u8{ "wayland-client", "xkbcommon" }) |library|
@@ -33,7 +33,7 @@ pub fn configure(b: *std.Build, module: *std.Build.Module, target: std.Build.Res
     module.addCSourceFile(.{ .file = b.path("src/accessibility/accessibility.c"), .flags = &.{"-std=c11"} });
 }
 
-fn addCode(b: *std.Build, module: *std.Build.Module, source: std.Build.LazyPath, name: []const u8) void {
+fn add_code(b: *std.Build, module: *std.Build.Module, source: std.Build.LazyPath, name: []const u8) void {
     const scanner = b.addSystemCommand(&.{ "wayland-scanner", "private-code" });
     scanner.addFileArg(source);
     const code = scanner.addOutputFileArg(b.fmt("{s}.c", .{name}));
