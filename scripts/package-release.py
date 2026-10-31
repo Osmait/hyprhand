@@ -56,6 +56,10 @@ DOCUMENTS = {relative: relative for relative in (
     "examples/spreadsheet/launch-dashboard.ods",
     "docs/video/spreadsheet-agent-demo.mp4", "docs/video/spreadsheet-agent-demo.srt",
     "docs/video/spreadsheet-preview.gif", "docs/video/spreadsheet-poster.jpg",
+    "docs/video/hyprhand-tour.gif", "docs/video/hyprhand-tour.mp4",
+    "examples/tour/README.md", "examples/tour/demo.sh", "examples/tour/stand-in-host.sh",
+    "examples/tour/capture.py", "examples/tour/northwind.html", "examples/tour/edit.json",
+    "examples/tour/recording.json",
 )}
 
 

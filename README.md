@@ -4,8 +4,8 @@
 
 Hyprhand gives scripts and external AI agents a command-line interface to inspect
 windows, capture screenshots, and send mouse and keyboard input. Commands return
-structured JSON. The tool runs locally: it includes no AI model, MCP server,
-clipboard transport, or always-on input service.
+structured JSON. The tool runs locally: it includes no AI model, MCP server, or
+always-on input service.
 
 Use your current desktop when you want to share its cursor, or launch applications
 inside a managed Hyprland session with independent input. The optional GTK4
@@ -14,6 +14,17 @@ Picture-in-Picture viewer lets you watch a managed session from your desktop.
 **Current source version: 0.4.0.** This is an early project with a deliberately
 limited [compatibility matrix](docs/compatibility.md). Managed sessions isolate
 input; they share your user account's files, credentials, network, and permissions.
+
+## Tour
+
+![Animated tour: a terminal drives a headless session while the Picture-in-Picture viewer shows it live; a human takes over for a login with captcha, then the agent fills a form and verifies it](docs/video/hyprhand-tour.gif)
+
+One take, every command real: a private headless session, the live
+Picture-in-Picture viewer, observe → act with fresh frames, a **human takeover** for
+a password and captcha (the agent's input is refused meanwhile), Brave's
+accessibility tree, Unicode typing, a select menu, a slider drag and scrolling,
+then verification and cleanup. Waits are cut and segments play at 1×–2×.
+[How it was recorded](examples/tour/README.md) · [MP4](docs/video/hyprhand-tour.mp4)
 
 ## Watch an agent build a spreadsheet
 
