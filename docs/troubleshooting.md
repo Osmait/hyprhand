@@ -26,9 +26,22 @@ the result before deciding what action is still needed.
 | `CursorPositionMismatch` | Human movement, pointer locking/recentering, or compositor constraints interrupted the expected path. Inspect state and resolve interference before acting |
 | `NativeCaptureUnavailable` | Screenshots use `grim` in 0.4.0. Use `--backend auto` or `helper` |
 | `XWaylandHelperMissing`, `X11TargetMismatch` | X11 keyboard/scroll needs `xdotool` and the target's matching `DISPLAY`/focus. Managed sessions currently disable XWayland |
+| `ClipboardHelperMissing` | `type --backend clipboard` needs `wl-copy` from wl-clipboard. Install it or use `--backend auto`; nothing was typed |
+| `ClipboardManagedSessionRequired` | The clipboard backend only writes a managed session's clipboard, never the host's. Use a managed `--session` or `--backend auto` |
+| Characters missing in Chromium-based browsers (`Ñ`, spaces) | Fixed in the native keyboard, which now sends each character on its US-layout or a printable key. `wtype` (`--backend helper`) still can lose them; use `auto`, or `--backend clipboard` in a managed session |
 | `ContinuousScrollUnavailable` | Explicit continuous scrolling is unsupported on XWayland. Select wheel mode if suitable; verify visible results |
-| `HeadlessRenderUnavailable` | GPU buffer allocation failed. Read the reported session's `compositor.log`; use explicit nested mode or review the exact-version experimental bridge |
+| `HeadlessRenderUnavailable` | GPU buffer allocation failed (seen on NVIDIA). Build the [format bridge](experimental-bridges.md) with `scripts/install.sh --with-bridge` and pass `--headless-bridge PATH`, or use explicit nested mode. Read the session's `compositor.log` |
+| `ProgramNotFound` | `launch` resolves the program in the session `PATH` first. Check the executable name (`brave`, not `brave-browser`) |
+| `MonitorNotFound`, `HostMonitorNotFound` | `--monitor` names a monitor of the selected session (`HEADLESS-1` in headless); `preview --host-monitor` names a host monitor |
 | `SessionStartupFailed`, `SessionStartupTimeout`, `SessionConfigInvalid` | Read `compositor.log` at the session path. Check Hyprland/dependencies/config provider; create sessions from the original host to avoid overly long nested socket paths |
+| `NestedWindowHidden` | The nested session's host window is on a workspace no monitor shows (or hidden, or the screen is off), so the nested compositor renders nothing. Ask the user to move it to a visible workspace; hyprhand never moves it. See [nested windows](sessions.md#nested-windows) |
+| `NestedWindowClosed` | The nested window was closed; the compositor keeps running without an output. `session destroy NAME`, then create it again |
+| `SessionDead` | `session create` found a session with that name whose compositor exited or whose nested window was closed. Run `session destroy NAME` once, then create it |
+| `SessionExists` | A running session already uses the name. Reuse it or destroy it first |
+| `SessionStopTimeout` | A process survived SIGKILL for 5 s (uninterruptible sleep). Run `session destroy NAME` again |
+| `StaleObservation` right after resizing a nested window | The nested output follows the host window size; observe again. Prefer headless sessions for long tasks |
+| Keys report `sent` but a browser ignores a shortcut, or typed punctuation deletes text | Fixed in this build (characters were sent on unrelated key positions, see [keyboard](cli.md#keyboard)). Re-test with the current binary |
+| Browser download never appears | See [saving files](sessions.md#saving-files): confirm the GTK chooser with **Save**, then check the file on disk |
 | `PreviewHelperMissing` | Build `zig build pip` and install `hyprhand-pip` beside the matching CLI |
 | `PreviewManagedSessionRequired` | Preview only accepts an explicit managed session, never `host` |
 | `PreviewIdentityMismatch` | The source ended or was recreated. Close the old viewer and explicitly open a new one |
@@ -36,8 +49,9 @@ the result before deciding what action is still needed.
 | `OutlinePluginUnavailable`, `OutlineRequiresHyprlang` | Outline requires manual plugin loading in a compatible Hyprlang compositor. Activation failure keeps input disabled |
 | `AuraUnavailable`, `AuraBufferUnavailable`, `AuraGeometryUnsupported` | The per-action halo cannot be shown. Inspect the output/protocols; choose `--no-aura` explicitly if input without the indicator is appropriate |
 | `WaitTimeout` | Requested state did not become true within the total deadline; check exact class/address/workspace and application behavior |
+| `CommandTimeout` from `observe` | A slow compositor did not deliver a frame in time. `observe --retry 2` retries timeouts and stale frames with a 0.7 s pause |
 | `CommandTimeout`, `Cancelled` | Inspect the application for partial delivery. Native owned-input cleanup runs for ordinary cancellation; completed effects are not undone |
-| Empty AT-SPI tree | Bus/registry or app accessibility may be unavailable. Inspect the correct session; custom controls may expose no nodes |
+| Empty AT-SPI tree | Bus/registry or app accessibility may be unavailable. Inspect the correct session; custom controls may expose no nodes. Chromium needs `ACCESSIBILITY_ENABLED=1`, which `launch` sets; a browser started another way shows no web nodes |
 
 ## Unexpected target or geometry changes
 

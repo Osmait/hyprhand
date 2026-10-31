@@ -107,6 +107,14 @@ python3 tests/live_sessions.py --live --lua
 python3 tests/live_sessions.py --live --headless
 ```
 
+Chromium text entry (native keyboard and `--backend clipboard`) runs in its own
+managed session with a local textarea and reads back only length and hash:
+
+```sh
+python3 tests/live_keyboard_chromium.py --live --browser /usr/bin/brave
+python3 tests/live_keyboard_chromium.py --live --headless --headless-bridge /absolute/trusted.so
+```
+
 Headless tests require compatible buffers or an explicitly selected trusted bridge
 as described in [experimental bridges](experimental-bridges.md). XWayland smoke
 coverage uses `tests/live_smoke.py --live --x11` in a separately authorized X11

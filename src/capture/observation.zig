@@ -6,6 +6,7 @@ const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const operations = @import("../runtime/operations.zig");
+const sessions = @import("../runtime/sessions.zig");
 const aura = @import("../input/aura.zig");
 const eq = @import("../core/text.zig").eq;
 
@@ -164,6 +165,36 @@ fn focused_monitor_name(runtime: *Runtime) ![]const u8 {
     return error.MonitorNotFound;
 }
 
+/// Each attempt gets the full observe budget again; the pause lets a slow
+/// compositor deliver the next frame instead of failing the same way twice.
+const observe_attempt_timeout_ms = 10_000;
+const observe_retry_delay_ms = 700;
+
+/// `observe --retry N`: retry transient failures up to N extra times.
+pub fn observe_with_retry(runtime: *Runtime, arguments: args.Args) !void {
+    std.debug.assert(arguments.retry <= args.observe_retry_max);
+    var attempt: u32 = 0;
+    while (true) : (attempt += 1) {
+        native.limit_command(observe_attempt_timeout_ms, error.CommandTimeout);
+        if (observe(runtime, arguments)) |_| {
+            return;
+        } else |err| {
+            if (attempt >= arguments.retry) return err;
+            if (!observe_retryable(err)) return err;
+        }
+        native.clear_command_limit();
+        native.sleep_ms(observe_retry_delay_ms);
+        try native.check_cancelled();
+    }
+}
+
+fn observe_retryable(err: anyerror) bool {
+    return switch (err) {
+        error.CommandTimeout, error.HelperTimeout, error.StaleObservation => true,
+        else => false,
+    };
+}
+
 pub fn observe(runtime: *Runtime, arguments: args.Args) !void {
     if (arguments.backend == .native) return error.NativeCaptureUnavailable;
     // Opportunistic cleanup under its own lock: never contends with an input
@@ -175,6 +206,8 @@ pub fn observe(runtime: *Runtime, arguments: args.Args) !void {
     try runtime.prepare();
     try runtime.validate_display();
     try runtime.unlocked();
+    // Fail fast instead of letting grim wait the whole budget for a frame.
+    try sessions.check_nested_window(runtime);
 
     const monitor_name = arguments.monitor orelse try focused_monitor_name(runtime);
     const before = try snapshot(runtime, monitor_name);

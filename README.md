@@ -97,7 +97,8 @@ documents commands, options, JSON, coordinates, and cancellation.
 - `pkg-config`, `wayland-scanner`, libc development files, and headers/libraries
   for Wayland client, xkbcommon, AT-SPI, and GLib/GObject.
 - `grim` for screenshots. `xdotool` for XWayland keyboard/scroll;
-  `wtype` only for an explicitly selected Wayland helper keyboard backend.
+  `wtype` only for an explicitly selected Wayland helper keyboard backend;
+  `wl-copy` only for `type --backend clipboard` in managed sessions.
 - Managed sessions additionally use `Hyprland`, `dbus-daemon`, and
   `at-spi2-registryd` when accessibility is needed.
 - Python 3.11+ for the full offline test and packaging suites.

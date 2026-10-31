@@ -39,11 +39,23 @@ pub const ActionGuard = struct {
     }
 };
 
+/// Where a nested session's compositor shows its output on the host: the
+/// host IPC socket and the PID of the compositor that owns the host window.
+pub const NestedHost = struct {
+    socket: []const u8,
+    compositor_pid: c_int,
+};
+
 /// A check that only the caller's module knows how to run, with its context.
 pub const FrameCheck = struct {
     context: *anyopaque,
     check: *const fn (runtime: *Runtime, context: *anyopaque) anyerror!void,
 };
+
+/// Where a helper's stderr goes. A helper that leaves a daemon behind (wl-copy
+/// keeps serving the clipboard) must not inherit it: the daemon would hold a
+/// caller's stderr pipe open and the caller would wait for it to close.
+pub const HelperStderr = enum { inherit, ignore };
 
 pub const Runtime = struct {
     allocator: std.mem.Allocator,
@@ -57,6 +69,8 @@ pub const Runtime = struct {
     /// Managed session directory (metadata, profiles, logs); null for host.
     session_directory: ?[]const u8 = null,
     session_id: []const u8 = "host",
+    /// Set for nested sessions only; see NestedHost.
+    nested_host: ?NestedHost = null,
     /// Set only while an input action runs; see ActionGuard.
     action: ?*ActionGuard = null,
 
@@ -583,12 +597,23 @@ pub const Runtime = struct {
     }
 
     /// Run a bounded helper, with no shell and no text in its argv.
-    /// pidfd polling allows stop to cancel without reaping outside Zig's child API.
     pub fn run_helper(
         self: *Runtime,
         argv: []const []const u8,
         input: ?[]const u8,
         controlled: bool,
+    ) !void {
+        return self.run_helper_stderr(argv, input, controlled, .inherit);
+    }
+
+    /// Like `run_helper`, choosing where the helper's stderr goes.
+    /// pidfd polling allows stop to cancel without reaping outside Zig's child API.
+    pub fn run_helper_stderr(
+        self: *Runtime,
+        argv: []const []const u8,
+        input: ?[]const u8,
+        controlled: bool,
+        stderr: HelperStderr,
     ) !void {
         const stdin_fd: c_int = if (input) |data| try input_buffer(data) else -1;
         defer if (stdin_fd >= 0) {
@@ -604,7 +629,10 @@ pub const Runtime = struct {
             else
                 .ignore,
             .stdout = .ignore,
-            .stderr = .inherit,
+            .stderr = switch (stderr) {
+                .inherit => .inherit,
+                .ignore => .ignore,
+            },
         });
         defer child_process.terminate(&child, self.io);
         const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));

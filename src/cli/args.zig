@@ -39,13 +39,17 @@ pub const Command = enum {
 };
 
 pub const ScrollMode = enum { auto, wheel, continuous };
-pub const Backend = enum { auto, native, helper };
+/// `clipboard` is `type` only: paste through the managed session's clipboard.
+pub const Backend = enum { auto, native, helper, clipboard };
 pub const Indicator = enum { none, outline };
 pub const SessionVerb = enum { create, inspect, destroy };
 pub const WaitCondition = enum { stable, window, focus, workspace };
 
 /// The deepest accessibility tree `--depth` may request.
 pub const accessibility_depth_max = 32;
+
+/// The most extra attempts `observe --retry` may request.
+pub const observe_retry_max = 10;
 
 pub const Args = struct {
     command: Command,
@@ -54,6 +58,8 @@ pub const Args = struct {
     fps: u32 = 5,
     expected_instance: ?[]const u8 = null,
     monitor: ?[]const u8 = null,
+    /// Host monitor that shows the preview window; the session's is `monitor`.
+    host_monitor: ?[]const u8 = null,
     window: ?[]const u8 = null,
     frame: ?[]const u8 = null,
     text: ?[]const u8 = null,
@@ -86,6 +92,7 @@ pub const Args = struct {
     limit: u32 = 100,
     depth: u32 = 5,
     older_than_ms: u32 = 300_000,
+    retry: u32 = 0,
     pixels: bool = false,
     nested: bool = false,
     headless_bridge: ?[]const u8 = null,
@@ -222,6 +229,8 @@ const options = [_]Option{
         }),
     },
     .{ .name = "--fps", .field = "fps", .allowed = only(&.{.preview}) },
+    .{ .name = "--host-monitor", .field = "host_monitor", .allowed = only(&.{.preview}) },
+    .{ .name = "--retry", .field = "retry", .allowed = only(&.{.observe}) },
     .{
         .name = "--expected-instance",
         .field = "expected_instance",
@@ -418,6 +427,23 @@ fn validate_values(arguments: Args) !void {
     if (arguments.limit > 10_000) return error.InvalidLimit;
     if (arguments.depth < 1) return error.InvalidLimit;
     if (arguments.depth > accessibility_depth_max) return error.InvalidLimit;
+    if (arguments.retry > observe_retry_max) return error.InvalidLimit;
+    if (arguments.host_monitor) |name| {
+        // The name reaches a host window rule; allow only output-name characters.
+        if (!valid_output_name(name)) return error.InvalidMonitorName;
+    }
+}
+
+/// Connector names such as DP-1, HDMI-A-1 or HEADLESS-2.
+pub fn valid_output_name(name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (name.len > 64) return false;
+    for (name) |character| {
+        const allowed = std.ascii.isAlphanumeric(character) or
+            character == '-' or character == '_' or character == '.';
+        if (!allowed) return false;
+    }
+    return true;
 }
 
 /// Required arguments and option combinations for the chosen command.
@@ -447,6 +473,11 @@ fn validate_shape(arguments: Args) !void {
     }
     const requires_window = arguments.command == .type or arguments.command == .key;
     if (requires_window and arguments.window == null) return error.WindowRequired;
+    if (arguments.backend == .clipboard) {
+        if (arguments.command != .type) return error.InvalidBackend;
+        // The host clipboard belongs to the human; never overwrite it.
+        if (eq(arguments.session, "host")) return error.ClipboardManagedSessionRequired;
+    }
 
     switch (arguments.command) {
         .focus => if (arguments.focus_window == null) return error.MissingArgument,
@@ -596,6 +627,21 @@ test "preview is explicit, managed, bounded, and workers pin identity" {
     });
     try std.testing.expect(input.is_preview_worker());
     try std.testing.expect(!input.mutates());
+
+    // The host monitor reaches a window rule, so only output-name characters pass.
+    const placed = try parse(&.{ "preview", "--session", "agent", "--host-monitor", "DP-1" });
+    try std.testing.expectEqualStrings("DP-1", placed.host_monitor.?);
+    try std.testing.expectError(
+        error.InvalidMonitorName,
+        parse(&.{ "preview", "--session", "agent", "--host-monitor", "DP-1'}) x" }),
+    );
+}
+
+test "observe retry is bounded and observe-only" {
+    const observed = try parse(&.{ "observe", "--retry", "3" });
+    try std.testing.expectEqual(@as(u32, 3), observed.retry);
+    try std.testing.expectError(error.InvalidLimit, parse(&.{ "observe", "--retry", "11" }));
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "state", "--retry", "1" }));
 }
 
 test "enum options and positional arguments parse into typed fields" {
@@ -636,6 +682,27 @@ test "enum options and positional arguments parse into typed fields" {
     const session = try parse(&.{ "session", "create", "agent", "--nested" });
     try std.testing.expectEqual(SessionVerb.create, session.session_verb.?);
     try std.testing.expectEqualStrings("agent", session.session_name.?);
+
+    // The clipboard backend types only, and only into a managed session.
+    const paste = try parse(&.{
+        "type",      "--session", "agent", "--window", "0x1", "--text",
+        "Ñ",
+        "--backend", "clipboard",
+    });
+    try std.testing.expectEqual(Backend.clipboard, paste.backend);
+    try std.testing.expectError(error.ClipboardManagedSessionRequired, parse(&.{
+        "type",      "--session", "host", "--window", "0x1", "--text",
+        "Ñ",
+        "--backend", "clipboard",
+    }));
+    try std.testing.expectError(error.InvalidBackend, parse(&.{
+        "key",       "ctrl+v",    "--session", "agent", "--window", "0x1",
+        "--backend", "clipboard",
+    }));
+    try std.testing.expectError(
+        error.InvalidBackend,
+        parse(&.{ "observe", "--backend", "clipboard" }),
+    );
 
     const key = try parse(&.{ "key", "ctrl+s", "--session", "host", "--window", "0x1" });
     try std.testing.expectEqualStrings("ctrl+s", key.key_chord.?);

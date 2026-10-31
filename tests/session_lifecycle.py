@@ -63,6 +63,37 @@ while True: time.sleep(1)
 '''
 
 
+# Holds its child in a ptrace stop ("t"), as a crash reporter does with a
+# crashing browser process. SIGSTOP never turns that into a group stop ("T").
+TRACER = r'''
+import ctypes, json, os, sys, time
+from pathlib import Path
+libc = ctypes.CDLL(None, use_errno=True)
+libc.ptrace.argtypes = [ctypes.c_long, ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p]
+pid = os.fork()
+if pid == 0:
+    os.execv(sys.executable, [sys.executable, "-c", "import time; time.sleep(60)"])
+for request in (0x4206, 0x4207):  # PTRACE_SEIZE, PTRACE_INTERRUPT
+    if libc.ptrace(request, pid, None, None) != 0:
+        raise OSError(ctypes.get_errno(), "ptrace")
+def fields():
+    return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+deadline = time.monotonic() + 5
+while fields()[0] != "t":
+    assert time.monotonic() < deadline, "tracee did not stop"
+    time.sleep(0.01)
+os.write(1, (json.dumps({"pid": pid, "start": fields()[19]}) + "\n").encode())
+while True:  # Reap stops and the final exit; never resume the tracee.
+    try:
+        os.waitpid(pid, 0)
+    except ChildProcessError:
+        time.sleep(1)
+'''
+
+NESTED_OUTPUT = b'[{"name":"WAYLAND-1","width":945,"height":1022}]'
+FALLBACK_ONLY = b'[{"name":"FALLBACK","width":0,"height":0}]'
+
+
 class SessionLifecycle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -171,7 +202,8 @@ class SessionLifecycle(unittest.TestCase):
     def destroy(self, **kwargs):
         return self.cli("session", "destroy", "check", **kwargs)
 
-    def fake_running_session(self):
+    def fake_running_session(self, replies=None):
+        replies = {} if replies is None else replies
         self.metadata.update(compositor=self.sleeper(), bus=self.sleeper())
         self.save()
         ipc_dir = self.runtime / "hypr/test"
@@ -191,7 +223,8 @@ class SessionLifecycle(unittest.TestCase):
                     continue
                 with conn:
                     command = conn.recv(8192)
-                    conn.sendall(b'{"locked":false}' if command == b"j/locked" else b"{}")
+                    default = b'{"locked":false}' if command == b"j/locked" else b"{}"
+                    conn.sendall(replies.get(command, default))
 
         thread = threading.Thread(target=serve)
         thread.start()
@@ -332,6 +365,64 @@ while True: time.sleep(1)
         self.assertEqual(json.loads(records[0].read_text()), app)
         self.destroy()
         self.assertFalse(live(app))
+
+    def traced_sleeper(self):
+        child = subprocess.Popen([sys.executable, "-c", TRACER], stdout=subprocess.PIPE)
+        self.children.append(child)
+        self.pin(identity(child.pid))
+        with selectors.DefaultSelector() as selector:
+            selector.register(child.stdout, selectors.EVENT_READ)
+            self.assertTrue(selector.select(5), "tracer startup timed out")
+            line = child.stdout.readline()
+        self.assertTrue(line, "tracer exited before reporting")
+        return self.pin(json.loads(line))
+
+    def test_traced_stopped_process_does_not_block_destroy(self):
+        # Regression: freeze waited for "T" only and aborted the whole destroy
+        # with ProcessStopTimeout, leaving every session process running.
+        traced = self.traced_sleeper()
+        other = self.sleeper()
+        self.record_app(traced, "traced")
+        self.record_app(other, "other")
+        self.destroy()
+        self.assertFalse(live(traced))
+        self.assertFalse(live(other))
+        self.assertTrue(json.loads((self.directory / "session.json").read_text())["destroyed"])
+
+    def test_dead_session_blocks_create_with_explicit_error_until_destroyed(self):
+        self.metadata.update(compositor=self.sleeper(), bus=self.sleeper())
+        self.save()
+        create = ("session", "create", "check")
+        self.assertEqual(self.cli(*create, ok=False)["err"]["code"], "SessionExists")
+        signal.pidfd_send_signal(self.pinned[self.metadata["compositor"]["pid"]], signal.SIGKILL)
+        self.children[0].wait(timeout=5)
+        inspected = self.cli("session", "inspect", "check")
+        self.assertEqual((inspected["running"], inspected["health"]), (False, "exited"))
+        self.assertEqual(self.cli(*create, ok=False)["err"]["code"], "SessionDead")
+        self.destroy()
+        self.assertFalse(live(self.metadata["bus"]))
+        # The name is free again: creation now fails only on the fake host.
+        code = self.cli(*create, ok=False)["err"]["code"]
+        self.assertNotIn(code, ("SessionDead", "SessionExists"))
+
+    def test_closed_nested_window_reports_not_running(self):
+        # Closing the host window leaves Hyprland alive on a zero-size
+        # FALLBACK output; the process check alone reported running:true.
+        replies = {b"j/monitors": NESTED_OUTPUT}
+        self.metadata["nested"] = True
+        self.fake_running_session(replies)
+        inspected = self.cli("session", "inspect", "check")
+        self.assertEqual((inspected["running"], inspected["health"]), (True, "running"))
+        replies[b"j/monitors"] = FALLBACK_ONLY
+        inspected = self.cli("session", "inspect", "check")
+        self.assertEqual((inspected["running"], inspected["health"]), (False, "window_closed"))
+        entry = next(s for s in self.cli("sessions")["sessions"] if s["id"] == "check")
+        self.assertEqual((entry["running"], entry["health"]), (False, "window_closed"))
+        result = self.cli("state", "--session", "check", ok=False)
+        self.assertEqual(result["err"]["code"], "NestedWindowClosed")
+        result = self.cli("session", "create", "check", "--nested", ok=False)
+        self.assertEqual(result["err"]["code"], "SessionDead")
+        self.destroy()
 
     def test_dead_root_does_not_authorize_reparented_descendants(self):
         root, records = self.tree()

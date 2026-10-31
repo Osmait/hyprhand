@@ -27,6 +27,7 @@ const Doctor = struct {
     keyboard_available: bool,
     grim: bool,
     wtype: bool,
+    wl_copy: bool,
     xdotool: bool,
     hyprland: bool,
     dbus_daemon: bool,
@@ -62,6 +63,7 @@ const Doctor = struct {
             .keyboard_available = keyboard_available,
             .grim = try runtime.executable("grim"),
             .wtype = try runtime.executable("wtype"),
+            .wl_copy = try runtime.executable("wl-copy"),
             .xdotool = try runtime.executable("xdotool"),
             .hyprland = try runtime.executable("Hyprland"),
             .dbus_daemon = try runtime.executable("dbus-daemon"),
@@ -74,6 +76,35 @@ const Doctor = struct {
             .pidfd_available = pidfd >= 0,
             .xkb_data = host_keymap_compiles(),
             .enabled = if (runtime.token()) |_| true else |_| false,
+        };
+    }
+
+    /// The `dependencies` object of the doctor report; field names are output.
+    const Dependencies = struct {
+        grim: bool,
+        wtype: bool,
+        wl_copy: bool,
+        xdotool: bool,
+        Hyprland: bool,
+        dbus_daemon: bool,
+        at_spi_registry: bool,
+        dbus_address_configured: bool,
+        xkb_data: bool,
+        pidfd: bool,
+    };
+
+    fn dependencies(self: Doctor) Dependencies {
+        return .{
+            .grim = self.grim,
+            .wtype = self.wtype,
+            .wl_copy = self.wl_copy,
+            .xdotool = self.xdotool,
+            .Hyprland = self.hyprland,
+            .dbus_daemon = self.dbus_daemon,
+            .at_spi_registry = self.registry,
+            .dbus_address_configured = self.bus_configured,
+            .xkb_data = self.xkb_data,
+            .pidfd = self.pidfd_available,
         };
     }
 
@@ -117,23 +148,15 @@ fn doctor(runtime: *Runtime) !void {
         .instance = runtime.instance,
         .wayland_display = runtime.display,
         .display_matches = probe.display_matches,
-        .dependencies = .{
-            .grim = probe.grim,
-            .wtype = probe.wtype,
-            .xdotool = probe.xdotool,
-            .Hyprland = probe.hyprland,
-            .dbus_daemon = probe.dbus_daemon,
-            .at_spi_registry = probe.registry,
-            .dbus_address_configured = probe.bus_configured,
-            .xkb_data = probe.xkb_data,
-            .pidfd = probe.pidfd_available,
-        },
+        .dependencies = probe.dependencies(),
         .capabilities = .{
             .state = true,
             .capture = capture,
             .virtual_pointer = probe.pointer_available and probe.display_matches,
             .virtual_keyboard = probe.keyboard_available and probe.display_matches,
             .text_helper_installed = probe.wtype,
+            // The clipboard backend never touches the host clipboard.
+            .clipboard_paste = probe.wl_copy and !runtime.is_host(),
             .dispatch = provider_supported,
             .managed_sessions = managed_sessions,
             .accessibility = probe.bus_configured,
@@ -219,25 +242,31 @@ fn execute(init: std.process.Init, arguments: args.Args) !void {
     }
 
     try sessions.route(&runtime, arguments.session);
-    if (arguments.mutates()) return audited(&runtime, arguments);
+    execute_routed(&runtime, arguments) catch |err| {
+        return sessions.explain_failure(&runtime, err);
+    };
+}
+
+fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
+    if (arguments.mutates()) return audited(runtime, arguments);
 
     switch (arguments.command) {
-        .doctor => try doctor(&runtime),
-        .state => try state(&runtime),
-        .monitors => try execute_query(&runtime, "monitors"),
-        .windows => try execute_query(&runtime, "clients"),
-        .workspaces => try execute_query(&runtime, "workspaces"),
-        .observe => try observation.observe(&runtime, arguments),
+        .doctor => try doctor(runtime),
+        .state => try state(runtime),
+        .monitors => try execute_query(runtime, "monitors"),
+        .windows => try execute_query(runtime, "clients"),
+        .workspaces => try execute_query(runtime, "workspaces"),
+        .observe => try observation.observe_with_retry(runtime, arguments),
         .enable => try runtime.enable(arguments.indicator == .outline),
         .stop => try runtime.stop(),
-        .wait => try wait.run(&runtime, arguments),
-        .events => try operations.events(&runtime, arguments),
-        .logs => try operations.logs(&runtime, arguments),
-        .gc => try operations.collect(&runtime, arguments, true),
-        .accessibility => try accessibility.tree(&runtime, arguments),
-        ._a11y => try accessibility.worker(&runtime, arguments),
-        ._cursor_probe => try cursor_capture.probe(&runtime),
-        ._preview_frame, ._preview_stop => try preview.worker(&runtime, arguments),
+        .wait => try wait.run(runtime, arguments),
+        .events => try operations.events(runtime, arguments),
+        .logs => try operations.logs(runtime, arguments),
+        .gc => try operations.collect(runtime, arguments, true),
+        .accessibility => try accessibility.tree(runtime, arguments),
+        ._a11y => try accessibility.worker(runtime, arguments),
+        ._cursor_probe => try cursor_capture.probe(runtime),
+        ._preview_frame, ._preview_stop => try preview.worker(runtime, arguments),
         else => return error.CommandNotImplemented,
     }
 }
@@ -293,7 +322,8 @@ fn hint_takeover(err: anyerror) ?[]const u8 {
     return switch (err) {
         error.ControlStopped => "Input is disabled. If state reports human_takeover, a human " ++
             "controls the session from the preview: wait until it is false. " ++
-            "Otherwise run hyprhand enable.",
+            "Otherwise run hyprhand enable --session NAME; launch, focus and workspace " ++
+            "count as input.",
         error.HumanTakeoverActive => "A human took over this session from the preview. " ++
             "Wait until hyprhand state reports human_takeover false; Return re-enables control.",
         error.TakeoverBusy => "Another preview already holds a takeover of this session.",
@@ -303,8 +333,30 @@ fn hint_takeover(err: anyerror) ?[]const u8 {
     };
 }
 
+/// Managed-session lifecycle hints, kept apart from the general table.
+fn hint_session(err: anyerror) ?[]const u8 {
+    return switch (err) {
+        error.NestedWindowHidden => "The nested session's window is not shown on the host " ++
+            "(another workspace, hidden or screen off), so its compositor renders nothing. " ++
+            "Ask the user to move it to a visible workspace; hyprhand never moves it. " ++
+            "Inspect state before retrying; partial input may have been delivered.",
+        error.NestedWindowClosed => "The nested session's host window was closed; its " ++
+            "compositor has no output left. Run hyprhand session destroy NAME, then create it.",
+        error.SessionDead => "A session with this name died (compositor exited or nested " ++
+            "window closed) but still holds processes. Run hyprhand session destroy NAME first.",
+        error.SessionExists => "A running session already uses this name. " ++
+            "Use it, or destroy it first.",
+        error.SessionNotRunning => "The session is destroyed or its compositor exited. " ++
+            "Check hyprhand sessions; destroy and recreate it.",
+        error.SessionStopTimeout => "Some session processes did not exit after SIGKILL " ++
+            "(uninterruptible sleep). Run hyprhand session destroy NAME again.",
+        else => null,
+    };
+}
+
 fn hint(err: anyerror) []const u8 {
     if (hint_takeover(err)) |text| return text;
+    if (hint_session(err)) |text| return text;
     return switch (err) {
         error.PreviewHelperMissing => "Build the optional viewer with zig build pip; " ++
             "keep hyprhand-pip beside hyprhand.",
@@ -326,25 +378,6 @@ fn hint(err: anyerror) []const u8 {
             "Choose --scroll-mode wheel (optionally paced). " ++
             "No continuous-to-wheel substitution was performed.",
         error.SessionRequired => "Input commands require an explicit --session NAME.",
-        error.UnsupportedConfigProvider => "Dispatch supports Hyprlang and Lua providers only.",
-        error.FileNotFound => "A helper or required file is missing. " ++
-            "Check hyprhand doctor and install grim/wtype.",
-        error.ControlBusy => "Another hyprhand input action is running.",
-        error.LogBusy => "Another hyprhand command is writing the audit log. Retry.",
-        error.InvalidHeadlessBridge => "Use an absolute, trusted regular library path " ++
-            "without spaces/colons, not writable by other users, " ++
-            "only with session create (not --nested).",
-        error.OutlinePluginUnavailable => "The optional hyprhand-outline plugin is not loaded " ++
-            "or rejected activation. Input remains disabled. No plugin was auto-loaded.",
-        error.OutlineRequiresHyprlang => "The experimental outline dispatcher currently " ++
-            "requires Hyprlang. Input remains disabled.",
-        error.HeadlessRenderUnavailable => "Headless GPU buffers failed. See compositor.log; " ++
-            "try explicit --nested. The failed compositor was stopped.",
-        error.SessionStartupFailed,
-        error.SessionStartupTimeout,
-        error.SessionConfigInvalid,
-        => "Managed session failed and its processes were stopped. " ++
-            "Inspect compositor.log in the named session directory.",
         error.WaitTimeout => "The requested condition did not become true before its deadline.",
         error.CommandTimeout => "The command exceeded its shared time budget. " ++
             "Inspect state before retrying; partial input may have been delivered.",
@@ -360,10 +393,49 @@ fn hint(err: anyerror) []const u8 {
         error.CursorCaptureUnsupported,
         => "The compositor did not provide a usable cursor capture session. " ++
             "No theme or desktop configuration was changed.",
+        error.ClipboardHelperMissing => "--backend clipboard needs wl-copy " ++
+            "(wl-clipboard). Install it or use --backend auto. Nothing was typed.",
+        error.ClipboardManagedSessionRequired => "--backend clipboard requires a managed " ++
+            "--session; the host clipboard belongs to the human.",
         error.XWaylandHelperMissing => "This is an XWayland window. " ++
             "Install xdotool for X11 keyboard input.",
         error.X11TargetMismatch => "The focused X11 window does not match the requested " ++
             "Hyprland client. Check DISPLAY and focus.",
+        else => hint_setup(err),
+    };
+}
+
+/// Hints for installation, session lifecycle and optional components.
+fn hint_setup(err: anyerror) []const u8 {
+    return switch (err) {
+        error.UnsupportedConfigProvider => "Dispatch supports Hyprlang and Lua providers only.",
+        error.FileNotFound => "A helper or required file is missing. " ++
+            "Check hyprhand doctor and install grim/wtype.",
+        error.ControlBusy => "Another hyprhand input action is running.",
+        error.LogBusy => "Another hyprhand command is writing the audit log. Retry.",
+        error.InvalidHeadlessBridge => "Use an absolute, trusted regular library path " ++
+            "without spaces/colons, not writable by other users, " ++
+            "only with session create (not --nested).",
+        error.OutlinePluginUnavailable => "The optional hyprhand-outline plugin is not loaded " ++
+            "or rejected activation. Input remains disabled. No plugin was auto-loaded.",
+        error.OutlineRequiresHyprlang => "The experimental outline dispatcher currently " ++
+            "requires Hyprlang. Input remains disabled.",
+        error.HeadlessRenderUnavailable => "Headless GPU buffers failed (seen on NVIDIA). " ++
+            "Build the format bridge (scripts/install.sh --with-bridge) and pass " ++
+            "--headless-bridge PATH, or use --nested. See compositor.log; " ++
+            "the failed compositor was stopped.",
+        error.ProgramNotFound => "The program is not in the session PATH. Check its " ++
+            "executable name (for example brave, not brave-browser).",
+        error.MonitorNotFound => "--monitor names a monitor of the selected session " ++
+            "(hyprhand monitors --session NAME). Place a preview with --host-monitor.",
+        error.HostMonitorNotFound => "No host monitor has that name. " ++
+            "List them with hyprhand monitors --session host.",
+        error.InvalidMonitorName => "Use a monitor connector name such as DP-1 or HDMI-A-1.",
+        error.SessionStartupFailed,
+        error.SessionStartupTimeout,
+        error.SessionConfigInvalid,
+        => "Managed session failed and its processes were stopped. " ++
+            "Inspect compositor.log in the named session directory.",
         else => "Run hyprhand --help for usage. No task outcome has been verified.",
     };
 }

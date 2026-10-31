@@ -61,7 +61,9 @@ compositor. `operation_verified: false` means untested, not necessarily broken.
 `observe` uses `grim`; `--backend auto` and `helper` select that implementation.
 `--backend native` returns `NativeCaptureUnavailable`. If `--monitor` is omitted,
 the focused monitor is selected. Capture scale accepts `0.1..2` independently of
-the monitor's scale.
+the monitor's scale. `--retry 0..10` (default 0) retries `CommandTimeout`,
+`HelperTimeout` and `StaleObservation` up to that many extra times, 0.7 s apart,
+each attempt with a fresh 10 s budget; other errors are returned at once.
 
 The response contains `ok`, `capture_duration_ms`, and `frame`:
 
@@ -202,9 +204,20 @@ hyprhand key alt+Left --session agent --window WINDOW_ADDRESS
 Both commands require the exact target to remain focused. UTF-8 text supports up
 to 64 KiB, including tabs and newlines; a `\r\n` pair is sent as one Return, the
 same as a lone `\n` or `\r`. The native keyboard uses self-contained
-XKB maps in chunks of at most 128 codepoints. It sends physical modifier keys as
-well as resolved modifier masks, and releases owned input in reverse order.
-No clipboard or shell is used to transport the text.
+XKB maps; a new map is uploaded only when the next new character finds no free
+key, never after a fixed number of characters, so most texts need one map. It
+sends physical modifier keys as well as resolved modifier masks, and releases
+owned input in reverse order. Unless `--backend clipboard` is chosen, no
+clipboard or shell is used to transport the text.
+
+Each symbol is sent on its US-layout key when it has one (`t` on KEY_T, `minus`
+on KEY_MINUS, `Return` on KEY_ENTER, `Escape` on KEY_ESC); other characters use
+free letter, digit or punctuation keys, so a map holds at most 48 distinct
+characters without a key of their own. Chromium derives shortcut and editing key
+codes from the hardware keycode, and GTK 3 matches some bindings by keycode, so a
+character sent on another key's position could act as that key (for example, a
+`>` on the Backspace position deleted text in Brave, and `ctrl+minus` on the Escape
+position did not zoom).
 
 Shortcut modifiers are `ctrl`, `shift`, `alt`, `super`/`logo`, and `altgr`;
 the final key uses an XKB keysym name, such as `Return`, `Left`, or `Tab`.
@@ -214,6 +227,30 @@ the final key uses an XKB keysym name, such as `Return`, `Left`, or `Tab`.
 | `auto` | Native virtual keyboard | `xdotool` |
 | `native` | Native virtual keyboard | Explicit failure |
 | `helper` | `wtype` | `xdotool` |
+| `clipboard` (`type` only) | Session clipboard + native `ctrl+v` | Not applicable: managed sessions run without XWayland |
+
+`wtype` places keys from keycode 1 upwards, so `--backend helper` can still
+lose characters in Chromium-based browsers (Brave lost text in 10 of 15
+trials); prefer `auto`.
+
+`type --backend clipboard` writes the text into the **managed session's**
+Wayland clipboard with `wl-copy` (from wl-clipboard), run against the session's
+`XDG_RUNTIME_DIR`/`WAYLAND_DISPLAY`, then sends `ctrl+v` through the normal
+chord path with the same control token and focus guards. The text goes through
+`wl-copy`'s stdin, never its argv. It is refused for `--session host`
+(`ClipboardManagedSessionRequired`): the host clipboard belongs to the human.
+After a successful paste the text **stays on the session clipboard** until
+the next copy in that session or until the session is destroyed, and any
+application in the session can read it. Clearing it does not work reliably:
+`wl-copy --paste-once` is consumed by Chromium before it inserts anything
+(Brave pasted nothing), and `wl-copy --clear` right after `ctrl+v` races the
+application, which fetches the data asynchronously (Brave pasted 2 of 10
+times). For secrets prefer the default backend, or destroy the session after
+use. If the chord fails, hyprhand clears the session clipboard. The focused
+widget must paste with `ctrl+v` (terminals use `ctrl+shift+v`), and the paste
+replaces any selected text. A missing `wl-copy` fails with
+`ClipboardHelperMissing` before anything is sent; `doctor` reports it as
+`dependencies.wl_copy` and `capabilities.clipboard_paste`.
 
 X11 input verifies the focused window PID against the target in the routed
 `DISPLAY`. There is no silent retry on a different backend after potentially

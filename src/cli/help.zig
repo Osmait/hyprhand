@@ -8,7 +8,7 @@ pub const text = "hyprhand " ++ version.string ++
     \\
     \\Observe and inspect:
     \\  doctor | state | monitors | windows | workspaces | sessions
-    \\  observe [--monitor NAME] [--scale 0.1..2] [--backend auto|helper]
+    \\  observe [--monitor NAME] [--scale 0.1..2] [--backend auto|helper] [--retry 0..10]
     \\  accessibility [--window ADDRESS] [--depth 5] [--limit 100] [--timeout-ms 5000]
     \\  wait stable [--pixels] [--monitor NAME] [--stable-ms 300] [--timeout-ms 5000]
     \\  wait window --class CLASS [--timeout-ms 5000]
@@ -25,7 +25,8 @@ pub const text = "hyprhand " ++ version.string ++
     \\  drag --frame ID --x X --y Y --to-x X --to-y Y [--duration-ms 500]
     \\  scroll --frame ID --x X --y Y [--dy STEPS] [--dx STEPS]
     \\    [--scroll-mode auto|wheel|continuous] [--duration-ms 500]
-    \\  type --window ADDRESS --text TEXT [--backend auto|native|helper]
+    \\  type --window ADDRESS --text TEXT [--backend auto|native|helper|clipboard]
+    \\    clipboard: wl-copy into the session clipboard (kept) + ctrl+v; never host
     \\  key CHORD --window ADDRESS [--backend auto|native|helper]
     \\
     \\Managed sessions (input isolation, NOT filesystem/credential sandboxing):
@@ -34,7 +35,8 @@ pub const text = "hyprhand " ++ version.string ++
     \\  session inspect NAME
     \\  session destroy NAME       Closes tracked apps; retains profiles and logs
     \\  launch --session NAME -- PROGRAM ARGUMENTS...
-    \\  preview --session NAME [--monitor NAME] [--fps 1..15]
+    \\  preview --session NAME [--monitor NAME] [--host-monitor NAME] [--fps 1..15]
+    \\    --monitor is the session's monitor; --host-monitor places the PiP on the host.
     \\    Maximum capture rate; unchanged images back off to 1 fps.
     \\    Optional GTK4 host PiP; close leaves agent running. Take over lets the
     \\    human type (logins, captchas) while agent input is stopped; Return
@@ -53,6 +55,8 @@ pub const text = "hyprhand " ++ version.string ++
     \\Frames expire after 30s or layout/focus changes. Observe again after each action.
     \\Type/key require the exact focused window. Example chord: ctrl+shift+Return.
     \\SIGINT/SIGTERM/stop cancel input; native devices release owned keys/buttons.
-    \\Headless needs compatible GPU buffers. --nested opens a compositor preview.
+    \\Headless needs compatible GPU buffers; on NVIDIA build the bridge
+    \\(scripts/install.sh --with-bridge). --nested opens a compositor window.
+    \\observe --retry N retries timeouts and stale frames N times, 0.7s apart.
     \\
 ;
