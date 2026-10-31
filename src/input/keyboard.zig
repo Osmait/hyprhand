@@ -18,18 +18,53 @@ pub const Modifier = struct {
     x11: []const u8,
 };
 pub const modifiers = [_]Modifier{
-    .{ .name = "Shift", .key_name = "LFSH", .symbol = "Shift_L", .key = 42, .alias = "shift", .x11 = "shift" },
-    .{ .name = "Control", .key_name = "LCTL", .symbol = "Control_L", .key = 29, .alias = "ctrl", .x11 = "ctrl" },
-    .{ .name = "Mod1", .key_name = "LALT", .symbol = "Alt_L", .key = 56, .alias = "alt", .x11 = "alt" },
-    .{ .name = "Mod4", .key_name = "LWIN", .symbol = "Super_L", .key = 125, .alias = "logo", .x11 = "super" },
-    .{ .name = "Mod5", .key_name = "RALT", .symbol = "ISO_Level3_Shift", .key = 100, .alias = "altgr", .x11 = "ISO_Level3_Shift" },
+    .{
+        .name = "Shift",
+        .key_name = "LFSH",
+        .symbol = "Shift_L",
+        .key = 42,
+        .alias = "shift",
+        .x11 = "shift",
+    },
+    .{
+        .name = "Control",
+        .key_name = "LCTL",
+        .symbol = "Control_L",
+        .key = 29,
+        .alias = "ctrl",
+        .x11 = "ctrl",
+    },
+    .{
+        .name = "Mod1",
+        .key_name = "LALT",
+        .symbol = "Alt_L",
+        .key = 56,
+        .alias = "alt",
+        .x11 = "alt",
+    },
+    .{
+        .name = "Mod4",
+        .key_name = "LWIN",
+        .symbol = "Super_L",
+        .key = 125,
+        .alias = "logo",
+        .x11 = "super",
+    },
+    .{
+        .name = "Mod5",
+        .key_name = "RALT",
+        .symbol = "ISO_Level3_Shift",
+        .key = 100,
+        .alias = "altgr",
+        .x11 = "ISO_Level3_Shift",
+    },
 };
 const chunk_size = 128;
 
 pub fn modifier_index(name: []const u8) ?usize {
     // "super" is accepted as a synonym of "logo".
     if (eq(name, "super")) return modifier_index("logo");
-    for (modifiers, 0..) |mod, i| if (eq(name, mod.alias)) return i;
+    for (modifiers, 0..) |modifier, i| if (eq(name, modifier.alias)) return i;
     return null;
 }
 
@@ -39,11 +74,12 @@ fn data_key(index: usize) u32 {
     var key: u32 = 1;
     while (true) : (key += 1) {
         var reserved = false;
-        for (modifiers) |mod| if (key == mod.key) {
+        for (modifiers) |modifier| if (key == modifier.key) {
             reserved = true;
             break;
         };
         if (reserved) continue;
+
         if (remaining == 0) return key;
         remaining -= 1;
     }
@@ -62,19 +98,26 @@ pub const Chord = struct {
         var parts = std.mem.splitScalar(u8, value, '+');
         while (parts.next()) |part| {
             if (part.len == 0) return error.InvalidKeyChord;
+
             if (parts.peek() != null) {
                 const index = modifier_index(part) orelse return error.InvalidKeyChord;
-                for (result.mods[0..result.count]) |existing| if (existing == index) return error.InvalidKeyChord;
+                for (result.mods[0..result.count]) |existing| {
+                    if (existing == index) return error.InvalidKeyChord;
+                }
                 result.mods[result.count] = index;
                 result.count += 1;
             } else {
-                for (part) |ch| if (!std.ascii.isAlphanumeric(ch) and ch != '_') return error.InvalidKeyChord;
+                for (part) |character| {
+                    const valid = std.ascii.isAlphanumeric(character) or character == '_';
+                    if (!valid) return error.InvalidKeyChord;
+                }
                 const name = try allocator.dupeSentinel(u8, part, 0);
                 defer allocator.free(name);
                 result.symbol = c.xkb_keysym_from_name(name, c.XKB_KEYSYM_CASE_INSENSITIVE);
                 result.key_name = part;
             }
         }
+
         if (result.symbol == c.XKB_KEY_NoSymbol) return error.InvalidKeyChord;
         return result;
     }
@@ -97,35 +140,96 @@ const Keymap = struct {
     }
 
     fn compile(allocator: std.mem.Allocator, symbols: []const u32, chord_levels: bool) !Keymap {
-        if (symbols.len == 0 or symbols.len > chunk_size) return error.InvalidKeymap;
+        if (symbols.len == 0) return error.InvalidKeymap;
+        if (symbols.len > chunk_size) return error.InvalidKeymap;
+
         var source: std.ArrayList(u8) = .empty;
         defer source.deinit(allocator);
-        try source.appendSlice(allocator, "xkb_keymap { xkb_keycodes { minimum=8; maximum=255; ");
-        for (symbols, 0..) |_, i| try source.print(allocator, "<K{d}>={d};", .{ i, data_key(i) + 8 });
-        for (modifiers) |mod| try source.print(allocator, "<{s}>={d};", .{ mod.key_name, mod.key + 8 });
+        try compile_source(allocator, &source, symbols, chord_levels);
+        const source_terminated = try source.toOwnedSliceSentinel(allocator, 0);
+        defer allocator.free(source_terminated);
+
+        const context_flags = c.XKB_CONTEXT_NO_DEFAULT_INCLUDES |
+            c.XKB_CONTEXT_NO_ENVIRONMENT_NAMES;
+        const context = c.xkb_context_new(context_flags) orelse return error.InvalidKeymap;
+        defer c.xkb_context_unref(context);
+        const compiled = c.xkb_keymap_new_from_string(
+            context,
+            source_terminated,
+            c.XKB_KEYMAP_FORMAT_TEXT_V1,
+            c.XKB_KEYMAP_COMPILE_NO_FLAGS,
+        ) orelse return error.InvalidKeymap;
+        errdefer c.xkb_keymap_unref(compiled);
+        const serialized = c.xkb_keymap_get_as_string(
+            compiled,
+            c.XKB_KEYMAP_FORMAT_TEXT_V1,
+        ) orelse return error.InvalidKeymap;
+        return .{ .compiled = compiled, .text = std.mem.span(serialized) };
+    }
+
+    fn compile_source(
+        allocator: std.mem.Allocator,
+        source: *std.ArrayList(u8),
+        symbols: []const u32,
+        chord_levels: bool,
+    ) !void {
+        try source.appendSlice(
+            allocator,
+            "xkb_keymap { xkb_keycodes { minimum=8; maximum=255; ",
+        );
+        for (symbols, 0..) |_, i| {
+            try source.print(allocator, "<K{d}>={d};", .{ i, data_key(i) + 8 });
+        }
+        for (modifiers) |modifier| {
+            try source.print(allocator, "<{s}>={d};", .{ modifier.key_name, modifier.key + 8 });
+        }
+
         // Self-contained types/actions avoid host layout and include-file dependencies.
         // Text stays exact. Chords need real Shift levels: GTK's
         // gdk_key_event_matches expects ISO_Left_Tab and uppercase keysyms.
         // https://github.com/GNOME/gtk/blob/4.22.4/gdk/gdkevents.c
-        try source.appendSlice(allocator, "}; xkb_types { type \"ONE_LEVEL\" { modifiers=None; map[None]=Level1; }; type \"TWO_LEVEL\" { modifiers=Shift; map[None]=Level1; map[Shift]=Level2; }; }; xkb_compatibility {}; xkb_symbols { ");
+        try source.appendSlice(
+            allocator,
+            "}; xkb_types { " ++
+                "type \"ONE_LEVEL\" { modifiers=None; map[None]=Level1; }; " ++
+                "type \"TWO_LEVEL\" { modifiers=Shift; map[None]=Level1; map[Shift]=Level2; }; " ++
+                "}; xkb_compatibility {}; xkb_symbols { ",
+        );
         for (symbols, 0..) |symbol, i| {
-            const shifted: u32 = if (symbol == c.XKB_KEY_Tab) c.XKB_KEY_ISO_Left_Tab else c.xkb_keysym_to_upper(symbol);
+            const shifted: u32 = if (symbol == c.XKB_KEY_Tab)
+                c.XKB_KEY_ISO_Left_Tab
+            else
+                c.xkb_keysym_to_upper(symbol);
             if (chord_levels and shifted != symbol) {
-                try source.print(allocator, "key <K{d}> {{ type=\"TWO_LEVEL\", [0x{x},0x{x}], repeat=no }};", .{ i, symbol, shifted });
+                try source.print(
+                    allocator,
+                    "key <K{d}> {{ type=\"TWO_LEVEL\", [0x{x},0x{x}], repeat=no }};",
+                    .{ i, symbol, shifted },
+                );
             } else {
-                try source.print(allocator, "key <K{d}> {{ type=\"ONE_LEVEL\", [0x{x}], repeat=no }};", .{ i, symbol });
+                try source.print(
+                    allocator,
+                    "key <K{d}> {{ type=\"ONE_LEVEL\", [0x{x}], repeat=no }};",
+                    .{ i, symbol },
+                );
             }
         }
-        for (modifiers) |mod| try source.print(allocator, "key <{s}> {{ type=\"ONE_LEVEL\", [{s}], actions=[SetMods(modifiers={s})], repeat=no }}; modifier_map {s} {{ <{s}> }};", .{ mod.key_name, mod.symbol, mod.name, mod.name, mod.key_name });
+        for (modifiers) |modifier| {
+            try source.print(
+                allocator,
+                "key <{s}> {{ type=\"ONE_LEVEL\", [{s}], " ++
+                    "actions=[SetMods(modifiers={s})], repeat=no }}; " ++
+                    "modifier_map {s} {{ <{s}> }};",
+                .{
+                    modifier.key_name,
+                    modifier.symbol,
+                    modifier.name,
+                    modifier.name,
+                    modifier.key_name,
+                },
+            );
+        }
         try source.appendSlice(allocator, "}; };");
-        const source_z = try source.toOwnedSliceSentinel(allocator, 0);
-        defer allocator.free(source_z);
-        const context = c.xkb_context_new(c.XKB_CONTEXT_NO_DEFAULT_INCLUDES | c.XKB_CONTEXT_NO_ENVIRONMENT_NAMES) orelse return error.InvalidKeymap;
-        defer c.xkb_context_unref(context);
-        const compiled = c.xkb_keymap_new_from_string(context, source_z, c.XKB_KEYMAP_FORMAT_TEXT_V1, c.XKB_KEYMAP_COMPILE_NO_FLAGS) orelse return error.InvalidKeymap;
-        errdefer c.xkb_keymap_unref(compiled);
-        const serialized = c.xkb_keymap_get_as_string(compiled, c.XKB_KEYMAP_FORMAT_TEXT_V1) orelse return error.InvalidKeymap;
-        return .{ .compiled = compiled, .text = std.mem.span(serialized) };
     }
 
     fn deinit(self: *Keymap) void {
@@ -150,6 +254,7 @@ const HeldKeys = struct {
 
     fn press(self: *HeldKeys, sink: anytype, key: Key) !void {
         if (self.count == self.keys.len) return error.TooManyHeldKeys;
+
         self.keys[self.count] = key;
         self.count += 1;
         sink.send_key(key.code, 1);
@@ -160,6 +265,7 @@ const HeldKeys = struct {
 
     fn pop(self: *HeldKeys, sink: anytype) void {
         if (self.count == 0) return;
+
         self.count -= 1;
         sink.send_key(self.keys[self.count].code, 0);
         var mask: u32 = 0;
@@ -178,7 +284,10 @@ const HeldKeys = struct {
     // The same sequencing runs against Wayland and an in-memory test driver.
     // Synchronize each modifier before the target, then unwind in reverse order.
     fn chord(self: *HeldKeys, driver: anytype, keys: []const Key) !void {
-        if (keys.len == 0 or keys.len > self.keys.len or self.count != 0) return error.KeyboardBusy;
+        if (keys.len == 0) return error.KeyboardBusy;
+        if (keys.len > self.keys.len) return error.KeyboardBusy;
+        if (self.count != 0) return error.KeyboardBusy;
+
         errdefer {
             self.release(driver);
             driver.sync(false) catch {};
@@ -191,6 +300,7 @@ const HeldKeys = struct {
         try driver.guard();
         try self.press(driver, keys[keys.len - 1]);
         self.release(driver);
+
         // The target may intentionally change focus (e.g. opening a dialog).
         // Queue its release and modifier releases immediately, then acknowledge
         // delivery without applying a post-action focus guard.
@@ -207,20 +317,23 @@ const TextChunk = struct {
     fn next(iterator: *std.unicode.Utf8Iterator) TextChunk {
         var result = TextChunk{};
         while (result.count < chunk_size) {
-            const cp = iterator.nextCodepoint() orelse break;
+            const codepoint = iterator.nextCodepoint() orelse break;
             // A CRLF pair is one line break; a lone CR or LF is one as well.
-            if (cp == '\r' and std.mem.eql(u8, iterator.peek(1), "\n")) _ = iterator.nextCodepoint();
-            const symbol: u32 = switch (cp) {
+            const crlf = codepoint == '\r' and std.mem.eql(u8, iterator.peek(1), "\n");
+            if (crlf) _ = iterator.nextCodepoint();
+
+            const symbol: u32 = switch (codepoint) {
                 '\n', '\r' => c.XKB_KEY_Return,
                 '\t' => c.XKB_KEY_Tab,
                 0x1b => c.XKB_KEY_Escape,
-                else => c.xkb_utf32_to_keysym(cp),
+                else => c.xkb_utf32_to_keysym(codepoint),
             };
-            const index = std.mem.indexOfScalar(u32, result.symbols[0..result.symbol_count], symbol) orelse blk: {
-                const i = result.symbol_count;
-                result.symbols[i] = symbol;
+            const symbols_seen = result.symbols[0..result.symbol_count];
+            const index = std.mem.indexOfScalar(u32, symbols_seen, symbol) orelse blk: {
+                const index_appended = result.symbol_count;
+                result.symbols[index_appended] = symbol;
                 result.symbol_count += 1;
-                break :blk i;
+                break :blk index_appended;
             };
             result.keys[result.count] = data_key(index);
             result.count += 1;
@@ -239,16 +352,33 @@ pub const Keyboard = struct {
     held: HeldKeys = .{},
     has_keymap: bool = false,
 
-    fn global(data: ?*anyopaque, registry: ?*c.struct_wl_registry, name: u32, interface: [*c]const u8, version: u32) callconv(.c) void {
+    fn global(
+        data: ?*anyopaque,
+        registry: ?*c.struct_wl_registry,
+        name: u32,
+        interface: [*c]const u8,
+        version: u32,
+    ) callconv(.c) void {
         const self: *Keyboard = @ptrCast(@alignCast(data.?));
-        const iface = std.mem.span(interface);
+        const interface_name = std.mem.span(interface);
         if (version == 0) return;
-        if (eq(iface, "zwp_virtual_keyboard_manager_v1") and self.manager == null) {
-            self.manager = @ptrCast(c.wl_registry_bind(registry, name, &c.zwp_virtual_keyboard_manager_v1_interface, 1));
+
+        if (eq(interface_name, "zwp_virtual_keyboard_manager_v1") and self.manager == null) {
+            self.manager = @ptrCast(c.wl_registry_bind(
+                registry,
+                name,
+                &c.zwp_virtual_keyboard_manager_v1_interface,
+                1,
+            ));
             self.manager_name = name;
         }
-        if (eq(iface, "wl_seat") and self.seat == null) {
-            self.seat = @ptrCast(c.wl_registry_bind(registry, name, &c.wl_seat_interface, @min(7, version)));
+        if (eq(interface_name, "wl_seat") and self.seat == null) {
+            self.seat = @ptrCast(c.wl_registry_bind(
+                registry,
+                name,
+                &c.wl_seat_interface,
+                @min(7, version),
+            ));
             self.seat_name = name;
         }
     }
@@ -264,20 +394,31 @@ pub const Keyboard = struct {
         self.* = .{};
         self.connection = try Connection.connect(display);
         errdefer self.deinit();
+
         const connection = &self.connection.?;
-        if (c.wl_registry_add_listener(connection.registry, &listener, self) != 0) return error.WaylandUnavailable;
+        if (c.wl_registry_add_listener(connection.registry, &listener, self) != 0) {
+            return error.WaylandUnavailable;
+        }
         try connection.sync();
         try self.available();
     }
 
     fn available(self: *const Keyboard) !void {
-        if (self.connection == null or self.manager == null or self.seat == null or self.manager_name == null or self.seat_name == null) return error.VirtualKeyboardUnavailable;
+        if (self.connection == null) return error.VirtualKeyboardUnavailable;
+        if (self.manager == null) return error.VirtualKeyboardUnavailable;
+        if (self.seat == null) return error.VirtualKeyboardUnavailable;
+        if (self.manager_name == null) return error.VirtualKeyboardUnavailable;
+        if (self.seat_name == null) return error.VirtualKeyboardUnavailable;
     }
 
     pub fn create(self: *Keyboard) !void {
         try self.available();
         if (self.device != null) return error.KeyboardAlreadyCreated;
-        self.device = c.zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(self.manager, self.seat) orelse return error.VirtualKeyboardUnavailable;
+
+        self.device = c.zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
+            self.manager,
+            self.seat,
+        ) orelse return error.VirtualKeyboardUnavailable;
         errdefer {
             c.zwp_virtual_keyboard_v1_destroy(self.device);
             self.device = null;
@@ -292,11 +433,19 @@ pub const Keyboard = struct {
     }
 
     fn sync_checked(self: *Keyboard, runtime: ?*Runtime, already_guarded: bool) !void {
-        const connection = if (self.connection) |*value| value else return error.VirtualKeyboardUnavailable;
+        const connection = if (self.connection) |*value|
+            value
+        else
+            return error.VirtualKeyboardUnavailable;
         connection.runtime = runtime;
         // Never retain a caller's runtime (in particular a stack-local scratch).
         defer connection.runtime = null;
-        if (already_guarded) try connection.sync_after_guard() else try connection.sync_with_cancellation(runtime != null);
+
+        if (already_guarded) {
+            try connection.sync_after_guard();
+        } else {
+            try connection.sync_with_cancellation(runtime != null);
+        }
         if (runtime != null) try self.available();
     }
 
@@ -329,6 +478,7 @@ pub const Keyboard = struct {
         try self.available();
         if (self.device == null) return error.VirtualKeyboardUnavailable;
         if (self.held.count != 0) return error.KeyboardBusy;
+
         const fd = c.memfd_create("hyprhand-keymap", c.MFD_CLOEXEC);
         if (fd < 0) return error.InputBufferFailed;
         defer _ = c.close(fd);
@@ -336,14 +486,20 @@ pub const Keyboard = struct {
         const bytes = map.text[0 .. map.text.len + 1];
         var written: usize = 0;
         while (written < bytes.len) {
-            const n = c.write(fd, bytes.ptr + written, bytes.len - written);
-            if (n < 0 and native.errno() == c.EINTR) continue;
-            if (n <= 0) return error.InputBufferFailed;
-            written += @intCast(n);
+            const write_result = c.write(fd, bytes.ptr + written, bytes.len - written);
+            if (write_result < 0 and native.errno() == c.EINTR) continue;
+            if (write_result <= 0) return error.InputBufferFailed;
+            written += @intCast(write_result);
         }
         if (c.lseek(fd, 0, c.SEEK_SET) < 0) return error.InputBufferFailed;
+
         try runtime.guard();
-        c.zwp_virtual_keyboard_v1_keymap(self.device, c.WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, @intCast(bytes.len));
+        c.zwp_virtual_keyboard_v1_keymap(
+            self.device,
+            c.WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1,
+            fd,
+            @intCast(bytes.len),
+        );
         self.has_keymap = true;
         self.send_modifiers(0);
         try self.sync(runtime);
@@ -374,11 +530,13 @@ pub const Keyboard = struct {
         while (true) {
             const chunk = TextChunk.next(&iterator);
             if (chunk.count == 0) break;
+
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
             defer arena.deinit();
             var map = try Keymap.init(arena.allocator(), chunk.symbols[0..chunk.symbol_count]);
             defer map.deinit();
             try self.upload(runtime, &map);
+
             for (chunk.keys[0..chunk.count]) |key| {
                 try runtime.guard();
                 try self.held.press(self, .{ .code = key });
@@ -392,12 +550,14 @@ pub const Keyboard = struct {
         const parsed = try Chord.parse(runtime.allocator, value);
         var map = try Keymap.init_chord(runtime.allocator, parsed.symbol);
         defer map.deinit();
+
         var keys: [modifiers.len + 1]Key = undefined;
         for (parsed.modifier_slice(), 0..) |index, i| {
-            const mod = modifiers[index];
-            keys[i] = .{ .code = mod.key, .mask = try map.mask(mod.name) };
+            const modifier = modifiers[index];
+            keys[i] = .{ .code = modifier.key, .mask = try map.mask(modifier.name) };
         }
         keys[parsed.count] = .{ .code = data_key(0) };
+
         try self.upload(runtime, &map);
         var driver = Driver{ .keyboard = self, .runtime = runtime };
         try self.held.chord(&driver, keys[0 .. parsed.count + 1]);
@@ -411,33 +571,45 @@ test "keyboard chord Shift levels translate Tab and letters without changing exa
         .{ c.XKB_KEY_eacute, c.XKB_KEY_Eacute },
         .{ c.XKB_KEY_Right, c.XKB_KEY_Right },
     };
+    const depressed = c.XKB_STATE_MODS_DEPRESSED;
     for (cases) |pair| {
         var map = try Keymap.init_chord(std.testing.allocator, pair[0]);
         defer map.deinit();
         // Compile the exact serialized map sent to the compositor.
-        const context = c.xkb_context_new(c.XKB_CONTEXT_NO_DEFAULT_INCLUDES) orelse return error.OutOfMemory;
+        const context = c.xkb_context_new(c.XKB_CONTEXT_NO_DEFAULT_INCLUDES) orelse
+            return error.OutOfMemory;
         defer c.xkb_context_unref(context);
-        const compiled = c.xkb_keymap_new_from_string(context, map.text, c.XKB_KEYMAP_FORMAT_TEXT_V1, 0) orelse return error.InvalidKeymap;
+        const compiled = c.xkb_keymap_new_from_string(
+            context,
+            map.text,
+            c.XKB_KEYMAP_FORMAT_TEXT_V1,
+            0,
+        ) orelse return error.InvalidKeymap;
         defer c.xkb_keymap_unref(compiled);
         const state = c.xkb_state_new(compiled) orelse return error.OutOfMemory;
         defer c.xkb_state_unref(state);
+
         const target = data_key(0) + 8;
-        const ctrl = try map.mask("Control");
+        const control = try map.mask("Control");
         const shift = try map.mask("Shift");
+        const consumed_expected = if (pair[0] != pair[1]) shift else @as(u32, 0);
         try std.testing.expectEqual(pair[0], c.xkb_state_key_get_one_sym(state, target));
         _ = c.xkb_state_update_key(state, 29 + 8, c.XKB_KEY_DOWN);
         try std.testing.expectEqual(pair[0], c.xkb_state_key_get_one_sym(state, target));
         _ = c.xkb_state_update_key(state, 42 + 8, c.XKB_KEY_DOWN);
-        try std.testing.expectEqual(ctrl | shift, c.xkb_state_serialize_mods(state, c.XKB_STATE_MODS_DEPRESSED));
+        try std.testing.expectEqual(control | shift, c.xkb_state_serialize_mods(state, depressed));
         try std.testing.expectEqual(pair[1], c.xkb_state_key_get_one_sym(state, target));
-        try std.testing.expectEqual(if (pair[0] != pair[1]) shift else @as(u32, 0), c.xkb_state_key_get_consumed_mods(state, target));
+        try std.testing.expectEqual(
+            consumed_expected,
+            c.xkb_state_key_get_consumed_mods(state, target),
+        );
         _ = c.xkb_state_update_key(state, target, c.XKB_KEY_DOWN);
         _ = c.xkb_state_update_key(state, target, c.XKB_KEY_UP);
         try std.testing.expectEqual(pair[1], c.xkb_state_key_get_one_sym(state, target));
         _ = c.xkb_state_update_key(state, 42 + 8, c.XKB_KEY_UP);
         try std.testing.expectEqual(pair[0], c.xkb_state_key_get_one_sym(state, target));
         _ = c.xkb_state_update_key(state, 29 + 8, c.XKB_KEY_UP);
-        try std.testing.expectEqual(@as(u32, 0), c.xkb_state_serialize_mods(state, c.XKB_STATE_MODS_DEPRESSED));
+        try std.testing.expectEqual(@as(u32, 0), c.xkb_state_serialize_mods(state, depressed));
 
         var exact = try Keymap.init(std.testing.allocator, &.{pair[0]});
         defer exact.deinit();
@@ -445,7 +617,10 @@ test "keyboard chord Shift levels translate Tab and letters without changing exa
         defer c.xkb_state_unref(text_state);
         _ = c.xkb_state_update_key(text_state, 42 + 8, c.XKB_KEY_DOWN);
         try std.testing.expectEqual(pair[0], c.xkb_state_key_get_one_sym(text_state, target));
-        try std.testing.expectEqual(@as(u32, 0), c.xkb_state_key_get_consumed_mods(text_state, target));
+        try std.testing.expectEqual(
+            @as(u32, 0),
+            c.xkb_state_key_get_consumed_mods(text_state, target),
+        );
     }
 }
 
@@ -453,11 +628,26 @@ test "keyboard parses documented modifiers and rejects malformed or duplicate ch
     const parsed = try Chord.parse(std.testing.allocator, "ctrl+shift+alt+super+altgr+F12");
     try std.testing.expectEqualSlices(usize, &.{ 1, 0, 2, 3, 4 }, parsed.mods[0..parsed.count]);
     try std.testing.expectEqual(@as(u32, c.XKB_KEY_F12), parsed.symbol);
+
     const bare = try Chord.parse(std.testing.allocator, "Return");
     try std.testing.expectEqual(@as(usize, 0), bare.count);
+
     const logo = try Chord.parse(std.testing.allocator, "logo+a");
     try std.testing.expectEqual(@as(usize, 3), logo.mods[0]);
-    for ([_][]const u8{ "", "+a", "ctrl+", "ctrl++a", "ctrl+ctrl+a", "super+logo+a", "typo+a", "CTRL+a", "ctrl+a\x00b", "NotAnXkbKey" }) |bad| {
+
+    const malformed = [_][]const u8{
+        "",
+        "+a",
+        "ctrl+",
+        "ctrl++a",
+        "ctrl+ctrl+a",
+        "super+logo+a",
+        "typo+a",
+        "CTRL+a",
+        "ctrl+a\x00b",
+        "NotAnXkbKey",
+    };
+    for (malformed) |bad| {
         try std.testing.expectError(error.InvalidKeyChord, Chord.parse(std.testing.allocator, bad));
     }
 }
@@ -466,31 +656,57 @@ test "keyboard modifier masks match XKB actions and survive serialized keymap ro
     var map = try Keymap.init(std.testing.allocator, &.{c.XKB_KEY_z});
     defer map.deinit();
     try std.testing.expectError(error.InvalidKeymap, map.mask("missing"));
-    const context = c.xkb_context_new(c.XKB_CONTEXT_NO_DEFAULT_INCLUDES) orelse return error.OutOfMemory;
+
+    const context = c.xkb_context_new(c.XKB_CONTEXT_NO_DEFAULT_INCLUDES) orelse
+        return error.OutOfMemory;
     defer c.xkb_context_unref(context);
-    const roundtrip = c.xkb_keymap_new_from_string(context, map.text, c.XKB_KEYMAP_FORMAT_TEXT_V1, c.XKB_KEYMAP_COMPILE_NO_FLAGS) orelse return error.InvalidKeymap;
+    const roundtrip = c.xkb_keymap_new_from_string(
+        context,
+        map.text,
+        c.XKB_KEYMAP_FORMAT_TEXT_V1,
+        c.XKB_KEYMAP_COMPILE_NO_FLAGS,
+    ) orelse return error.InvalidKeymap;
     defer c.xkb_keymap_unref(roundtrip);
     const state = c.xkb_state_new(roundtrip) orelse return error.OutOfMemory;
     defer c.xkb_state_unref(state);
+
+    const depressed = c.XKB_STATE_MODS_DEPRESSED;
+    const target = data_key(0) + 8;
     var expected: u32 = 0;
-    for (modifiers) |mod| {
-        try std.testing.expectEqual(c.xkb_keymap_mod_get_index(map.compiled, mod.name), c.xkb_keymap_mod_get_index(roundtrip, mod.name));
-        const name = try std.testing.allocator.dupeSentinel(u8, mod.symbol, 0);
+    for (modifiers) |modifier| {
+        try std.testing.expectEqual(
+            c.xkb_keymap_mod_get_index(map.compiled, modifier.name),
+            c.xkb_keymap_mod_get_index(roundtrip, modifier.name),
+        );
+        const name = try std.testing.allocator.dupeSentinel(u8, modifier.symbol, 0);
         defer std.testing.allocator.free(name);
-        try std.testing.expectEqual(c.xkb_keysym_from_name(name, 0), c.xkb_state_key_get_one_sym(state, mod.key + 8));
-        _ = c.xkb_state_update_key(state, mod.key + 8, c.XKB_KEY_DOWN);
-        expected |= try map.mask(mod.name);
-        try std.testing.expectEqual(expected, c.xkb_state_serialize_mods(state, c.XKB_STATE_MODS_DEPRESSED));
-        try std.testing.expectEqual(@as(u32, c.XKB_KEY_z), c.xkb_state_key_get_one_sym(state, data_key(0) + 8));
-        try std.testing.expectEqual(@as(u32, 0), c.xkb_state_key_get_consumed_mods(state, data_key(0) + 8));
-        try std.testing.expectEqual(@as(c_int, 0), c.xkb_keymap_key_repeats(roundtrip, mod.key + 8));
+        try std.testing.expectEqual(
+            c.xkb_keysym_from_name(name, 0),
+            c.xkb_state_key_get_one_sym(state, modifier.key + 8),
+        );
+        _ = c.xkb_state_update_key(state, modifier.key + 8, c.XKB_KEY_DOWN);
+        expected |= try map.mask(modifier.name);
+        try std.testing.expectEqual(expected, c.xkb_state_serialize_mods(state, depressed));
+        try std.testing.expectEqual(
+            @as(u32, c.XKB_KEY_z),
+            c.xkb_state_key_get_one_sym(state, target),
+        );
+        try std.testing.expectEqual(
+            @as(u32, 0),
+            c.xkb_state_key_get_consumed_mods(state, target),
+        );
+        try std.testing.expectEqual(
+            @as(c_int, 0),
+            c.xkb_keymap_key_repeats(roundtrip, modifier.key + 8),
+        );
     }
+
     var i = modifiers.len;
     while (i > 0) {
         i -= 1;
         _ = c.xkb_state_update_key(state, modifiers[i].key + 8, c.XKB_KEY_UP);
         expected &= ~(try map.mask(modifiers[i].name));
-        try std.testing.expectEqual(expected, c.xkb_state_serialize_mods(state, c.XKB_STATE_MODS_DEPRESSED));
+        try std.testing.expectEqual(expected, c.xkb_state_serialize_mods(state, depressed));
     }
 }
 
@@ -513,15 +729,15 @@ const FakeKeyboard = struct {
         self.count += 1;
     }
     fn guard(self: *@This()) !void {
-        const n = self.guards;
+        const guard_index = self.guards;
         self.guards += 1;
-        if (self.fail_guard == n) return error.ControlStopped;
+        if (self.fail_guard == guard_index) return error.ControlStopped;
     }
     fn sync(self: *@This(), guarded: bool) !void {
-        const n = self.syncs;
+        const sync_index = self.syncs;
         self.syncs += 1;
         if (!guarded) self.cleanup_syncs += 1;
-        if (self.fail_sync == n) return error.WaylandUnavailable;
+        if (self.fail_sync == sync_index) return error.WaylandUnavailable;
     }
     fn expect_balanced(self: *@This()) !void {
         var stack: [6]u32 = undefined;
@@ -538,7 +754,7 @@ const FakeKeyboard = struct {
                     try std.testing.expectEqual(stack[count], key.code);
                 }
             },
-            .modifiers => |mods| mask = mods,
+            .modifiers => |depressed| mask = depressed,
         };
         try std.testing.expectEqual(@as(usize, 0), count);
         try std.testing.expectEqual(@as(u32, 0), mask);
@@ -548,22 +764,33 @@ const FakeKeyboard = struct {
 test "keyboard emits modifier keys before target and releases target then modifiers" {
     var map = try Keymap.init(std.testing.allocator, &.{c.XKB_KEY_z});
     defer map.deinit();
-    const ctrl = try map.mask("Control");
+    const control = try map.mask("Control");
     const shift = try map.mask("Shift");
+
     var held = HeldKeys{};
     var fake = FakeKeyboard{};
-    try held.chord(&fake, &.{ .{ .code = 29, .mask = ctrl }, .{ .code = 42, .mask = shift }, .{ .code = data_key(0) } });
+    try held.chord(&fake, &.{
+        .{ .code = 29, .mask = control },
+        .{ .code = 42, .mask = shift },
+        .{ .code = data_key(0) },
+    });
     const expected = [_]FakeKeyboard.Event{
-        .{ .key = .{ .code = 29, .state = 1 } },          .{ .modifiers = ctrl },
-        .{ .key = .{ .code = 42, .state = 1 } },          .{ .modifiers = ctrl | shift },
-        .{ .key = .{ .code = data_key(0), .state = 1 } }, .{ .key = .{ .code = data_key(0), .state = 0 } },
-        .{ .key = .{ .code = 42, .state = 0 } },          .{ .modifiers = ctrl },
-        .{ .key = .{ .code = 29, .state = 0 } },          .{ .modifiers = 0 },
+        .{ .key = .{ .code = 29, .state = 1 } },
+        .{ .modifiers = control },
+        .{ .key = .{ .code = 42, .state = 1 } },
+        .{ .modifiers = control | shift },
+        .{ .key = .{ .code = data_key(0), .state = 1 } },
+        .{ .key = .{ .code = data_key(0), .state = 0 } },
+        .{ .key = .{ .code = 42, .state = 0 } },
+        .{ .modifiers = control },
+        .{ .key = .{ .code = 29, .state = 0 } },
+        .{ .modifiers = 0 },
     };
     try std.testing.expectEqualDeep(expected[0..], fake.events[0..fake.count]);
     try std.testing.expectEqual(@as(usize, 3), fake.guards);
     try std.testing.expectEqual(@as(usize, 3), fake.syncs);
     try fake.expect_balanced();
+
     const previous_count = fake.count;
     held.release(&fake);
     held.release(&fake);
@@ -574,8 +801,11 @@ test "keyboard unwinds every guard and synchronization failure without guarded c
     var map = try Keymap.init(std.testing.allocator, &.{c.XKB_KEY_a});
     defer map.deinit();
     var keys: [6]Key = undefined;
-    for (modifiers, 0..) |mod, i| keys[i] = .{ .code = mod.key, .mask = try map.mask(mod.name) };
+    for (modifiers, 0..) |modifier, i| {
+        keys[i] = .{ .code = modifier.key, .mask = try map.mask(modifier.name) };
+    }
     keys[5] = .{ .code = data_key(0) };
+
     for (0..keys.len) |stage| {
         var held = HeldKeys{};
         var fake = FakeKeyboard{ .fail_guard = stage };
@@ -605,14 +835,17 @@ test "keyboard Unicode chunks preserve scalars controls and repeated keys" {
     try std.testing.expectEqual(@as(usize, 9), chunk.symbol_count);
     try std.testing.expectEqual(chunk.keys[1], chunk.keys[6]);
     try std.testing.expectEqual(chunk.keys[7], chunk.keys[8]);
+
     var map = try Keymap.init(std.testing.allocator, chunk.symbols[0..chunk.symbol_count]);
     defer map.deinit();
     const state = c.xkb_state_new(map.compiled) orelse return error.OutOfMemory;
     defer c.xkb_state_unref(state);
-    for ([_]u32{ 'A', 'é', '中', 0x1f600, 'e', 0x301, 'é', '\r', '\r', '\t', 0x1b }, 0..) |cp, i| {
-        try std.testing.expectEqual(cp, c.xkb_state_key_get_utf32(state, chunk.keys[i] + 8));
+    const expected = [_]u32{ 'A', 'é', '中', 0x1f600, 'e', 0x301, 'é', '\r', '\r', '\t', 0x1b };
+    for (expected, 0..) |codepoint, i| {
+        try std.testing.expectEqual(codepoint, c.xkb_state_key_get_utf32(state, chunk.keys[i] + 8));
     }
     try std.testing.expectEqual(@as(usize, 0), TextChunk.next(&iterator).count);
+
     // Windows line endings are one Return, not two.
     var crlf = (try std.unicode.Utf8View.init("a\r\nb\n\r")).iterator();
     const lines = TextChunk.next(&crlf);
@@ -626,9 +859,10 @@ test "keyboard maximum Unicode chunks avoid modifier collisions and keycode limi
     defer bytes.deinit(std.testing.allocator);
     for (0..257) |i| {
         var encoded: [4]u8 = undefined;
-        const n = try std.unicode.utf8Encode(@intCast(0x400 + i), &encoded);
-        try bytes.appendSlice(std.testing.allocator, encoded[0..n]);
+        const encoded_length = try std.unicode.utf8Encode(@intCast(0x400 + i), &encoded);
+        try bytes.appendSlice(std.testing.allocator, encoded[0..encoded_length]);
     }
+
     var iterator = (try std.unicode.Utf8View.init(bytes.items)).iterator();
     var total: usize = 0;
     for ([_]usize{ 128, 128, 1, 0 }) |size| {
@@ -636,20 +870,27 @@ test "keyboard maximum Unicode chunks avoid modifier collisions and keycode limi
         try std.testing.expectEqual(size, chunk.count);
         try std.testing.expectEqual(size, chunk.symbol_count);
         if (size == 0) break;
+
         var map = try Keymap.init(std.testing.allocator, chunk.symbols[0..size]);
         defer map.deinit();
         const state = c.xkb_state_new(map.compiled) orelse return error.OutOfMemory;
         defer c.xkb_state_unref(state);
         for (chunk.keys[0..size], 0..) |key, i| {
             try std.testing.expect(key + 8 <= 255);
-            for (modifiers) |mod| try std.testing.expect(key != mod.key);
-            try std.testing.expectEqual(@as(u32, @intCast(0x400 + total + i)), c.xkb_state_key_get_utf32(state, key + 8));
+            for (modifiers) |modifier| try std.testing.expect(key != modifier.key);
+            try std.testing.expectEqual(
+                @as(u32, @intCast(0x400 + total + i)),
+                c.xkb_state_key_get_utf32(state, key + 8),
+            );
         }
         total += size;
     }
     try std.testing.expectEqual(@as(usize, 257), total);
-    try std.testing.expectError(error.InvalidKeymap, Keymap.init(std.testing.allocator, &.{}));
-    try std.testing.expectError(error.InvalidKeymap, Keymap.init(std.testing.allocator, &(@as([129]u32, @splat(c.XKB_KEY_a)))));
+
+    const allocator = std.testing.allocator;
+    const oversized: [129]u32 = @splat(c.XKB_KEY_a);
+    try std.testing.expectError(error.InvalidKeymap, Keymap.init(allocator, &.{}));
+    try std.testing.expectError(error.InvalidKeymap, Keymap.init(allocator, &oversized));
 }
 
 test "keyboard cleanup is idempotent without a connection and invalid UTF8 sends nothing" {
@@ -657,17 +898,24 @@ test "keyboard cleanup is idempotent without a connection and invalid UTF8 sends
     try std.testing.expectError(error.VirtualKeyboardUnavailable, keyboard.create());
     // No runtime field may be accessed before full UTF8 validation, or for empty text.
     var runtime: Runtime = undefined;
-    try std.testing.expectError(error.InvalidUtf8, keyboard.type_text(&runtime, "valid prefix\xff"));
+    try std.testing.expectError(
+        error.InvalidUtf8,
+        keyboard.type_text(&runtime, "valid prefix\xff"),
+    );
     try keyboard.type_text(&runtime, "");
+
     keyboard.release();
     keyboard.deinit();
     keyboard.deinit();
-    try std.testing.expect(keyboard.connection == null and keyboard.device == null);
+    try std.testing.expect(keyboard.connection == null);
+    try std.testing.expect(keyboard.device == null);
+
     keyboard.manager_name = 10;
     keyboard.seat_name = 11;
     Keyboard.removed(&keyboard, null, 99);
     try std.testing.expectEqual(@as(?u32, 10), keyboard.manager_name);
     Keyboard.removed(&keyboard, null, 10);
     Keyboard.removed(&keyboard, null, 11);
-    try std.testing.expect(keyboard.manager_name == null and keyboard.seat_name == null);
+    try std.testing.expect(keyboard.manager_name == null);
+    try std.testing.expect(keyboard.seat_name == null);
 }

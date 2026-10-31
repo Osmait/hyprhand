@@ -14,10 +14,21 @@ pub const Pointer = struct {
     device: ?*c.struct_zwlr_virtual_pointer_v1 = null,
     held: ?u32 = null,
 
-    fn global(data: ?*anyopaque, registry: ?*c.struct_wl_registry, name: u32, interface: [*c]const u8, version: u32) callconv(.c) void {
+    fn global(
+        data: ?*anyopaque,
+        registry: ?*c.struct_wl_registry,
+        name: u32,
+        interface: [*c]const u8,
+        version: u32,
+    ) callconv(.c) void {
         const self: *Pointer = @ptrCast(@alignCast(data.?));
         if (std.mem.eql(u8, std.mem.span(interface), "zwlr_virtual_pointer_manager_v1")) {
-            self.manager = @ptrCast(c.wl_registry_bind(registry, name, &c.zwlr_virtual_pointer_manager_v1_interface, @min(version, 2)));
+            self.manager = @ptrCast(c.wl_registry_bind(
+                registry,
+                name,
+                &c.zwlr_virtual_pointer_manager_v1_interface,
+                @min(version, 2),
+            ));
         }
     }
     fn removed(_: ?*anyopaque, _: ?*c.struct_wl_registry, _: u32) callconv(.c) void {}
@@ -27,20 +38,26 @@ pub const Pointer = struct {
     pub fn init(self: *Pointer, display: [:0]const u8) !void {
         self.* = .{ .connection = try Connection.connect(display) };
         errdefer self.deinit();
-        if (c.wl_registry_add_listener(self.connection.registry, &listener, self) != 0) return error.WaylandUnavailable;
+
+        if (c.wl_registry_add_listener(self.connection.registry, &listener, self) != 0) {
+            return error.WaylandUnavailable;
+        }
         try self.sync();
         if (self.manager == null) return error.VirtualPointerUnavailable;
     }
 
     pub fn create(self: *Pointer) !void {
-        self.device = c.zwlr_virtual_pointer_manager_v1_create_virtual_pointer(self.manager, null) orelse return error.VirtualPointerUnavailable;
+        self.device = c.zwlr_virtual_pointer_manager_v1_create_virtual_pointer(
+            self.manager,
+            null,
+        ) orelse return error.VirtualPointerUnavailable;
         try self.sync();
     }
 
     pub fn deinit(self: *Pointer) void {
         self.release();
-        if (self.device) |p| c.zwlr_virtual_pointer_v1_destroy(p);
-        if (self.manager) |m| c.zwlr_virtual_pointer_manager_v1_destroy(m);
+        if (self.device) |device| c.zwlr_virtual_pointer_v1_destroy(device);
+        if (self.manager) |manager| c.zwlr_virtual_pointer_manager_v1_destroy(manager);
         self.connection.deinit();
     }
 
@@ -58,6 +75,7 @@ pub const Pointer = struct {
     pub fn release(self: *Pointer) void {
         const saved = self.connection.suspend_guard();
         defer self.connection.runtime = saved;
+
         if (self.held) |button| {
             c.zwlr_virtual_pointer_v1_button(self.device, native.timestamp_ms(), button, 0);
             c.zwlr_virtual_pointer_v1_frame(self.device);
@@ -76,6 +94,7 @@ pub const Pointer = struct {
 
     pub fn click(self: *Pointer, button: u32) !void {
         if (self.connection.runtime) |runtime| try runtime.guard();
+
         // The click itself may intentionally focus/open/close a window. Check
         // immediately before dispatch, then finish its release/roundtrip even
         // when that expected application action changes the snapshot.
@@ -90,9 +109,16 @@ pub const Pointer = struct {
 
     fn axis_discrete(self: *Pointer, axis: Axis, detents: i32) void {
         if (detents == 0) return;
+
         // Include both continuous distance and wheel detents for Wayland/X11.
         // Hyprland applies source to the most recently specified axis.
-        c.zwlr_virtual_pointer_v1_axis_discrete(self.device, native.timestamp_ms(), @backingInt(axis), detents * wheel_detent_units, detents);
+        c.zwlr_virtual_pointer_v1_axis_discrete(
+            self.device,
+            native.timestamp_ms(),
+            @backingInt(axis),
+            detents * wheel_detent_units,
+            detents,
+        );
         c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_WHEEL);
     }
 
@@ -105,8 +131,17 @@ pub const Pointer = struct {
 
     fn axis_continuous(self: *Pointer, axis: Axis, units: i32) void {
         if (units == 0) return;
-        c.zwlr_virtual_pointer_v1_axis(self.device, native.timestamp_ms(), @backingInt(axis), units);
-        c.zwlr_virtual_pointer_v1_axis_source(self.device, c.WL_POINTER_AXIS_SOURCE_CONTINUOUS);
+
+        c.zwlr_virtual_pointer_v1_axis(
+            self.device,
+            native.timestamp_ms(),
+            @backingInt(axis),
+            units,
+        );
+        c.zwlr_virtual_pointer_v1_axis_source(
+            self.device,
+            c.WL_POINTER_AXIS_SOURCE_CONTINUOUS,
+        );
     }
 
     /// Fixed-point axis distances, without coarse wheel detents. Applications
@@ -121,8 +156,21 @@ pub const Pointer = struct {
     pub fn end_scroll(self: *Pointer, dx: i32, dy: i32) void {
         const saved = self.connection.suspend_guard();
         defer self.connection.runtime = saved;
-        if (dy != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, native.timestamp_ms(), @backingInt(Axis.vertical));
-        if (dx != 0) c.zwlr_virtual_pointer_v1_axis_stop(self.device, native.timestamp_ms(), @backingInt(Axis.horizontal));
+
+        if (dy != 0) {
+            c.zwlr_virtual_pointer_v1_axis_stop(
+                self.device,
+                native.timestamp_ms(),
+                @backingInt(Axis.vertical),
+            );
+        }
+        if (dx != 0) {
+            c.zwlr_virtual_pointer_v1_axis_stop(
+                self.device,
+                native.timestamp_ms(),
+                @backingInt(Axis.horizontal),
+            );
+        }
         c.zwlr_virtual_pointer_v1_frame(self.device);
         self.connection.sync_with_cancellation(false) catch {};
     }
