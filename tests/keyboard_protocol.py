@@ -242,6 +242,12 @@ class KeyboardProtocol(unittest.TestCase):
                                 "--session", "host", "--backend", "native", ok=ok)
 
     def assert_balanced(self, events):
+        # The CLI can exit before the fake server's thread reads its final
+        # destroy request from the socket. Wait for it, bounded, so a loaded
+        # machine does not turn that scheduling delay into a test failure.
+        deadline = time.monotonic() + 2
+        while ("destroy",) not in events and time.monotonic() < deadline:
+            time.sleep(0.01)
         stack = []
         mask = 0
         for event in events:
