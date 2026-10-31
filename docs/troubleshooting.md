@@ -29,6 +29,14 @@ the result before deciding what action is still needed.
 | `ContinuousScrollUnavailable` | Explicit continuous scrolling is unsupported on XWayland. Select wheel mode if suitable; verify visible results |
 | `HeadlessRenderUnavailable` | GPU buffer allocation failed. Read the reported session's `compositor.log`; use explicit nested mode or review the exact-version experimental bridge |
 | `SessionStartupFailed`, `SessionStartupTimeout`, `SessionConfigInvalid` | Read `compositor.log` at the session path. Check Hyprland/dependencies/config provider; create sessions from the original host to avoid overly long nested socket paths |
+| `NestedWindowHidden` | The nested session's host window is on a workspace no monitor shows (or hidden, or the screen is off), so the nested compositor renders nothing. Ask the user to move it to a visible workspace; hyprhand never moves it. See [nested windows](sessions.md#nested-windows) |
+| `NestedWindowClosed` | The nested window was closed; the compositor keeps running without an output. `session destroy NAME`, then create it again |
+| `SessionDead` | `session create` found a session with that name whose compositor exited or whose nested window was closed. Run `session destroy NAME` once, then create it |
+| `SessionExists` | A running session already uses the name. Reuse it or destroy it first |
+| `SessionStopTimeout` | A process survived SIGKILL for 5 s (uninterruptible sleep). Run `session destroy NAME` again |
+| `StaleObservation` right after resizing a nested window | The nested output follows the host window size; observe again. Prefer headless sessions for long tasks |
+| Keys report `sent` but a browser ignores a shortcut, or typed punctuation deletes text | Fixed in this build (characters were sent on unrelated key positions, see [keyboard](cli.md#keyboard)). Re-test with the current binary |
+| Browser download never appears | See [saving files](sessions.md#saving-files): confirm the GTK chooser with **Save**, then check the file on disk |
 | `PreviewHelperMissing` | Build `zig build pip` and install `hyprhand-pip` beside the matching CLI |
 | `PreviewManagedSessionRequired` | Preview only accepts an explicit managed session, never `host` |
 | `PreviewIdentityMismatch` | The source ended or was recreated. Close the old viewer and explicitly open a new one |

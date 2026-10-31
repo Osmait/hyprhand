@@ -1,11 +1,12 @@
 """Opt-in lifecycle test, creates/cleans only uniquely named managed sessions.
 
-python3 tests/live_sessions.py --live [--headless]
+python3 tests/live_sessions.py --live [--headless] [--prefix NAME_PREFIX]
 Headless incompatibility is reported as an explicit skip after cleanup checks.
 """
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import time
@@ -38,8 +39,42 @@ def owned_processes(runtime):
             pass
     return matches
 
+def health(name):
+    inspected = cli("session", "inspect", name)
+    listed = next(s for s in cli("sessions")["sessions"] if s["id"] == name)
+    assert (listed["running"], listed["health"]) == (inspected["running"], inspected["health"])
+    return inspected["running"], inspected["health"]
+
+def crashed_compositor_is_reported_and_destroyed(name, args):
+    """Kill only this session's own compositor: running must turn false, create
+    must name the dead session, and one destroy must stop everything."""
+    session = cli(*args)["session"]
+    try:
+        assert health(name) == (True, "running")
+        fd = os.pidfd_open(session["compositor"]["pid"])
+        try:
+            signal.pidfd_send_signal(fd, signal.SIGKILL)
+        finally:
+            os.close(fd)
+        for _ in range(50):
+            if health(name)[1] == "exited": break
+            time.sleep(.1)
+        assert health(name) == (False, "exited")
+        assert cli(*args, ok=False)["err"]["code"] == "SessionDead"
+        cli("session", "destroy", name)
+        # Children the killed compositor orphaned are not attributable; they
+        # exit on their own once their Wayland connection is gone.
+        for _ in range(30):
+            if not owned_processes(session["runtime"]): break
+            time.sleep(.1)
+        assert not owned_processes(session["runtime"]), owned_processes(session["runtime"])
+        assert health(name) == (False, "destroyed")
+    finally:
+        cli("session", "destroy", name)
+
 def main():
-    name = "check-" + uuid.uuid4().hex[:8]
+    prefix = sys.argv[sys.argv.index("--prefix") + 1] if "--prefix" in sys.argv else "check-"
+    name = prefix + uuid.uuid4().hex[:8]
     headless = "--headless" in sys.argv
     args = ["session", "create", name] + ([] if headless else ["--nested"])
     bridge = None
@@ -68,6 +103,7 @@ def main():
                 preloads = [v for v in env if v.startswith(b"LD_PRELOAD=")]
                 assert preloads == ([f"LD_PRELOAD={bridge}".encode()] if role == "compositor" else []), (role, preloads)
         assert cli("session", "create", name, "--nested", ok=False)["err"]["code"] == "SessionExists"
+        assert health(name) == (True, "running")
         assert not cli("doctor", "--session", name)["shared_cursor"]
         cli("enable", "--session", name)
         cli("wait", "stable", "--pixels", "--stable-ms", "100", "--session", name)
@@ -96,7 +132,9 @@ def main():
         assert not owned_processes(session["runtime"]), owned_processes(session["runtime"])
         assert cli("state", "--session", name, ok=False)["err"]["code"] == "SessionNotRunning"
         assert Path(session["directory"]).exists(), "Profiles must be retained"
-        print(json.dumps({"ok": True, "verified": ["create", "duplicate rejected", "routing", "pixel wait", "native events", "workspace wait", "launch", "environment isolation", "destroy", "no owned live processes", "profiles retained"]}))
+        assert health(name) == (False, "destroyed")
+        crashed_compositor_is_reported_and_destroyed(name, args)
+        print(json.dumps({"ok": True, "verified": ["create", "duplicate rejected", "health", "routing", "pixel wait", "native events", "workspace wait", "launch", "environment isolation", "destroy", "no owned live processes", "profiles retained", "crashed compositor reported, create refused, single destroy"]}))
     finally:
         cli("session", "destroy", name)
 

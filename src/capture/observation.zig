@@ -6,6 +6,7 @@ const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const operations = @import("../runtime/operations.zig");
+const sessions = @import("../runtime/sessions.zig");
 const aura = @import("../input/aura.zig");
 const eq = @import("../core/text.zig").eq;
 
@@ -175,6 +176,8 @@ pub fn observe(runtime: *Runtime, arguments: args.Args) !void {
     try runtime.prepare();
     try runtime.validate_display();
     try runtime.unlocked();
+    // Fail fast instead of letting grim wait the whole budget for a frame.
+    try sessions.check_nested_window(runtime);
 
     const monitor_name = arguments.monitor orelse try focused_monitor_name(runtime);
     const before = try snapshot(runtime, monitor_name);
