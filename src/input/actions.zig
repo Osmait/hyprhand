@@ -456,7 +456,7 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         null;
     const point: ?geometry.Point = if (target) |pointer_target| pointer_target.point else null;
     const pointer_window = if (target) |pointer_target| pointer_target.window else null;
-    const key_argv = try run_validate(runtime, arguments, pointer_window);
+    const validated = try run_validate(runtime, arguments, pointer_window);
 
     if (arguments.dry_run) {
         try runtime.emit(.{
@@ -475,9 +475,9 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         try run_pointer_action(runtime, arguments, pointer_target);
     } else switch (arguments.command) {
         .focus => try run_focus(runtime, arguments.focus_window.?),
-        .workspace => try run_workspace(runtime, arguments.workspace_target.?),
+        .workspace => try run_workspace(runtime, validated.workspace_number.?),
         .type => try type_text(runtime, arguments),
-        .key => try press_chord(runtime, arguments, key_argv.?),
+        .key => try press_chord(runtime, arguments, validated.key_argv.?),
         .launch => return sessions.launch(runtime, arguments),
         else => unreachable,
     }
@@ -492,18 +492,26 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
     });
 }
 
+/// What validation computed that execution needs again.
+const Validated = struct {
+    /// The wtype argv for `key`, checked before anything is sent.
+    key_argv: ?[]const []const u8 = null,
+    workspace_number: ?u32 = null,
+};
+
 /// Validates every argument before the dry-run report and before any input,
-/// and tells the guard which window input must stay on. Returns the wtype
-/// argv for `key`, which has to be checked before anything is sent.
+/// and tells the guard which window input must stay on.
 fn run_validate(
     runtime: *Runtime,
     arguments: args.Args,
     pointer_window: ?[]const u8,
-) !?[]const []const u8 {
+) !Validated {
     if (pointer_window) |window| run_guard_target(runtime, window);
     switch (arguments.command) {
         .focus => try check_window(runtime, arguments.focus_window.?, false),
-        .workspace => try run_validate_workspace(arguments.workspace_target.?),
+        .workspace => return .{
+            .workspace_number = try run_validate_workspace(arguments.workspace_target.?),
+        },
         .type => {
             run_guard_target(runtime, arguments.window.?);
             try check_window(runtime, arguments.window.?, true);
@@ -512,11 +520,11 @@ fn run_validate(
         .key => {
             run_guard_target(runtime, arguments.window.?);
             try check_window(runtime, arguments.window.?, true);
-            return try key_args(runtime.allocator, arguments.key_chord.?);
+            return .{ .key_argv = try key_args(runtime.allocator, arguments.key_chord.?) };
         },
         else => {},
     }
-    return null;
+    return .{};
 }
 
 fn run_guard_target(runtime: *Runtime, window: []const u8) void {
@@ -524,10 +532,11 @@ fn run_guard_target(runtime: *Runtime, window: []const u8) void {
     if (runtime.action) |guard| guard.target_window = window;
 }
 
-fn run_validate_workspace(value: []const u8) !void {
+fn run_validate_workspace(value: []const u8) !u32 {
     const workspace_number = std.fmt.parseInt(u32, value, 10) catch return error.InvalidWorkspace;
     if (workspace_number == 0) return error.InvalidWorkspace;
     if (workspace_number > std.math.maxInt(i32)) return error.InvalidWorkspace;
+    return workspace_number;
 }
 
 fn run_validate_text(text: []const u8) !void {
@@ -541,9 +550,7 @@ fn run_focus(runtime: *Runtime, address: []const u8) !void {
     try check_window(runtime, address, true);
 }
 
-fn run_workspace(runtime: *Runtime, value: []const u8) !void {
-    // run_validate_workspace already accepted the value.
-    const number = std.fmt.parseInt(u32, value, 10) catch unreachable;
+fn run_workspace(runtime: *Runtime, number: u32) !void {
     try runtime.dispatch(.{ .workspace = number });
     const active = try runtime.query_json(geometry.Workspace, "activeworkspace");
     if (active.id != number) return error.WorkspaceVerificationFailed;
