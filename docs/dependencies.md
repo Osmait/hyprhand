@@ -15,6 +15,7 @@ executables. See [compatibility](compatibility.md) and [packaging](../packaging/
 | Optional preview | GTK4 >= 4.8; build with `zig build pip`; keep `hyprhand-pip` beside `hyprhand`; `grim`; tested Hyprlang/Lua hosts. Excluded from the default CLI archive |
 | XWayland keyboard/scroll | `xdotool`, XWayland server, and target window's matching `DISPLAY` |
 | Wayland helper keyboard | `wtype` for `--backend helper`; not needed by the native keyboard |
+| Clipboard text input | `wl-copy` (wl-clipboard) for `type --backend clipboard` in managed sessions |
 | Managed sessions | `Hyprland`, `dbus-daemon`; `at-spi2-registryd` and accessible widgets for AT-SPI |
 | Live graphical fixtures | Python GI, GTK4 and AT-SPI; explicitly enabled, excluded from default checks |
 | Blender example | Blender and the supplied original room; not a CLI dependency |

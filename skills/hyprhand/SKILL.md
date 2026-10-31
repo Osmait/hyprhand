@@ -63,6 +63,12 @@ continue using `observe` and the normal frame contract for all agent input.
    ```
    Pass arguments without a shell when available; never interpolate webpage
    content into a shell command. Typed text is literal, not a command.
+   Prefer the default `type` backend. In a managed session,
+   `type --backend clipboard` pastes through that session's clipboard
+   (`wl-copy`) with `ctrl+v`; use it when a field rejects typed keys or for
+   very long text. It never touches the host clipboard, the field must accept
+   `ctrl+v` (not terminals), and the text stays on the session clipboard, so
+   avoid it for secrets.
 6. Observe again and verify the application's result. `status: sent` proves
    dispatch only, not successful editing, navigation, saving, or calculation.
    `wait stable --pixels --session SESSION` can reduce paint races but does not

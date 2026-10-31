@@ -52,6 +52,11 @@ pub const FrameCheck = struct {
     check: *const fn (runtime: *Runtime, context: *anyopaque) anyerror!void,
 };
 
+/// Where a helper's stderr goes. A helper that leaves a daemon behind (wl-copy
+/// keeps serving the clipboard) must not inherit it: the daemon would hold a
+/// caller's stderr pipe open and the caller would wait for it to close.
+pub const HelperStderr = enum { inherit, ignore };
+
 pub const Runtime = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -545,12 +550,23 @@ pub const Runtime = struct {
     }
 
     /// Run a bounded helper, with no shell and no text in its argv.
-    /// pidfd polling allows stop to cancel without reaping outside Zig's child API.
     pub fn run_helper(
         self: *Runtime,
         argv: []const []const u8,
         input: ?[]const u8,
         controlled: bool,
+    ) !void {
+        return self.run_helper_stderr(argv, input, controlled, .inherit);
+    }
+
+    /// Like `run_helper`, choosing where the helper's stderr goes.
+    /// pidfd polling allows stop to cancel without reaping outside Zig's child API.
+    pub fn run_helper_stderr(
+        self: *Runtime,
+        argv: []const []const u8,
+        input: ?[]const u8,
+        controlled: bool,
+        stderr: HelperStderr,
     ) !void {
         const stdin_fd: c_int = if (input) |data| try input_buffer(data) else -1;
         defer if (stdin_fd >= 0) {
@@ -566,7 +582,10 @@ pub const Runtime = struct {
             else
                 .ignore,
             .stdout = .ignore,
-            .stderr = .inherit,
+            .stderr = switch (stderr) {
+                .inherit => .inherit,
+                .ignore => .ignore,
+            },
         });
         defer child_process.terminate(&child, self.io);
         const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));

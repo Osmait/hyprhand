@@ -395,10 +395,13 @@ fn keyboard_route(runtime: *Runtime, arguments: args.Args) !KeyboardRoute {
         return .xdotool;
     }
     if (arguments.backend == .helper) return .wtype;
+    // `--backend clipboard` pastes with a native ctrl+v chord.
     return .native;
 }
 
 fn type_text(runtime: *Runtime, arguments: args.Args) !void {
+    if (arguments.backend == .clipboard) return paste_text(runtime, arguments);
+
     const text = arguments.text.?;
     switch (try keyboard_route(runtime, arguments)) {
         .native => {
@@ -416,8 +419,47 @@ fn type_text(runtime: *Runtime, arguments: args.Args) !void {
     }
 }
 
-fn press_chord(runtime: *Runtime, arguments: args.Args, wtype_argv: []const []const u8) !void {
-    const chord = arguments.key_chord.?;
+/// wl-copy reads the text from stdin, never argv, which every local process can
+/// read. The text stays on the session clipboard after a successful paste:
+/// `--paste-once` is consumed by Chromium before it inserts anything (Brave
+/// pasted nothing), and `wl-copy --clear` right after ctrl+v races the target,
+/// which fetches the data asynchronously (Brave pasted 2 of 10 times).
+const clipboard_copy_argv = [_][]const u8{ "wl-copy", "--type", "text/plain;charset=utf-8" };
+const clipboard_clear_argv = [_][]const u8{ "wl-copy", "--clear" };
+
+/// `--backend clipboard`: copy the text into the managed session's Wayland
+/// clipboard, then paste it with ctrl+v through the normal guarded chord path.
+fn paste_text(runtime: *Runtime, arguments: args.Args) !void {
+    // Argument validation rejects host: this is never the human's clipboard.
+    assert(!runtime.is_host());
+    var helper = try paste_text_runtime(runtime);
+    try helper.run_helper_stderr(&clipboard_copy_argv, arguments.text.?, true, .ignore);
+    // A failed chord almost always stopped before ctrl+v reached the target;
+    // do not leave the text waiting on the clipboard.
+    errdefer helper.run_helper_stderr(&clipboard_clear_argv, null, false, .ignore) catch {};
+
+    const chord = "ctrl+v";
+    try press_chord(runtime, arguments, chord, try key_args(runtime.allocator, chord));
+}
+
+/// A runtime for wl-copy that can only reach the session display: an inherited
+/// WAYLAND_SOCKET would take precedence over the session's WAYLAND_DISPLAY.
+fn paste_text_runtime(runtime: *Runtime) !Runtime {
+    const environment = try runtime.allocator.create(std.process.Environ.Map);
+    environment.* = try runtime.env.clone(runtime.allocator);
+    _ = environment.swapRemove("WAYLAND_SOCKET");
+
+    var helper = runtime.*;
+    helper.env = environment;
+    return helper;
+}
+
+fn press_chord(
+    runtime: *Runtime,
+    arguments: args.Args,
+    chord: []const u8,
+    wtype_argv: []const []const u8,
+) !void {
     switch (try keyboard_route(runtime, arguments)) {
         .native => {
             var device: Keyboard = undefined;
@@ -477,7 +519,10 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         .focus => try run_focus(runtime, arguments.focus_window.?),
         .workspace => try run_workspace(runtime, validated.workspace_number.?),
         .type => try type_text(runtime, arguments),
-        .key => try press_chord(runtime, arguments, validated.key_argv.?),
+        .key => {
+            const chord = arguments.key_chord.?;
+            try press_chord(runtime, arguments, chord, validated.key_argv.?);
+        },
         .launch => return sessions.launch(runtime, arguments),
         else => unreachable,
     }
@@ -516,6 +561,10 @@ fn run_validate(
             run_guard_target(runtime, arguments.window.?);
             try check_window(runtime, arguments.window.?, true);
             try run_validate_text(arguments.text.?);
+            const clipboard = arguments.backend == .clipboard;
+            if (clipboard and !try runtime.executable("wl-copy")) {
+                return error.ClipboardHelperMissing;
+            }
         },
         .key => {
             run_guard_target(runtime, arguments.window.?);

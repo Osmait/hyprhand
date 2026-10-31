@@ -609,6 +609,22 @@ else:
         self.error("WaylandUnavailable", "type", "--session", "host", "--window", self.address, "--text", "hello", "--backend", "native")
         self.assertFalse((self.root / "input.json").exists())
 
+    def test_clipboard_backend_never_writes_the_host_clipboard(self):
+        self.cli("enable")
+        fake_copy = self.root / "wl-copy"
+        fake_copy.write_text("#!/bin/sh\ntouch \"$HYPRHAND_TEST_ROOT/copied\"\n")
+        fake_copy.chmod(0o700)
+        for args in (("--dry-run",), ()):
+            self.error("ClipboardManagedSessionRequired", "type", "--session", "host",
+                       "--window", self.address, "--text", "secret", "--backend", "clipboard",
+                       *args)
+        self.error("InvalidBackend", "key", "ctrl+v", "--session", "host", "--window",
+                   self.address, "--backend", "clipboard")
+        self.assertFalse((self.root / "copied").exists())
+        self.assertFalse((self.root / "input.json").exists())
+        self.assertIn("wl_copy", self.cli("doctor")["dependencies"])
+        self.assertFalse(self.cli("doctor")["capabilities"]["clipboard_paste"])
+
     def test_session_management_rejects_host_and_path_traversal(self):
         self.error("InvalidSessionName", "session", "destroy", "host")
         self.error("InvalidSessionName", "session", "create", "../escape")

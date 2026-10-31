@@ -26,6 +26,7 @@ const Doctor = struct {
     keyboard_available: bool,
     grim: bool,
     wtype: bool,
+    wl_copy: bool,
     xdotool: bool,
     hyprland: bool,
     dbus_daemon: bool,
@@ -61,6 +62,7 @@ const Doctor = struct {
             .keyboard_available = keyboard_available,
             .grim = try runtime.executable("grim"),
             .wtype = try runtime.executable("wtype"),
+            .wl_copy = try runtime.executable("wl-copy"),
             .xdotool = try runtime.executable("xdotool"),
             .hyprland = try runtime.executable("Hyprland"),
             .dbus_daemon = try runtime.executable("dbus-daemon"),
@@ -73,6 +75,35 @@ const Doctor = struct {
             .pidfd_available = pidfd >= 0,
             .xkb_data = host_keymap_compiles(),
             .enabled = if (runtime.token()) |_| true else |_| false,
+        };
+    }
+
+    /// The `dependencies` object of the doctor report; field names are output.
+    const Dependencies = struct {
+        grim: bool,
+        wtype: bool,
+        wl_copy: bool,
+        xdotool: bool,
+        Hyprland: bool,
+        dbus_daemon: bool,
+        at_spi_registry: bool,
+        dbus_address_configured: bool,
+        xkb_data: bool,
+        pidfd: bool,
+    };
+
+    fn dependencies(self: Doctor) Dependencies {
+        return .{
+            .grim = self.grim,
+            .wtype = self.wtype,
+            .wl_copy = self.wl_copy,
+            .xdotool = self.xdotool,
+            .Hyprland = self.hyprland,
+            .dbus_daemon = self.dbus_daemon,
+            .at_spi_registry = self.registry,
+            .dbus_address_configured = self.bus_configured,
+            .xkb_data = self.xkb_data,
+            .pidfd = self.pidfd_available,
         };
     }
 
@@ -116,23 +147,15 @@ fn doctor(runtime: *Runtime) !void {
         .instance = runtime.instance,
         .wayland_display = runtime.display,
         .display_matches = probe.display_matches,
-        .dependencies = .{
-            .grim = probe.grim,
-            .wtype = probe.wtype,
-            .xdotool = probe.xdotool,
-            .Hyprland = probe.hyprland,
-            .dbus_daemon = probe.dbus_daemon,
-            .at_spi_registry = probe.registry,
-            .dbus_address_configured = probe.bus_configured,
-            .xkb_data = probe.xkb_data,
-            .pidfd = probe.pidfd_available,
-        },
+        .dependencies = probe.dependencies(),
         .capabilities = .{
             .state = true,
             .capture = capture,
             .virtual_pointer = probe.pointer_available and probe.display_matches,
             .virtual_keyboard = probe.keyboard_available and probe.display_matches,
             .text_helper_installed = probe.wtype,
+            // The clipboard backend never touches the host clipboard.
+            .clipboard_paste = probe.wl_copy and !runtime.is_host(),
             .dispatch = provider_supported,
             .managed_sessions = managed_sessions,
             .accessibility = probe.bus_configured,
@@ -343,6 +366,10 @@ fn hint(err: anyerror) []const u8 {
         error.CursorCaptureUnsupported,
         => "The compositor did not provide a usable cursor capture session. " ++
             "No theme or desktop configuration was changed.",
+        error.ClipboardHelperMissing => "--backend clipboard needs wl-copy " ++
+            "(wl-clipboard). Install it or use --backend auto. Nothing was typed.",
+        error.ClipboardManagedSessionRequired => "--backend clipboard requires a managed " ++
+            "--session; the host clipboard belongs to the human.",
         error.XWaylandHelperMissing => "This is an XWayland window. " ++
             "Install xdotool for X11 keyboard input.",
         error.X11TargetMismatch => "The focused X11 window does not match the requested " ++

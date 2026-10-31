@@ -25,7 +25,8 @@ pub const text = "hyprhand " ++ version.string ++
     \\  drag --frame ID --x X --y Y --to-x X --to-y Y [--duration-ms 500]
     \\  scroll --frame ID --x X --y Y [--dy STEPS] [--dx STEPS]
     \\    [--scroll-mode auto|wheel|continuous] [--duration-ms 500]
-    \\  type --window ADDRESS --text TEXT [--backend auto|native|helper]
+    \\  type --window ADDRESS --text TEXT [--backend auto|native|helper|clipboard]
+    \\    clipboard: wl-copy into the session clipboard (kept) + ctrl+v; never host
     \\  key CHORD --window ADDRESS [--backend auto|native|helper]
     \\
     \\Managed sessions (input isolation, NOT filesystem/credential sandboxing):

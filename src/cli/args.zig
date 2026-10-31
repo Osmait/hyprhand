@@ -38,7 +38,8 @@ pub const Command = enum {
 };
 
 pub const ScrollMode = enum { auto, wheel, continuous };
-pub const Backend = enum { auto, native, helper };
+/// `clipboard` is `type` only: paste through the managed session's clipboard.
+pub const Backend = enum { auto, native, helper, clipboard };
 pub const Indicator = enum { none, outline };
 pub const SessionVerb = enum { create, inspect, destroy };
 pub const WaitCondition = enum { stable, window, focus, workspace };
@@ -462,6 +463,11 @@ fn validate_shape(arguments: Args) !void {
     }
     const requires_window = arguments.command == .type or arguments.command == .key;
     if (requires_window and arguments.window == null) return error.WindowRequired;
+    if (arguments.backend == .clipboard) {
+        if (arguments.command != .type) return error.InvalidBackend;
+        // The host clipboard belongs to the human; never overwrite it.
+        if (eq(arguments.session, "host")) return error.ClipboardManagedSessionRequired;
+    }
 
     switch (arguments.command) {
         .focus => if (arguments.focus_window == null) return error.MissingArgument,
@@ -648,6 +654,27 @@ test "enum options and positional arguments parse into typed fields" {
     const session = try parse(&.{ "session", "create", "agent", "--nested" });
     try std.testing.expectEqual(SessionVerb.create, session.session_verb.?);
     try std.testing.expectEqualStrings("agent", session.session_name.?);
+
+    // The clipboard backend types only, and only into a managed session.
+    const paste = try parse(&.{
+        "type",      "--session", "agent", "--window", "0x1", "--text",
+        "Ñ",
+        "--backend", "clipboard",
+    });
+    try std.testing.expectEqual(Backend.clipboard, paste.backend);
+    try std.testing.expectError(error.ClipboardManagedSessionRequired, parse(&.{
+        "type",      "--session", "host", "--window", "0x1", "--text",
+        "Ñ",
+        "--backend", "clipboard",
+    }));
+    try std.testing.expectError(error.InvalidBackend, parse(&.{
+        "key",       "ctrl+v",    "--session", "agent", "--window", "0x1",
+        "--backend", "clipboard",
+    }));
+    try std.testing.expectError(
+        error.InvalidBackend,
+        parse(&.{ "observe", "--backend", "clipboard" }),
+    );
 
     const key = try parse(&.{ "key", "ctrl+s", "--session", "host", "--window", "0x1" });
     try std.testing.expectEqualStrings("ctrl+s", key.key_chord.?);
