@@ -204,6 +204,15 @@ XKB maps in chunks of at most 128 codepoints. It sends physical modifier keys as
 well as resolved modifier masks, and releases owned input in reverse order.
 No clipboard or shell is used to transport the text.
 
+Each symbol is sent on its US-layout key when it has one (`t` on KEY_T, `minus`
+on KEY_MINUS, `Return` on KEY_ENTER, `Escape` on KEY_ESC); other characters use
+free letter, digit or punctuation keys, so a chunk also ends after 48 distinct
+characters without a key of their own. Chromium derives shortcut and editing key
+codes from the hardware keycode, and GTK 3 matches some bindings by keycode, so a
+character sent on another key's position could act as that key (for example, a
+`>` on the Backspace position deleted text in Brave, and `ctrl+minus` on the Escape
+position did not zoom).
+
 Shortcut modifiers are `ctrl`, `shift`, `alt`, `super`/`logo`, and `altgr`;
 the final key uses an XKB keysym name, such as `Return`, `Left`, or `Tab`.
 
