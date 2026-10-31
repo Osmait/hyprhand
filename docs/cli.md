@@ -59,7 +59,9 @@ compositor. `operation_verified: false` means untested, not necessarily broken.
 `observe` uses `grim`; `--backend auto` and `helper` select that implementation.
 `--backend native` returns `NativeCaptureUnavailable`. If `--monitor` is omitted,
 the focused monitor is selected. Capture scale accepts `0.1..2` independently of
-the monitor's scale.
+the monitor's scale. `--retry 0..10` (default 0) retries `CommandTimeout`,
+`HelperTimeout` and `StaleObservation` up to that many extra times, 0.7 s apart,
+each attempt with a fresh 10 s budget; other errors are returned at once.
 
 The response contains `ok`, `capture_duration_ms`, and `frame`:
 

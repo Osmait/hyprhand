@@ -15,9 +15,15 @@ in its repository. Read `--help`, `doctor`, and `sessions` before acting.
 - Use an existing managed session when the task names one. Otherwise create one
   only when a separate desktop is in scope:
   `session create agent`; or `session create agent --nested` for a visible preview.
-  If headless creation fails, report the limitation; never silently switch to host.
+  If headless creation fails with `HeadlessRenderUnavailable` and a format bridge
+  is installed (`~/.local/lib/hyprhand/hyprhand-headless-formats.so`), retry with
+  `--headless-bridge PATH`; otherwise report the limitation. Never silently switch
+  to host. Prefer headless for long tasks: a nested session stops rendering when
+  its window is not visible on the host.
+- `enable --session NAME` before `launch`: launching counts as input.
 - Managed sessions isolate input, not files, credentials, network, or OS privileges.
-  `launch --session agent -- brave-browser` uses a separate browser profile.
+  `launch --session agent -- brave` uses a separate browser profile (use the real
+  executable name; `ProgramNotFound` means it is not in `PATH`).
   Do not copy the user's browser profile or bypass login/security challenges.
 
 ## Optional owner preview
@@ -40,7 +46,7 @@ continue using `observe` and the normal frame contract for all agent input.
    a human stop or a `ControlStopped` error without renewed authorization.
 3. Focus the intended window with `focus ADDRESS --session SESSION`.
    Use `wait focus --window ADDRESS --session SESSION` if necessary.
-4. Capture `observe --session SESSION [--monitor NAME]`. Read its JSON and
+4. Capture `observe --session SESSION [--monitor NAME] [--retry 2]`. Read its JSON and
    **view the actual image_path with the agent's image-viewing tool** before
    choosing a pointer target. Coordinates are pixels in that image.
 5. Send one small action. Examples:

@@ -62,7 +62,7 @@ pub fn add(
         .directory = "headless-formats",
         .source = "bridge.cpp",
         .library = "hyprhand-headless-formats.so",
-        .description = "Build optional Aquamarine 0.15.0 format bridge (never loads it)",
+        .description = "Build optional Aquamarine 0.15.x format bridge (never loads it)",
     });
 }
 

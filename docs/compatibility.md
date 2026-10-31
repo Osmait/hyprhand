@@ -8,14 +8,14 @@ remote run. `status: sent` confirms delivery, not the application's outcome.
 | Environment or feature | Evidence and scope | Limits |
 | --- | --- | --- |
 | Ubuntu 22.04/24.04, Linux x86_64/glibc | CI configured with Zig 0.17.0/Python 3.12 for builds, unit tests, fake protocols, lifecycle and offline reliability contracts | No Hyprland or live GUI apps; inspect the run for the exact commit |
-| Hyprland 0.57.0 (Lua-only config), Zig 0.17.0, NVIDIA | 2026-10-31 local run: host `doctor`/`state`/`observe`/`events`; nested session with auto-selected Lua config; `tests/live_sessions.py`, `tests/live_smoke.py` and `tests/live_advanced.py` in a nested session; GTK4 preview on a Lua host | Headless without bridge still reports `HeadlessRenderUnavailable`; `live_motion.py` (visual review) not rerun; experimental bridges not rebuilt |
+| Hyprland 0.57.0 (Lua-only config), Zig 0.17.0, NVIDIA | 2026-10-31 local run: host `doctor`/`state`/`observe`/`events`; nested session with auto-selected Lua config; `tests/live_sessions.py`, `tests/live_smoke.py` and `tests/live_advanced.py` in a nested session; GTK4 preview on a Lua host | Headless without bridge still reports `HeadlessRenderUnavailable` (use the bridge row below); `live_motion.py` (visual review) not rerun; cursor-outline bridge not rebuilt |
 | GTK4/Wayland on Hyprland 0.56.2 | Local fixture reports cover text, click/double click, motion, scroll, drag and cancellation | Does not certify other toolkits, versions, GPUs, scales or rotations |
 | GTK4/XWayland | Historical X11 fixture results; `tests/live_smoke.py --x11` checks backend, text, click and scroll | Keyboard/scroll use `xdotool`; integer detents, no subpixels or equivalent native cleanup guarantees |
 | Hidden workspace, same compositor | [Background probe](archive/background-probe.md) observed AT-SPI text/button actions without fixture focus loss | Targeted `sendshortcut` caused foreground keyboard leave/enter despite unchanged `activewindow`; workspaces do not isolate input |
 | Managed nested session, Hyprlang/Lua | Local lifecycle and input records in child windows | Opening/closing the nested window can affect host focus; apps must use Wayland; no file/network/credential sandbox |
 | Blender 5.2.1 LTS / native Wayland | Fresh factory-config instance in child compositor: `Shift+F4` switched 3D view to Python console; `Ctrl+Space` maximized that editor; screenshots verified both | **Partial compatibility** only. Other shortcuts, modes, profiles, versions, XWayland, prior scroll and drag issues remain unverified |
 | Headless without bridge, recorded NVIDIA stack | Local `HeadlessRenderUnavailable` | No silent fallback to host and no general headless promise |
-| Experimental headless bridge | Recorded GTK4 capture/click and lifecycle on **Aquamarine 0.15.0 + Hyprland 0.56.2**, Hyprlang/Lua, NVIDIA | New managed headless session only; explicit `.so`, exact ABI, parent Wayland renderer; cannot combine with `--nested` |
+| Experimental headless bridge | Recorded GTK4 capture/click and lifecycle on **Aquamarine 0.15.0 + Hyprland 0.56.2**, Hyprlang/Lua, NVIDIA. 2026-10-31: unchanged source rebuilt on **Aquamarine 0.15.1 + Hyprland 0.57.0** (Lua), NVIDIA RTX 5060 Ti; HEADLESS-1, observe, click, key, type, launch and preview worked through a ~2 h real Brave form-filling task | New managed headless session only; explicit `.so`, Aquamarine 0.15.0–0.15.1 ABI, parent Wayland renderer; cannot combine with `--nested` |
 | 0.4.0 headless GTK/Wayland reliability | Ten verified checks covering modifiers, all explicit/implicit scroll modes and cancellation; [report](archive/reliability-040.md) also records exact Unicode, click, 270 px drag and stale-geometry rejection | Exact documented stack and explicit bridge only; does not certify XWayland, Blender, other GPUs, or equal visual scroll distances |
 | Optional GTK4 preview | Hyprlang native checks; Lua rule/viewer checks in an isolated compositor; fake-worker and private Broadway regressions | Integrated live Lua host launcher, automatic repositioning, fullscreen/multi-monitor, hours-long and cross-GPU coverage remain incomplete |
 | Experimental cursor outline | Arrow/I-beam, click-through and stop in disposable **Hyprland 0.56.2**, OpenGL, Hyprlang compositor | Not automatically built/loaded; Lua activation, animated cursors, all transforms/scales and long sessions unverified |
@@ -32,7 +32,7 @@ In Blender, observe after each action and verify the active editor, mode, and
 actual result. A Python example that changes a scene and saves a file does not
 establish GUI automation support merely because its syntax checks pass.
 
-The headless bridge uses internal APIs. Checking Aquamarine 0.15.0 at build time
+The headless bridge uses internal APIs. Checking Aquamarine 0.15.0–0.15.1 at build time
 does not prove every ABI detail of the loading process. Restrict it to the
 documented Hyprland 0.56.2 stack and the new child compositor; never preload it
 globally. Private profiles and D-Bus do not isolate user files or permissions.
