@@ -449,9 +449,10 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
     const point: ?geometry.Point = if (target) |pointer_target| pointer_target.point else null;
     // Validate every argument before the dry-run report and before any input.
     var key_argv: ?[]const []const u8 = null;
+    var workspace_number: ?u32 = null;
     switch (arguments.command) {
         .focus => try check_window(runtime, arguments.focus_window.?, false),
-        .workspace => try run_validate_workspace(arguments.workspace_target.?),
+        .workspace => workspace_number = try run_validate_workspace(arguments.workspace_target.?),
         .type => {
             runtime.target_window = arguments.window;
             try check_window(runtime, arguments.window.?, true);
@@ -482,7 +483,7 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         try run_pointer_action(runtime, arguments, pointer_target);
     } else switch (arguments.command) {
         .focus => try run_focus(runtime, arguments.focus_window.?),
-        .workspace => try run_workspace(runtime, arguments.workspace_target.?),
+        .workspace => try run_workspace(runtime, workspace_number.?),
         .type => try type_text(runtime, arguments),
         .key => try press_chord(runtime, arguments, key_argv.?),
         .launch => return sessions.launch(runtime, arguments),
@@ -499,10 +500,11 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
     });
 }
 
-fn run_validate_workspace(value: []const u8) !void {
+fn run_validate_workspace(value: []const u8) !u32 {
     const workspace_number = std.fmt.parseInt(u32, value, 10) catch return error.InvalidWorkspace;
     if (workspace_number == 0) return error.InvalidWorkspace;
     if (workspace_number > std.math.maxInt(i32)) return error.InvalidWorkspace;
+    return workspace_number;
 }
 
 fn run_validate_text(text: []const u8) !void {
@@ -516,9 +518,7 @@ fn run_focus(runtime: *Runtime, address: []const u8) !void {
     try check_window(runtime, address, true);
 }
 
-fn run_workspace(runtime: *Runtime, value: []const u8) !void {
-    // run_validate_workspace already accepted the value.
-    const number = std.fmt.parseInt(u32, value, 10) catch unreachable;
+fn run_workspace(runtime: *Runtime, number: u32) !void {
     try runtime.dispatch(.{ .workspace = number });
     const active = try runtime.query_json(geometry.Workspace, "activeworkspace");
     if (active.id != number) return error.WorkspaceVerificationFailed;
