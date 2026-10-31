@@ -999,6 +999,11 @@ pub fn list(runtime: *Runtime) !void {
     try runtime.emit(.{ .ok = true, .sessions = entries.items });
 }
 
+fn is_chromium(program: []const u8) bool {
+    return std.mem.indexOf(u8, program, "brave") != null or
+        std.mem.indexOf(u8, program, "chrom") != null;
+}
+
 /// Browser profiles live inside the session directory; callers may not point
 /// them elsewhere and leak state across sessions.
 fn browser_arguments(
@@ -1009,9 +1014,7 @@ fn browser_arguments(
     directory: []const u8,
 ) !void {
     const allocator = runtime.allocator;
-    const chromium = std.mem.indexOf(u8, program, "brave") != null or
-        std.mem.indexOf(u8, program, "chrom") != null;
-    if (chromium) {
+    if (is_chromium(program)) {
         for (extra) |argument| {
             if (std.mem.startsWith(u8, argument, "--user-data-dir")) {
                 return error.ProfileOverrideDenied;
@@ -1063,6 +1066,7 @@ pub fn launch(runtime: *Runtime, arguments: Args) !void {
     if (!same_session) return error.SessionNotRunning;
     if (!running(session)) return error.SessionNotRunning;
 
+    try launch_require_program(runtime, arguments.program[0]);
     const program_name = std.fs.path.basename(arguments.program[0]);
     const program_arguments = arguments.program[1..];
     try browser_arguments(runtime, &argv, program_name, program_arguments, directory);
@@ -1072,7 +1076,16 @@ pub fn launch(runtime: *Runtime, arguments: Args) !void {
         "{s}/applications.log",
         .{directory},
     );
-    const process = try spawn(runtime, runtime.env, argv.items, log_path);
+    var environment = runtime.env;
+    if (is_chromium(program_name)) {
+        // Chromium exposes its AT-SPI tree only when it believes an assistive
+        // technology is active; otherwise `accessibility` sees no web content.
+        const copy = try runtime.allocator.create(std.process.Environ.Map);
+        copy.* = try runtime.env.clone(runtime.allocator);
+        try copy.put("ACCESSIBILITY_ENABLED", "1");
+        environment = copy;
+    }
+    const process = try spawn(runtime, environment, argv.items, log_path);
     errdefer terminate(runtime, process) catch {};
     const record_path = try std.fmt.allocPrint(
         runtime.allocator,
@@ -1092,6 +1105,28 @@ pub fn launch(runtime: *Runtime, arguments: Args) !void {
         .process = process,
         .status = "started",
     });
+}
+
+/// Spawning a missing program surfaces as a generic FileNotFound. Resolve it
+/// first, the way execvp will, so the error names the actual problem.
+fn launch_require_program(runtime: *Runtime, program: []const u8) !void {
+    if (program.len == 0) return error.ProgramNotFound;
+    if (std.mem.indexOfScalar(u8, program, '/') != null) {
+        if (!try launch_executable(runtime, program)) return error.ProgramNotFound;
+        return;
+    }
+    const search_path = runtime.env.get("PATH") orelse return error.ProgramNotFound;
+    var directories = std.mem.tokenizeScalar(u8, search_path, ':');
+    while (directories.next()) |directory| {
+        const candidate = try std.fs.path.join(runtime.allocator, &.{ directory, program });
+        if (try launch_executable(runtime, candidate)) return;
+    }
+    return error.ProgramNotFound;
+}
+
+fn launch_executable(runtime: *Runtime, path: []const u8) !bool {
+    const path_z = try runtime.allocator.dupeSentinel(u8, path, 0);
+    return c.access(path_z, c.X_OK) == 0;
 }
 
 fn firefox_profile_override(argument: []const u8) bool {

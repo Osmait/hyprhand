@@ -221,7 +221,7 @@ fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
         .monitors => try execute_query(runtime, "monitors"),
         .windows => try execute_query(runtime, "clients"),
         .workspaces => try execute_query(runtime, "workspaces"),
-        .observe => try observation.observe(runtime, arguments),
+        .observe => try observation.observe_with_retry(runtime, arguments),
         .enable => try runtime.enable(arguments.indicator == .outline),
         .stop => try runtime.stop(),
         .wait => try wait.run(runtime, arguments),
@@ -312,7 +312,8 @@ fn hint(err: anyerror) []const u8 {
             "never host.",
         error.PreviewIdentityMismatch => "The original preview session ended or changed. " ++
             "Close the viewer and explicitly open a new one.",
-        error.ControlStopped => "Input is disabled. Run hyprhand enable to enable it.",
+        error.ControlStopped => "Input is disabled for this session; launch, focus and " ++
+            "workspace count as input. Run hyprhand enable --session NAME.",
         error.StaleObservation => "The frame expired or desktop layout/focus changed. " ++
             "Observe again.",
         error.WindowNotFocused => "Focus the target window first, then verify it before typing.",
@@ -327,25 +328,6 @@ fn hint(err: anyerror) []const u8 {
             "Choose --scroll-mode wheel (optionally paced). " ++
             "No continuous-to-wheel substitution was performed.",
         error.SessionRequired => "Input commands require an explicit --session NAME.",
-        error.UnsupportedConfigProvider => "Dispatch supports Hyprlang and Lua providers only.",
-        error.FileNotFound => "A helper or required file is missing. " ++
-            "Check hyprhand doctor and install grim/wtype.",
-        error.ControlBusy => "Another hyprhand input action is running.",
-        error.LogBusy => "Another hyprhand command is writing the audit log. Retry.",
-        error.InvalidHeadlessBridge => "Use an absolute, trusted regular library path " ++
-            "without spaces/colons, not writable by other users, " ++
-            "only with session create (not --nested).",
-        error.OutlinePluginUnavailable => "The optional hyprhand-outline plugin is not loaded " ++
-            "or rejected activation. Input remains disabled. No plugin was auto-loaded.",
-        error.OutlineRequiresHyprlang => "The experimental outline dispatcher currently " ++
-            "requires Hyprlang. Input remains disabled.",
-        error.HeadlessRenderUnavailable => "Headless GPU buffers failed. See compositor.log; " ++
-            "try explicit --nested. The failed compositor was stopped.",
-        error.SessionStartupFailed,
-        error.SessionStartupTimeout,
-        error.SessionConfigInvalid,
-        => "Managed session failed and its processes were stopped. " ++
-            "Inspect compositor.log in the named session directory.",
         error.WaitTimeout => "The requested condition did not become true before its deadline.",
         error.CommandTimeout => "The command exceeded its shared time budget. " ++
             "Inspect state before retrying; partial input may have been delivered.",
@@ -365,6 +347,41 @@ fn hint(err: anyerror) []const u8 {
             "Install xdotool for X11 keyboard input.",
         error.X11TargetMismatch => "The focused X11 window does not match the requested " ++
             "Hyprland client. Check DISPLAY and focus.",
+        else => hint_setup(err),
+    };
+}
+
+/// Hints for installation, session lifecycle and optional components.
+fn hint_setup(err: anyerror) []const u8 {
+    return switch (err) {
+        error.UnsupportedConfigProvider => "Dispatch supports Hyprlang and Lua providers only.",
+        error.FileNotFound => "A helper or required file is missing. " ++
+            "Check hyprhand doctor and install grim/wtype.",
+        error.ControlBusy => "Another hyprhand input action is running.",
+        error.LogBusy => "Another hyprhand command is writing the audit log. Retry.",
+        error.InvalidHeadlessBridge => "Use an absolute, trusted regular library path " ++
+            "without spaces/colons, not writable by other users, " ++
+            "only with session create (not --nested).",
+        error.OutlinePluginUnavailable => "The optional hyprhand-outline plugin is not loaded " ++
+            "or rejected activation. Input remains disabled. No plugin was auto-loaded.",
+        error.OutlineRequiresHyprlang => "The experimental outline dispatcher currently " ++
+            "requires Hyprlang. Input remains disabled.",
+        error.HeadlessRenderUnavailable => "Headless GPU buffers failed (seen on NVIDIA). " ++
+            "Build the format bridge (scripts/install.sh --with-bridge) and pass " ++
+            "--headless-bridge PATH, or use --nested. See compositor.log; " ++
+            "the failed compositor was stopped.",
+        error.ProgramNotFound => "The program is not in the session PATH. Check its " ++
+            "executable name (for example brave, not brave-browser).",
+        error.MonitorNotFound => "--monitor names a monitor of the selected session " ++
+            "(hyprhand monitors --session NAME). Place a preview with --host-monitor.",
+        error.HostMonitorNotFound => "No host monitor has that name. " ++
+            "List them with hyprhand monitors --session host.",
+        error.InvalidMonitorName => "Use a monitor connector name such as DP-1 or HDMI-A-1.",
+        error.SessionStartupFailed,
+        error.SessionStartupTimeout,
+        error.SessionConfigInvalid,
+        => "Managed session failed and its processes were stopped. " ++
+            "Inspect compositor.log in the named session directory.",
         else => "Run hyprhand --help for usage. No task outcome has been verified.",
     };
 }

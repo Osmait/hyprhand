@@ -8,6 +8,8 @@
 # Options:
 #   --prefix DIR        install prefix (default: $HOME/.local)
 #   --no-pip            skip the optional GTK4 preview viewer
+#   --with-bridge       also build the experimental headless format bridge
+#                       (needed for headless sessions on NVIDIA; Aquamarine 0.15.x)
 #   --no-skills         do not link the agent skill into ~/.claude / ~/.codex
 #   --remove-legacy     remove a pre-rename deskctl install from the prefix
 #   --skip-tests        skip `zig build test` before installing
@@ -18,6 +20,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PREFIX="$HOME/.local"
 PIP=auto
+BRIDGE=0
 SKILLS=1
 LEGACY=0
 TESTS=1
@@ -31,12 +34,13 @@ while [ $# -gt 0 ]; do
         --prefix) [ $# -ge 2 ] || die "--prefix needs a directory"; PREFIX=$2; shift ;;
         --prefix=*) PREFIX=${1#--prefix=} ;;
         --no-pip) PIP=0 ;;
+        --with-bridge) BRIDGE=1 ;;
         --no-skills) SKILLS=0 ;;
         --remove-legacy) LEGACY=1 ;;
         --skip-tests) TESTS=0 ;;
         --update) MODE=update ;;
         --uninstall) MODE=uninstall ;;
-        -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
     shift
@@ -85,6 +89,7 @@ uninstall() {
         if [ -L "$path" ] || [ -f "$path" ]; then rm -f -- "$path"; fi
     done < "$MANIFEST"
     rm -rf -- "$PREFIX/share/hyprhand"
+    rmdir -- "$PREFIX/lib/hyprhand" 2>/dev/null || true
     say "hyprhand removed from $PREFIX"
 }
 
@@ -121,6 +126,16 @@ if [ "$PIP" = 1 ]; then steps+=(pip); fi
 say "zig build ${steps[*]} --prefix $PREFIX"
 zig build "${steps[@]}" -Doptimize=ReleaseSafe --prefix "$PREFIX"
 
+BRIDGE_DIR="$PREFIX/lib/hyprhand"
+BRIDGE_LIB="$BRIDGE_DIR/hyprhand-headless-formats.so"
+if [ "$BRIDGE" = 1 ]; then
+    command -v "${CXX:-c++}" >/dev/null || die "C++ compiler not found (needed by --with-bridge)"
+    pkg-config --exists aquamarine pixman-1 libdrm || die "--with-bridge needs aquamarine, pixman and libdrm development files"
+    say "zig build headless-bridge --prefix-lib-dir $BRIDGE_DIR"
+    zig build headless-bridge -Doptimize=ReleaseSafe --prefix "$PREFIX" --prefix-lib-dir "$BRIDGE_DIR"
+    chmod go-w "$BRIDGE_LIB"
+fi
+
 if [ "$LEGACY" = 1 ]; then remove_legacy; fi
 
 mkdir -p "$(dirname "$MANIFEST")"
@@ -129,6 +144,7 @@ mkdir -p "$(dirname "$MANIFEST")"
         "$PREFIX/share/bash-completion/completions/hyprhand" \
         "$PREFIX/share/fish/vendor_completions.d/hyprhand.fish"
     if [ "$PIP" = 1 ]; then printf '%s\n' "$PREFIX/bin/hyprhand-pip"; fi
+    if [ -f "$BRIDGE_LIB" ]; then printf '%s\n' "$BRIDGE_LIB" "$BRIDGE_LIB.build-metadata"; fi
 } > "$MANIFEST"
 if [ "$SKILLS" = 1 ]; then
     for parent in "${SKILL_DIRS[@]}"; do link_skill "$parent"; done
@@ -136,6 +152,9 @@ fi
 
 version=$("$PREFIX/bin/hyprhand" --version)
 say "installed $version into $PREFIX"
+if [ -f "$BRIDGE_LIB" ]; then
+    say "headless bridge: hyprhand session create NAME --headless-bridge $BRIDGE_LIB"
+fi
 case ":$PATH:" in *":$PREFIX/bin:"*) ;; *) say "add $PREFIX/bin to PATH" ;; esac
 if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
     if "$PREFIX/bin/hyprhand" doctor --session host >/dev/null; then say "doctor --session host: ok"; else say "doctor --session host reported problems; run it for details"; fi
