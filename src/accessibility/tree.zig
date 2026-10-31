@@ -1,7 +1,9 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const native = @import("../platform/native.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const Args = @import("../cli/args.zig").Args;
+const accessibility_depth_max = @import("../cli/args.zig").accessibility_depth_max;
 const c = @import("accessibility_c");
 const Bounds = struct { x: i32, y: i32, width: i32, height: i32 };
 const Node = struct {
@@ -29,10 +31,67 @@ const Walker = struct {
     nodes: std.ArrayList(Node) = .empty,
     truncated: bool = false,
 
-    fn visit(self: *Walker, item: *c.DeskNode, parent: ?usize, depth: u32) anyerror!void {
+    /// A node whose children are still being visited. `owned` children hold
+    /// a reference the walk must release; the root belongs to the caller.
+    const Frame = struct {
+        item: *c.DeskNode,
+        id: usize,
+        depth: u32,
+        children_count: c_int,
+        child_next: c_int = 0,
+        owned: bool,
+    };
+
+    /// Depth-first, parents before children, with an explicit stack: the
+    /// depth limit bounds the stack, so the walk needs no recursion.
+    fn walk(self: *Walker, root: *c.DeskNode) !void {
+        assert(self.arguments.depth <= accessibility_depth_max);
+        var stack: [accessibility_depth_max + 1]Frame = undefined;
+        var height: usize = 0;
+        errdefer for (stack[0..height]) |frame| {
+            if (frame.owned) c.desk_a11y_unref(frame.item);
+        };
+
+        const root_frame = try self.visit(root, null, 0) orelse return;
+        stack[0] = root_frame;
+        stack[0].owned = false;
+        height = 1;
+
+        while (height > 0) {
+            const top = &stack[height - 1];
+            if (top.child_next < top.children_count and self.exhausted()) {
+                self.truncated = true;
+                top.child_next = top.children_count;
+            }
+            if (top.child_next == top.children_count) {
+                if (top.owned) c.desk_a11y_unref(top.item);
+                height -= 1;
+                continue;
+            }
+
+            const index = top.child_next;
+            top.child_next += 1;
+            const child = c.desk_a11y_child(top.item, index) orelse continue;
+            const child_frame = self.visit(child, top.id, top.depth + 1) catch |err| {
+                c.desk_a11y_unref(child);
+                return err;
+            };
+            if (child_frame) |frame| {
+                assert(height < stack.len);
+                stack[height] = frame;
+                height += 1;
+            } else {
+                c.desk_a11y_unref(child);
+            }
+        }
+    }
+
+    /// Records `item` and returns its frame when its children should be
+    /// visited next, or null when the walk stops at this node.
+    fn visit(self: *Walker, item: *c.DeskNode, parent: ?usize, depth: u32) !?Frame {
         if (self.exhausted()) {
             self.truncated = true;
-            return;
+            return null;
         }
         try native.check_cancelled();
 
@@ -58,23 +117,21 @@ const Walker = struct {
             } else null,
         };
         try self.nodes.append(self.runtime.allocator, node);
-        if (protected) return;
+        // Password fields: report that they exist, never what is inside them.
+        if (protected) return null;
 
-        const count = c.desk_a11y_count(item);
+        const children_count = c.desk_a11y_count(item);
         if (depth >= self.arguments.depth) {
-            if (count > 0) self.truncated = true;
-            return;
+            if (children_count > 0) self.truncated = true;
+            return null;
         }
-        var i: c_int = 0;
-        while (i < count) : (i += 1) {
-            if (self.exhausted()) {
-                self.truncated = true;
-                break;
-            }
-            const child = c.desk_a11y_child(item, i) orelse continue;
-            defer c.desk_a11y_unref(child);
-            try self.visit(child, node.id, depth + 1);
-        }
+        return .{
+            .item = item,
+            .id = node.id,
+            .depth = depth,
+            .children_count = @max(children_count, 0),
+            .owned = true,
+        };
     }
 
     /// True once the walk has collected its node limit or passed its deadline.
@@ -119,7 +176,7 @@ pub fn worker(runtime: *Runtime, arguments: Args) !void {
         const app = c.desk_a11y_child(desktop, index) orelse continue;
         defer c.desk_a11y_unref(app);
         if (target_pid) |pid| if (c.desk_a11y_pid(app) != pid) continue;
-        try walker.visit(app, null, 0);
+        try walker.walk(app);
     }
 
     try runtime.unlocked();

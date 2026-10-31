@@ -1,10 +1,12 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const args = @import("../cli/args.zig");
 const geometry = @import("../core/geometry.zig");
 const eq = @import("../core/text.zig").eq;
 const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("../runtime/runtime.zig").Runtime;
+const ActionGuard = @import("../runtime/runtime.zig").ActionGuard;
 const sessions = @import("../runtime/sessions.zig");
 const observation = @import("../capture/observation.zig");
 const Client = observation.Client;
@@ -137,7 +139,8 @@ fn scroll(
     mode: args.ScrollMode,
 ) !void {
     const active = try runtime.active_window();
-    runtime.target_window = active;
+    // Scrolling goes to whatever is focused under the cursor right now.
+    runtime.action.?.target_window = active;
     const wheel = mode == .wheel or (mode == .auto and duration_ms == 0);
 
     const clients = try runtime.query_json([]Client, "clients");
@@ -205,7 +208,7 @@ const ScrollDriver = struct {
             if (self.wheel) return self.pointer.scroll(delta.x, delta.y);
             return self.pointer.scroll_continuous(delta.x, delta.y);
         }
-        _ = try x11_keyboard(&scratch, self.runtime.target_window.?);
+        _ = try x11_keyboard(&scratch, self.runtime.action.?.target_window.?);
         try x11_wheel(&scratch, delta.x, delta.y);
     }
 };
@@ -262,6 +265,8 @@ const PointerGuard = struct {
 const PointerTarget = struct {
     frame: geometry.Frame,
     point: geometry.Point,
+    /// `--window` when given, otherwise the window focused when resolved.
+    window: []const u8,
     guard: PointerGuard,
 };
 
@@ -282,22 +287,25 @@ fn resolve_pointer_target(
             if (eq(client.address, window)) inside = client.contains(point);
         }
         if (!inside) return error.PointerOutsideTarget;
-        runtime.target_window = window;
-    } else {
-        runtime.target_window = snapshot.active;
     }
+    const target_window = arguments.window orelse snapshot.active;
 
     const continuous_scroll = arguments.command == .scroll and
         arguments.scroll_mode == .continuous;
     if (continuous_scroll) {
         for (snapshot.clients) |client| {
-            if (!eq(client.address, runtime.target_window.?)) continue;
+            if (!eq(client.address, target_window)) continue;
             if (client.xwayland) return error.ContinuousScrollUnavailable;
         }
     }
     if (arguments.command == .drag) _ = try frame.point(arguments.to_x.?, arguments.to_y.?);
 
-    return .{ .frame = frame, .point = point, .guard = .{ .frame = frame } };
+    return .{
+        .frame = frame,
+        .point = point,
+        .window = target_window,
+        .guard = .{ .frame = frame },
+    };
 }
 
 fn run_pointer_action(runtime: *Runtime, arguments: args.Args, target: *PointerTarget) !void {
@@ -310,12 +318,10 @@ fn run_pointer_action(runtime: *Runtime, arguments: args.Args, target: *PointerT
     const revision = (try observation.snapshot(runtime, target.frame.monitor_id)).revision;
     try target.frame.validate(runtime.instance, runtime.display, revision, native.now_ms());
 
-    runtime.extra_guard = PointerGuard.check;
-    runtime.guard_context = &target.guard;
-    defer {
-        runtime.extra_guard = null;
-        runtime.guard_context = null;
-    }
+    const action = runtime.action.?;
+    assert(action.frame_check == null);
+    action.frame_check = .{ .context = &target.guard, .check = PointerGuard.check };
+    defer action.frame_check = null;
 
     const start = try runtime.query_json(geometry.Point, "cursorpos");
     var driver = MotionDriver{
@@ -430,41 +436,27 @@ fn press_chord(runtime: *Runtime, arguments: args.Args, wtype_argv: []const []co
 }
 
 pub fn run(runtime: *Runtime, arguments: args.Args) !void {
-    var guard_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer guard_arena.deinit();
-    runtime.guard_arena = &guard_arena;
-    defer runtime.guard_arena = null;
     if (arguments.command == .launch and runtime.is_host()) return error.ManagedSessionRequired;
 
     const lock_fd = try runtime.lock();
     defer _ = c.close(lock_fd);
     try runtime.validate_display();
     try runtime.unlocked();
-    if (!arguments.dry_run) runtime.control_token = try runtime.token();
+
+    // A dry run sends no input, so it has no guard: any guard call fails.
+    var action: ?ActionGuard = null;
+    if (!arguments.dry_run) action = .{ .control_token = try runtime.token() };
+    defer if (action) |*guard| guard.deinit();
+    runtime.action = if (action) |*guard| guard else null;
+    defer runtime.action = null;
 
     var target: ?PointerTarget = if (arguments.frame) |frame_id|
         try resolve_pointer_target(runtime, arguments, frame_id)
     else
         null;
     const point: ?geometry.Point = if (target) |pointer_target| pointer_target.point else null;
-    // Validate every argument before the dry-run report and before any input.
-    var key_argv: ?[]const []const u8 = null;
-    var workspace_number: ?u32 = null;
-    switch (arguments.command) {
-        .focus => try check_window(runtime, arguments.focus_window.?, false),
-        .workspace => workspace_number = try run_validate_workspace(arguments.workspace_target.?),
-        .type => {
-            runtime.target_window = arguments.window;
-            try check_window(runtime, arguments.window.?, true);
-            try run_validate_text(arguments.text.?);
-        },
-        .key => {
-            runtime.target_window = arguments.window;
-            try check_window(runtime, arguments.window.?, true);
-            key_argv = try key_args(runtime.allocator, arguments.key_chord.?);
-        },
-        else => {},
-    }
+    const pointer_window = if (target) |pointer_target| pointer_target.window else null;
+    const validated = try run_validate(runtime, arguments, pointer_window);
 
     if (arguments.dry_run) {
         try runtime.emit(.{
@@ -483,9 +475,9 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         try run_pointer_action(runtime, arguments, pointer_target);
     } else switch (arguments.command) {
         .focus => try run_focus(runtime, arguments.focus_window.?),
-        .workspace => try run_workspace(runtime, workspace_number.?),
+        .workspace => try run_workspace(runtime, validated.workspace_number.?),
         .type => try type_text(runtime, arguments),
-        .key => try press_chord(runtime, arguments, key_argv.?),
+        .key => try press_chord(runtime, arguments, validated.key_argv.?),
         .launch => return sessions.launch(runtime, arguments),
         else => unreachable,
     }
@@ -498,6 +490,46 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         .desktop_point = point,
         .scroll_mode_requested = if (arguments.command == .scroll) arguments.scroll_mode else null,
     });
+}
+
+/// What validation computed that execution needs again.
+const Validated = struct {
+    /// The wtype argv for `key`, checked before anything is sent.
+    key_argv: ?[]const []const u8 = null,
+    workspace_number: ?u32 = null,
+};
+
+/// Validates every argument before the dry-run report and before any input,
+/// and tells the guard which window input must stay on.
+fn run_validate(
+    runtime: *Runtime,
+    arguments: args.Args,
+    pointer_window: ?[]const u8,
+) !Validated {
+    if (pointer_window) |window| run_guard_target(runtime, window);
+    switch (arguments.command) {
+        .focus => try check_window(runtime, arguments.focus_window.?, false),
+        .workspace => return .{
+            .workspace_number = try run_validate_workspace(arguments.workspace_target.?),
+        },
+        .type => {
+            run_guard_target(runtime, arguments.window.?);
+            try check_window(runtime, arguments.window.?, true);
+            try run_validate_text(arguments.text.?);
+        },
+        .key => {
+            run_guard_target(runtime, arguments.window.?);
+            try check_window(runtime, arguments.window.?, true);
+            return .{ .key_argv = try key_args(runtime.allocator, arguments.key_chord.?) };
+        },
+        else => {},
+    }
+    return .{};
+}
+
+fn run_guard_target(runtime: *Runtime, window: []const u8) void {
+    // A dry run has no guard to update.
+    if (runtime.action) |guard| guard.target_window = window;
 }
 
 fn run_validate_workspace(value: []const u8) !u32 {

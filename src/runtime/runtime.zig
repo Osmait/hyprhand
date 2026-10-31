@@ -18,6 +18,33 @@ pub const Dispatch = union(enum) {
     move_cursor: struct { x: i32, y: i32 },
 };
 
+/// What every input step re-verifies while an action runs. `actions.run`
+/// owns one for the duration of a command and attaches it to the runtime;
+/// copies made with `scratch` share it. Without one, `guard` fails closed.
+pub const ActionGuard = struct {
+    /// The control token read when the action started. `stop` replaces the
+    /// token on disk, so a mismatch means the human took control back.
+    control_token: []const u8,
+    /// The window input must stay focused on, when the action targets one.
+    target_window: ?[]const u8 = null,
+    /// Pointer actions also re-validate the frame they were aimed with.
+    frame_check: ?FrameCheck = null,
+    /// Storage for guard checks, reset after each one, so polling does not
+    /// grow the command's main arena.
+    arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator),
+    arena_in_use: bool = false,
+
+    pub fn deinit(self: *ActionGuard) void {
+        self.arena.deinit();
+    }
+};
+
+/// A check that only the caller's module knows how to run, with its context.
+pub const FrameCheck = struct {
+    context: *anyopaque,
+    check: *const fn (runtime: *Runtime, context: *anyopaque) anyerror!void,
+};
+
 pub const Runtime = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -29,12 +56,9 @@ pub const Runtime = struct {
     directory: []const u8,
     /// Managed session directory (metadata, profiles, logs); null for host.
     session_directory: ?[]const u8 = null,
-    control_token: ?[]const u8 = null,
     session_id: []const u8 = "host",
-    target_window: ?[]const u8 = null,
-    extra_guard: ?*const fn (*Runtime, *anyopaque) anyerror!void = null,
-    guard_context: ?*anyopaque = null,
-    guard_arena: ?*std.heap.ArenaAllocator = null,
+    /// Set only while an input action runs; see ActionGuard.
+    action: ?*ActionGuard = null,
 
     pub fn init(context: std.process.Init) !Runtime {
         const allocator = context.arena.allocator();
@@ -284,31 +308,37 @@ pub const Runtime = struct {
         };
     }
 
+    /// Fails unless the action may still send input: not cancelled, control
+    /// not stopped, session not locked, target window focused, frame valid.
     pub fn guard(self: *Runtime) !void {
         try native.check_cancelled();
-        const expected = self.control_token orelse return error.ControlStopped;
+        const action = self.action orelse return error.ControlStopped;
 
-        var local = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        defer local.deinit();
-        const arena = self.guard_arena orelse &local;
-        defer _ = arena.reset(.{ .retain_with_limit = 256 * 1024 });
+        // A frame check can itself reach a guard. Only the outermost call may
+        // reset the shared arena; a nested call uses its own.
+        var nested_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer nested_arena.deinit();
+        const outermost = !action.arena_in_use;
+        const arena = if (outermost) &action.arena else &nested_arena;
+        action.arena_in_use = true;
+        defer if (outermost) {
+            action.arena_in_use = false;
+            _ = arena.reset(.{ .retain_with_limit = 256 * 1024 });
+        };
         var checker = self.scratch(arena.allocator());
-        // A nested guard must not reset the arena this check is still using.
-        checker.guard_arena = null;
 
-        const actual = try checker.token();
-        if (!eq(expected, actual)) return error.ControlStopped;
+        if (!eq(action.control_token, try checker.token())) return error.ControlStopped;
         try checker.unlocked();
-        if (self.target_window) |target| {
+        if (action.target_window) |target| {
             if (!eq(target, try checker.active_window())) return error.WindowNotFocused;
         }
-        if (self.extra_guard) |check| try check(&checker, self.guard_context.?);
+        if (action.frame_check) |frame_check| try frame_check.check(&checker, frame_check.context);
     }
 
     pub fn pause(self: *Runtime, duration_ms: u32) !void {
         const end = native.now_ms() + duration_ms;
         while (native.now_ms() < end) {
-            if (self.control_token != null) try self.guard() else try native.check_cancelled();
+            if (self.action != null) try self.guard() else try native.check_cancelled();
             native.sleep_ms(@intCast(@max(0, @min(20, end - native.now_ms()))));
         }
     }
@@ -416,7 +446,8 @@ pub const Runtime = struct {
             error.FileNotFound => return false,
             else => return err,
         };
-        return eq(marker, self.control_token orelse return false);
+        const action = self.action orelse return false;
+        return eq(marker, action.control_token);
     }
 
     pub fn stop(self: *Runtime) !void {

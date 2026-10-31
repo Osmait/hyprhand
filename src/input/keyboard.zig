@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("../runtime/runtime.zig").Runtime;
@@ -253,6 +254,7 @@ const HeldKeys = struct {
     depressed: u32 = 0,
 
     fn press(self: *HeldKeys, sink: anytype, key: Key) !void {
+        assert(self.count <= self.keys.len);
         if (self.count == self.keys.len) return error.TooManyHeldKeys;
 
         self.keys[self.count] = key;
@@ -276,6 +278,10 @@ const HeldKeys = struct {
 
     fn release(self: *HeldKeys, sink: anytype) void {
         while (self.count > 0) self.pop(sink);
+        // Nothing may stay pressed: a stuck modifier would corrupt every
+        // later keystroke on the human's desktop.
+        assert(self.count == 0);
+        assert(self.depressed == 0);
     }
 
     // Blender's keyboard_handle_key calls keyboard_depressed_state_key_event;
