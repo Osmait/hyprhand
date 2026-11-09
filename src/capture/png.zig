@@ -247,8 +247,9 @@ const digits = [10][7]u8{
 };
 const mark_color = [4]u8{ 230, 0, 160, 255 };
 const label_text = [4]u8{ 255, 255, 255, 255 };
-/// Each font pixel is drawn as a 2 × 2 block.
-const font_scale = 2;
+/// Font pixels per glyph pixel: 2 for ordinary controls, 1 when the controls
+/// are so small (a downscaled capture) that larger labels would cover them.
+pub const font_scale_max = 2;
 
 fn fill(image: Image, box: Box, color: [4]u8) void {
     const right = @min(image.width, box.x +| box.width);
@@ -260,8 +261,8 @@ fn fill(image: Image, box: Box, color: [4]u8) void {
     }
 }
 
-/// Outlines `box` and labels its top-left corner with `number`.
-pub fn draw_mark(image: Image, box: Box, number: u32) void {
+/// Outlines `box` in the mark colour.
+pub fn draw_outline(image: Image, box: Box) void {
     const thickness = 2;
     fill(image, .{ .x = box.x, .y = box.y, .width = box.width, .height = thickness }, mark_color);
     fill(image, .{
@@ -277,37 +278,37 @@ pub fn draw_mark(image: Image, box: Box, number: u32) void {
         .width = thickness,
         .height = box.height,
     }, mark_color);
+}
 
+/// The size of the label for `number` at `scale`.
+pub fn label_size(number: u32, scale: u32) [2]u32 {
+    const digits_count = std.fmt.count("{d}", .{number});
+    const width = digits_count * 6 * scale + 2 * scale;
+    return .{ @intCast(width), 9 * scale };
+}
+
+/// Draws `number` in white on a filled label at `label`.
+pub fn draw_label(image: Image, label: Box, number: u32, scale: u32) void {
     var buffer: [10]u8 = undefined;
     const text = std.fmt.bufPrint(&buffer, "{d}", .{number}) catch unreachable;
-    const glyph_width = 6 * font_scale;
-    const label_height = 7 * font_scale + 2 * font_scale;
-    // Above the box's corner when there is room, so the label never covers
-    // the element itself (a checkbox, the first letters of a field).
-    const label = Box{
-        .x = box.x,
-        .y = if (box.y >= label_height) box.y - label_height else box.y,
-        .width = @intCast(text.len * glyph_width + 2 * font_scale),
-        .height = label_height,
-    };
     fill(image, label, mark_color);
     for (text, 0..) |character, position| {
         const glyph = digits[character - '0'];
-        const origin_x = label.x + font_scale + @as(u32, @intCast(position * glyph_width));
-        draw_glyph(image, glyph, origin_x, label.y + font_scale);
+        const origin_x = label.x + scale + @as(u32, @intCast(position * 6 * scale));
+        draw_glyph(image, glyph, origin_x, label.y + scale, scale);
     }
 }
 
-fn draw_glyph(image: Image, glyph: [7]u8, origin_x: u32, origin_y: u32) void {
+fn draw_glyph(image: Image, glyph: [7]u8, origin_x: u32, origin_y: u32, scale: u32) void {
     for (glyph, 0..) |bits, row| {
         for (0..5) |column| {
             const on = (bits >> @intCast(7 - column)) & 1 == 1;
             if (!on) continue;
             fill(image, .{
-                .x = origin_x + @as(u32, @intCast(column * font_scale)),
-                .y = origin_y + @as(u32, @intCast(row * font_scale)),
-                .width = font_scale,
-                .height = font_scale,
+                .x = origin_x + @as(u32, @intCast(column * scale)),
+                .y = origin_y + @as(u32, @intCast(row * scale)),
+                .width = scale,
+                .height = scale,
             }, label_text);
         }
     }
@@ -351,16 +352,18 @@ test "diff finds the changed box and recognises a text cursor" {
     try std.testing.expectEqual(@as(?Diff, null), diff(before, other));
 }
 
-test "marks draw an outline and a numbered label inside the image" {
+test "marks draw an outline and a numbered label" {
     const allocator = std.testing.allocator;
     const pixels = try allocator.alloc(u8, 60 * 40 * 4);
     const image = Image{ .width = 60, .height = 40, .pixels = pixels };
     defer allocator.free(image.pixels);
     @memset(image.pixels, 0);
-    draw_mark(image, .{ .x = 50, .y = 30, .width = 30, .height = 30 }, 12);
+    draw_outline(image, .{ .x = 50, .y = 30, .width = 30, .height = 30 });
     try std.testing.expectEqualSlices(u8, &mark_color, image.at(51, 30));
-    // The label sits above the box: its first row is 18 pixels higher.
-    try std.testing.expectEqualSlices(u8, &mark_color, image.at(50, 12));
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0, 0, 0, 0 }, image.at(50, 11));
-    try std.testing.expectEqualSlices(u8, &[_]u8{ 0, 0, 0, 0 }, image.at(10, 10));
+    try std.testing.expectEqual([2]u32{ 28, 18 }, label_size(12, 2));
+    try std.testing.expectEqual([2]u32{ 8, 9 }, label_size(7, 1));
+    draw_label(image, .{ .x = 0, .y = 0, .width = 28, .height = 18 }, 12, 2);
+    try std.testing.expectEqualSlices(u8, &mark_color, image.at(0, 0));
+    try std.testing.expectEqualSlices(u8, &label_text, image.at(6, 2));
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 0, 0, 0, 0 }, image.at(30, 10));
 }

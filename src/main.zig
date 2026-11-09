@@ -398,12 +398,30 @@ fn then_tree_args(runtime: *Runtime, arguments: args.Args) !args.Args {
 }
 
 /// One step of a `sequence` as reported.
+/// A failure as every report shows it. `confirmation` is the ID a
+/// `ConfirmationRequired` refusal created, for `--ack`.
+const ErrorReport = struct {
+    code: []const u8,
+    message: []const u8,
+    detail: ?[]const u8 = null,
+    confirmation: ?gate.Pending = null,
+};
+
+fn error_report(err: anyerror) ErrorReport {
+    return .{
+        .code = @errorName(err),
+        .message = hint(err),
+        .detail = delivery.detail(),
+        .confirmation = if (err == error.ConfirmationRequired) gate.reported_pending() else null,
+    };
+}
+
 const StepReport = struct {
     index: usize,
     command: []const u8,
     ok: bool,
     result: ?std.json.Value = null,
-    err: ?struct { code: []const u8, message: []const u8, detail: ?[]const u8 } = null,
+    err: ?ErrorReport = null,
     disposition: delivery.Disposition,
 };
 
@@ -454,6 +472,7 @@ fn sequence(runtime: *Runtime, arguments: args.Args) !void {
 fn sequence_step(runtime: *Runtime, step: args.Args, index: usize) !StepReport {
     delivery.set(.not_delivered);
     delivery.set_detail(null);
+    gate.clear_reported();
     execute_limit_command(step);
     defer native.clear_command_limit();
     var sink: std.ArrayList(u8) = .empty;
@@ -465,7 +484,7 @@ fn sequence_step(runtime: *Runtime, step: args.Args, index: usize) !StepReport {
         .index = index,
         .command = @tagName(step.command),
         .ok = false,
-        .err = .{ .code = @errorName(err), .message = hint(err), .detail = delivery.detail() },
+        .err = error_report(err),
         .disposition = delivery.disposition(),
     };
     // Waits deliver nothing; actions report delivered_unverified or better.
@@ -693,13 +712,12 @@ fn dialect_call(
             "the user; if they agree, send this turn again with --confirmed." };
     }
     const step = dialect_step(runtime, arguments, call) catch |err| {
-        return .{ .ok = false, .text = try dialect_error_text(runtime, err, null) };
+        return .{ .ok = false, .text = try dialect_error_text(runtime, error_report(err)) };
     };
     const action = step orelse return dialect_local(runtime, arguments, call);
     const report_item = try sequence_step(runtime, action, index);
     if (!report_item.ok) {
-        const err = report_item.err.?;
-        return .{ .ok = false, .text = try dialect_error_text(runtime, null, err) };
+        return .{ .ok = false, .text = try dialect_error_text(runtime, report_item.err.?) };
     }
     return .{ .ok = true, .text = "OK" };
 }
@@ -713,7 +731,7 @@ fn dialect_local(runtime: *Runtime, arguments: args.Args, call: dialect.Call) !d
         },
         .zoom => |box| return dialect_zoom(runtime, arguments, box) catch |err| .{
             .ok = false,
-            .text = try dialect_error_text(runtime, err, null),
+            .text = try dialect_error_text(runtime, error_report(err)),
         },
         .wait_ms => |duration| {
             try settle(duration);
@@ -722,11 +740,11 @@ fn dialect_local(runtime: *Runtime, arguments: args.Args, call: dialect.Call) !d
         .cursor_position => {
             const frame = dialect_frame(runtime) catch |err| return .{
                 .ok = false,
-                .text = try dialect_error_text(runtime, err, null),
+                .text = try dialect_error_text(runtime, error_report(err)),
             };
             const at = dialect_cursor(runtime, frame) catch |err| return .{
                 .ok = false,
-                .text = try dialect_error_text(runtime, err, null),
+                .text = try dialect_error_text(runtime, error_report(err)),
             };
             const scale: f64 = if (dialect.space(arguments.dialect_name.?) == .normalized)
                 1000 / @as(f64, @floatFromInt(frame.image_width))
@@ -849,24 +867,22 @@ fn dialect_step(runtime: *Runtime, arguments: args.Args, call: dialect.Call) !?a
 
 /// The message a model reads for a failed call: the code, what to do, and
 /// for the confirmation gate the ID the human's agreement unlocks.
-fn dialect_error_text(
-    runtime: *Runtime,
-    err: ?anyerror,
-    reported: ?@FieldType(StepReport, "err"),
-) ![]const u8 {
-    const code = if (err) |value| @errorName(value) else reported.?.?.code;
-    const message = if (err) |value| hint(value) else reported.?.?.message;
-    if (std.mem.eql(u8, code, "ScreenshotRequired")) {
+fn dialect_error_text(runtime: *Runtime, failure: ErrorReport) ![]const u8 {
+    if (std.mem.eql(u8, failure.code, "ScreenshotRequired")) {
         return "Error: take a screenshot first; coordinates refer to the last screenshot.";
     }
-    if (gate.reported_pending()) |pending| {
+    if (failure.confirmation) |pending| {
         return std.fmt.allocPrint(
             runtime.allocator,
             "Error: {s} ({s} '{s}', confirmation {s}). {s}",
-            .{ code, @tagName(pending.category), pending.name, pending.id, message },
+            .{
+                failure.code, @tagName(pending.category), pending.name,
+                pending.id,   failure.message,
+            },
         );
     }
-    return std.fmt.allocPrint(runtime.allocator, "Error: {s}. {s}", .{ code, message });
+    const text = "Error: {s}. {s}";
+    return std.fmt.allocPrint(runtime.allocator, text, .{ failure.code, failure.message });
 }
 
 /// One journal step as `replay` reports it.
@@ -878,7 +894,7 @@ const ReplayReport = struct {
     window: ?[]const u8 = null,
     ref: ?[]const u8 = null,
     point: ?[2]u32 = null,
-    err: ?struct { code: []const u8, message: []const u8, detail: ?[]const u8 = null } = null,
+    err: ?ErrorReport = null,
     disposition: ?delivery.Disposition = null,
     result: ?std.json.Value = null,
 };
@@ -962,9 +978,7 @@ fn replay_failure(item: ReplayReport, step_report: StepReport) ReplayReport {
     var failed = item;
     failed.status = "failed";
     failed.disposition = step_report.disposition;
-    if (step_report.err) |err| {
-        failed.err = .{ .code = err.code, .message = err.message, .detail = err.detail };
-    }
+    failed.err = step_report.err;
     return failed;
 }
 
@@ -1296,13 +1310,8 @@ fn report(init: std.process.Init, err: anyerror) void {
         init.arena.allocator(),
         .{
             .ok = false,
-            .err = .{
-                .code = @errorName(err),
-                .message = hint(err),
-                .detail = delivery.detail(),
-            },
+            .err = error_report(err),
             .disposition = delivery.disposition(),
-            .confirmation = gate.reported_pending(),
         },
         .{ .emit_null_optional_fields = false },
     ) catch return;
@@ -1360,6 +1369,7 @@ test {
     _ = @import("accessibility/semantic.zig");
     _ = @import("cli/sequence.zig");
     _ = @import("capture/png.zig");
+    _ = @import("capture/marks.zig");
     _ = @import("runtime/gate.zig");
     _ = @import("runtime/journal.zig");
     _ = @import("runtime/replay.zig");

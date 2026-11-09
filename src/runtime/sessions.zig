@@ -587,7 +587,8 @@ const compositor_config_lua =
     "disabled={s}}})\n" ++
     "hl.monitor({{output='HEADLESS-1',mode='1280x720@60',position='0x0',scale=1}})\n" ++
     "hl.config({{animations={{enabled=false}},xwayland={{enabled=false}}," ++
-    "misc={{disable_hyprland_logo=true,disable_splash_rendering=true}}}})\n";
+    "misc={{disable_hyprland_logo=true,disable_splash_rendering=true}}," ++
+    "ecosystem={{no_update_news=true,no_donation_nag=true}}}})\n";
 
 const compositor_config_hyprlang =
     \\monitor = WAYLAND-1,{s}
@@ -596,11 +597,15 @@ const compositor_config_hyprlang =
     \\xwayland:enabled = false
     \\misc:disable_hyprland_logo = true
     \\misc:disable_splash_rendering = true
+    \\ecosystem:no_update_news = true
+    \\ecosystem:no_donation_nag = true
     \\
 ;
 
 /// Minimal compositor configuration: one hidden (or, nested, visible) Wayland
-/// output plus the headless output agents render to. Animations and XWayland off.
+/// output plus the headless output agents render to. Animations and XWayland off,
+/// and no update or donation window: a fresh instance would open one over the
+/// agent's app and take its focus.
 fn compositor_config(allocator: std.mem.Allocator, lua: bool, nested: bool) ![]const u8 {
     if (lua) {
         const disabled = if (nested) "false" else "true";
@@ -1252,5 +1257,18 @@ test "Firefox profile override aliases" {
     };
     for (ordinary) |argument| {
         try std.testing.expect(!firefox_profile_override(argument));
+    }
+}
+
+test "session configs suppress the update and donation windows" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    for ([_]bool{ false, true }) |lua| {
+        const config = try compositor_config(allocator, lua, false);
+        const news = if (lua) "no_update_news=true" else "ecosystem:no_update_news = true";
+        const nag = if (lua) "no_donation_nag=true" else "ecosystem:no_donation_nag = true";
+        try std.testing.expect(std.mem.indexOf(u8, config, news) != null);
+        try std.testing.expect(std.mem.indexOf(u8, config, nag) != null);
     }
 }

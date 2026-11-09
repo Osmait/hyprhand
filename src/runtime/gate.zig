@@ -118,6 +118,11 @@ pub fn reported_pending() ?Pending {
     return reported;
 }
 
+/// Forgets the last refusal, before the next step of a composite command.
+pub fn clear_reported() void {
+    reported = null;
+}
+
 pub fn read_mode(runtime: *Runtime) !Mode {
     const path = try runtime.state_path("gate");
     const text = runtime.read_file(path, 64) catch |err| switch (err) {
