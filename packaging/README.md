@@ -96,10 +96,9 @@ or any GitHub settings. Availability of private-repository hosted runners depend
 on the account's Actions configuration and quota. No remote run is implied by
 the presence of these workflows.
 
-No project license has been selected. Creating a package does not grant project
-redistribution rights; a license decision remains with the repository owner.
-[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) preserves the original Wayland
-protocol permissions independently of that decision.
+Hyprhand is released under the [MIT License](../LICENSE), which every package
+includes. [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) preserves the original
+Wayland protocol permissions independently of the project license.
 
 Before publication, follow the [release checklist](../docs/releasing.md).
 `python3 scripts/check_docs.py` validates local documentation links and the package
