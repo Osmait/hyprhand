@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Northwind Desk · Sign in</title>
+<style>
+  :root {
+    --bg: #0e1420; --panel: #161f2e; --line: #273349; --text: #e8edf6;
+    --muted: #8d9ab0; --accent: #4f8cff; --ok: #3ccf8e; --warn: #ffb547;
+  }
+  * { box-sizing: border-box; }
+  html { zoom: 0.8; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 20px/1.4 "Inter", system-ui, sans-serif; }
+  header { height: 64px; display: flex; align-items: center; gap: 14px;
+    padding: 0 32px; border-bottom: 1px solid var(--line); background: #111a28; }
+  .logo { width: 30px; height: 30px; border-radius: 8px;
+    background: linear-gradient(135deg, #4f8cff, #7b5cff); }
+  header b { font-size: 22px; letter-spacing: .2px; }
+  header .who { margin-left: auto; color: var(--muted); font-size: 18px; }
+  main { padding: 18px 32px 80px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 22px 32px; }
+  h1 { font-size: 28px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 10px; font-size: 18px; }
+  label { display: block; font-size: 17px; color: var(--muted); margin: 12px 0 5px; }
+  input[type=text], input[type=password], select, textarea {
+    width: 100%; font: inherit; color: var(--text); background: #0f1724;
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; outline: none; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79,140,255,.25); }
+  textarea { height: 120px; resize: none; }
+  button { font: inherit; font-weight: 600; color: white; background: var(--accent);
+    border: 0; border-radius: 10px; padding: 12px 26px; cursor: pointer; }
+  .error { color: #ff7a7a; min-height: 26px; font-size: 17px; margin-top: 6px; }
+  /* Login */
+  #login { width: 560px; margin: 8px auto 0; }
+  .captcha { display: flex; gap: 14px; align-items: center; }
+  .captcha canvas { border-radius: 10px; border: 1px solid var(--line); flex: none; }
+  .captcha input { flex: 1; }
+  /* Ticket */
+  #ticket { display: none; max-width: 1060px; margin: 0 auto; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .priority { display: flex; align-items: center; gap: 18px; }
+  .priority input { flex: 1; accent-color: var(--warn); height: 28px; }
+  .badge { min-width: 112px; text-align: center; padding: 6px 12px; border-radius: 999px;
+    background: #2a2416; color: var(--warn); font-weight: 600; font-size: 18px; }
+  .check { display: flex; align-items: center; gap: 12px; margin: 22px 0; color: var(--text); }
+  .check input { width: 24px; height: 24px; accent-color: var(--accent); }
+  .drop { height: 120px; border: 2px dashed var(--line); border-radius: 12px; display: grid;
+    place-items: center; color: var(--muted); font-size: 18px; }
+  .actions { display: flex; justify-content: flex-end; }
+  /* Done */
+  #done { display: none; max-width: 860px; margin: 40px auto 0; text-align: center; }
+  .tick { width: 84px; height: 84px; border-radius: 50%; background: rgba(60,207,142,.15);
+    color: var(--ok); font-size: 50px; line-height: 84px; margin: 0 auto 14px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 22px; text-align: left; }
+  td { padding: 10px 14px; border-top: 1px solid var(--line); }
+  td:first-child { color: var(--muted); width: 32%; }
+</style>
+</head>
+<body>
+<header><div class="logo"></div><b>Northwind Desk</b>
+  <span class="who" id="who">Internal support portal</span></header>
+<main>
+  <section id="login" class="card" aria-label="Sign in">
+    <h1>Staff sign-in</h1>
+    <p class="sub">Use your directory account.</p>
+    <label for="user">Username</label>
+    <input id="user" type="text" autocomplete="off" spellcheck="false">
+    <label for="pass">Password</label>
+    <input id="pass" type="password" autocomplete="off">
+    <label for="code">Security check: type the characters</label>
+    <div class="captcha">
+      <canvas id="captcha" width="190" height="52" aria-hidden="true"></canvas>
+      <input id="code" type="text" autocomplete="off" spellcheck="false" aria-label="Captcha">
+    </div>
+    <div class="error" id="login-error" role="alert"></div>
+    <button id="signin" style="width:100%">Sign in</button>
+  </section>
+
+  <section id="ticket" class="card" aria-label="New support ticket">
+    <h1>New support ticket</h1>
+    <p class="sub">Describe the problem; the on-call team is notified at once.</p>
+    <div class="row">
+      <div><label for="requester">Requester</label>
+        <input id="requester" type="text" spellcheck="false"></div>
+      <div><label for="category">Category</label>
+        <select id="category">
+          <option>Choose…</option><option>Hardware</option><option>Network</option>
+          <option>Access &amp; accounts</option><option>Other</option>
+        </select></div>
+    </div>
+    <label for="priority">Priority</label>
+    <div class="priority">
+      <input id="priority" type="range" min="1" max="5" value="1" aria-label="Priority">
+      <span class="badge" id="priority-label">Low</span>
+    </div>
+    <label for="description">Description</label>
+    <textarea id="description" spellcheck="false"></textarea>
+    <label>Attachments</label>
+    <div class="drop">Drop screenshots or logs here · max 20 MB</div>
+    <label class="check"><input id="notify" type="checkbox"> Email me updates</label>
+    <div class="actions"><button id="create">Create ticket</button></div>
+  </section>
+
+  <section id="done" class="card" aria-label="Ticket created">
+    <div class="tick">✓</div>
+    <h1 id="done-title">Ticket NW-2741 created</h1>
+    <p class="sub">The on-call team has been notified.</p>
+    <table id="summary"></table>
+  </section>
+</main>
+<script>
+  const code = "7KQ4P";
+  const levels = ["Low", "Normal", "High", "Urgent", "Critical"];
+  const $ = (id) => document.getElementById(id);
+
+  (function drawCaptcha() {
+    const g = $("captcha").getContext("2d");
+    g.fillStyle = "#e9edf5"; g.fillRect(0, 0, 190, 52);
+    for (let i = 0; i < 7; i++) {
+      g.strokeStyle = `hsl(${i * 50}, 45%, 60%)`; g.lineWidth = 1.5; g.beginPath();
+      g.moveTo(Math.random() * 190, Math.random() * 52);
+      g.bezierCurveTo(60, Math.random() * 52, 130, Math.random() * 52, Math.random() * 190, 26);
+      g.stroke();
+    }
+    g.font = "bold 32px DejaVu Sans Mono, monospace"; g.fillStyle = "#1d2b4a";
+    [...code].forEach((ch, i) => {
+      g.save(); g.translate(22 + i * 33, 38); g.rotate((i % 2 ? 1 : -1) * 0.18);
+      g.fillText(ch, 0, 0); g.restore();
+    });
+  })();
+
+  function signIn() {
+    const ok = $("user").value.trim() && $("pass").value.length >= 6 &&
+      $("code").value.trim().toUpperCase() === code;
+    if (!ok) { $("login-error").textContent = "Check your password and the security code."; return; }
+    $("login").style.display = "none"; $("ticket").style.display = "block";
+    $("who").textContent = "Signed in as " + $("user").value.trim();
+    document.title = "Northwind Desk · New ticket";
+    $("requester").focus();
+  }
+  $("signin").onclick = signIn;
+  $("code").addEventListener("keydown", (e) => { if (e.key === "Enter") signIn(); });
+
+  $("priority").oninput = () => { $("priority-label").textContent = levels[$("priority").value - 1]; };
+  $("create").onclick = () => {
+    const rows = [
+      ["Requester", $("requester").value], ["Category", $("category").value],
+      ["Priority", levels[$("priority").value - 1]], ["Description", $("description").value],
+      ["Updates", $("notify").checked ? "Email" : "None"],
+    ];
+    $("summary").innerHTML = rows.map(([k, v]) =>
+      `<tr><td>${k}</td><td>${v.replace(/[<&]/g, (c) => ({"<": "&lt;", "&": "&amp;"})[c])}</td></tr>`).join("");
+    $("ticket").style.display = "none"; $("done").style.display = "block";
+    window.scrollTo(0, 0);
+    document.title = "Northwind Desk · Ticket NW-2741 created";
+  };
+</script>
+</body>
+</html>

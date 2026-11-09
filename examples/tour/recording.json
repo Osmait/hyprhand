@@ -1,0 +1,37 @@
+{
+  "recorded_on": "2026-10-31",
+  "description": "Single take of a scripted tour: every displayed hyprhand command really ran against a managed headless session; a stand-in desktop shows the terminal and the PiP.",
+  "software": {
+    "hyprhand": "0.4.0 (main + Chromium accessibility fix, commit 369a040)",
+    "hyprland": "0.57.0 (Lua config)",
+    "aquamarine": "0.15.1 with the experimental headless format bridge",
+    "browser": "Brave 156.1.98.62 (--app mode, private session profile)",
+    "terminal": "kitty 0.49.2, DejaVu Sans Mono 13",
+    "gpu": "NVIDIA"
+  },
+  "sessions": {
+    "demo-host": "headless 1024x1024; stands in for the user's desktop (terminal + PiP)",
+    "agent": "headless 1024x576 created by the script; Brave shows examples/tour/northwind.html"
+  },
+  "human_input": "The 'human' clicks and keystrokes in the PiP (Take over, password, captcha, Sign in, Return) were sent with hyprhand to the demo-host session, i.e. to the PiP window, exactly as a person's mouse and keyboard would be. The PiP forwarded them to the agent session.",
+  "capture": {
+    "tool": "grim -c (cursor included), JPEG q92, ~10 fps",
+    "frames": 1297,
+    "duration_seconds": 129.6
+  },
+  "edit": {
+    "timeline": "examples/tour/edit.json",
+    "notes": "Waits while the recorder placed the PiP and measured the human's click targets were cut; segments play at 1x-2x. No synthetic cursor, captions or interpolation.",
+    "mp4": {"path": "docs/video/hyprhand-tour.mp4", "size": "1024x1024", "codec": "H.264 yuv420p", "fps": 10, "duration_seconds": 51.4},
+    "gif": {"path": "docs/video/hyprhand-tour.gif", "size": "880x880", "fps": 8, "colors": 128, "duration_seconds": 51.4, "loop": true}
+  },
+  "hidden_steps": [
+    "Agent session display set to 1024x576 and gaps disabled right after creation (hyprctl in that session) so the PiP shows it at 1:1.",
+    "PiP window resized to 1024x632 and moved to the top of the stand-in desktop.",
+    "Hyprland donation/update notices disabled in both sessions."
+  ],
+  "media_sha256": {
+    "docs/video/hyprhand-tour.gif": "eca389040688ef33c4d792802343f85c3c3e416f4aac1885c93272ea7909feaa",
+    "docs/video/hyprhand-tour.mp4": "44cdc4119a476cc66f4d64f1a72fa7de2cd4683664e5f87d932064201860c581"
+  }
+}

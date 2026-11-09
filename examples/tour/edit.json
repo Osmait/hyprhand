@@ -1,0 +1,11 @@
+{"source_fps": 10, "segments": [
+ {"in": 1.2,  "out": 9.3,   "speed": 1.5, "what": "banner + chapter 1: create, enable, launch"},
+ {"in": 12.8, "out": 16.9,  "speed": 1.5, "what": "chapter 2: preview starts (default 640x360 PiP)"},
+ {"in": 18.2, "out": 19.0,  "speed": 1.0, "what": "PiP enlarged and placed by the stand-in user"},
+ {"in": 28.0, "out": 38.7,  "speed": 1.5, "what": "chapter 3: windows, observe, click, type"},
+ {"in": 38.7, "out": 40.6,  "speed": 1.0, "what": "chapter 4: hand-over prompt, human hovers the PiP"},
+ {"in": 48.2, "out": 53.9,  "speed": 1.25, "what": "Take over; state; agent click refused (ControlStopped)"},
+ {"in": 62.2, "out": 65.4,  "speed": 1.0, "what": "human types password and captcha in the PiP, signs in"},
+ {"in": 77.1, "out": 123.0, "speed": 2.0, "what": "Return; chapters 5-7: accessibility, form, verify, stop, destroy"},
+ {"in": 123.0,"out": 126.0, "speed": 1.0, "what": "final state"}
+]}
