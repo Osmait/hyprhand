@@ -583,6 +583,9 @@ fn hint_setup(err: anyerror) []const u8 {
         error.HostMonitorNotFound => "No host monitor has that name. " ++
             "List them with hyprhand monitors --session host.",
         error.InvalidMonitorName => "Use a monitor connector name such as DP-1 or HDMI-A-1.",
+        error.SandboxUnavailable => "--sandbox needs bubblewrap (bwrap) and unprivileged " ++
+            "user namespaces. Install bubblewrap or create the session without --sandbox.",
+        error.OfflineRequiresSandbox => "--offline only applies to --sandbox sessions.",
         error.SessionStartupFailed,
         error.SessionStartupTimeout,
         error.SessionConfigInvalid,
@@ -653,6 +656,7 @@ test {
     _ = @import("capture/observation.zig");
     _ = @import("runtime/delivery.zig");
     _ = @import("runtime/auth_guard.zig");
+    _ = @import("runtime/sandbox.zig");
     _ = @import("accessibility/refs.zig");
     _ = @import("accessibility/semantic.zig");
 }

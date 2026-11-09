@@ -39,8 +39,10 @@ pub const text = "hyprhand " ++ version.string ++
     \\    click|focus|set-value|toggle|check|uncheck|expand|collapse|select|scroll-to
     \\    Verified by read-back where possible; ActionNotSupported means use the pointer.
     \\
-    \\Managed sessions (input isolation, NOT filesystem/credential sandboxing):
-    \\  session create NAME [--nested] [--lua]
+    \\Managed sessions (input isolation; --sandbox adds file/credential isolation):
+    \\  session create NAME [--nested] [--lua] [--sandbox [--offline]]
+    \\    --sandbox: apps run in bwrap with a private HOME, no host sockets or
+    \\    credentials; --offline: and no network
     \\    [--headless-bridge /absolute/trusted.so] Experimental, new headless only
     \\  session inspect NAME
     \\  session destroy NAME       Closes tracked apps; retains profiles and logs

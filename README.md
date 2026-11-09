@@ -13,7 +13,9 @@ Picture-in-Picture viewer lets you watch a managed session from your desktop.
 
 **Current source version: 0.4.0.** This is an early project with a deliberately
 limited [compatibility matrix](docs/compatibility.md). Managed sessions isolate
-input; they share your user account's files, credentials, network, and permissions.
+input; they share your user account's files, credentials, network, and permissions,
+unless created with `--sandbox` (private home, hidden credentials and host sockets,
+optional `--offline`; see [sandboxed sessions](docs/sessions.md#sandboxed-sessions)).
 
 ## Watch an agent build a spreadsheet
 

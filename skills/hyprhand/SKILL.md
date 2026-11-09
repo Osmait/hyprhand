@@ -26,7 +26,11 @@ command prints one JSON object; parse fields, never English messages.
 - `sessions` reports `running` and `health`. For `SessionDead`, `NestedWindowClosed`
   or an `exited` session you created, run `session destroy NAME` once, then recreate.
 - `enable --session NAME` before `launch`: launching counts as input.
-- Managed sessions isolate input, not files, credentials, network, or OS privileges.
+- Managed sessions isolate input. Plain ones share files, credentials, network and
+  OS privileges. For untrusted sites or downloads, create the session with
+  `--sandbox` (private home, no host credentials or sockets) and `--offline` when
+  the task needs no network; exchange files through the `home` path that
+  `session create` reports.
   `launch --session agent -- brave` uses a separate browser profile (use the real
   executable name; `ProgramNotFound` means it is not in `PATH`). Start Chromium
   browsers with `--force-renderer-accessibility` and Qt apps with
