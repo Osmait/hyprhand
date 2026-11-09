@@ -1,5 +1,5 @@
 complete -c hyprhand -f
-complete -c hyprhand -n '__fish_use_subcommand' -a 'doctor state monitors windows workspaces sessions session launch observe cursor preview focus workspace move click doubleclick drag scroll type key stop enable wait events logs gc accessibility'
+complete -c hyprhand -n '__fish_use_subcommand' -a 'doctor state monitors windows workspaces sessions session launch observe cursor preview focus workspace move click doubleclick drag scroll type key act stop enable wait events logs gc accessibility'
 complete -c hyprhand -n '__fish_seen_subcommand_from preview' -l fps -r -a '1 5 10 15' -d 'PiP maximum capture frequency'
 complete -c hyprhand -n '__fish_seen_subcommand_from preview' -l host-monitor -r -d 'Host monitor for the PiP window'
 complete -c hyprhand -n '__fish_seen_subcommand_from observe' -l retry -r -a '0 1 2 3' -d 'Retry timeouts and stale frames'
@@ -10,6 +10,9 @@ complete -c hyprhand -n '__fish_seen_subcommand_from click' -l count -r -a '1 2 
 complete -c hyprhand -n '__fish_seen_subcommand_from click doubleclick drag scroll' -l mods -r -a 'ctrl shift alt super ctrl+shift' -d 'Modifiers held during the action'
 complete -c hyprhand -n '__fish_seen_subcommand_from key' -l repeat -r -d 'Tap the chord N times'
 complete -c hyprhand -l button -r -a 'left right middle back forward'
+complete -c hyprhand -n '__fish_seen_subcommand_from act' -a 'click focus set-value toggle check uncheck expand collapse select scroll-to'
+complete -c hyprhand -n '__fish_seen_subcommand_from act' -l ref -r -d 'Accessibility ref @SNAP:eN'
+complete -c hyprhand -n '__fish_seen_subcommand_from accessibility' -l interactive -d 'Only elements with refs'
 complete -c hyprhand -n '__fish_seen_subcommand_from session' -a 'create inspect destroy'
 complete -c hyprhand -n '__fish_seen_subcommand_from wait' -a 'stable window focus workspace'
 complete -c hyprhand -l session -r -d 'Explicit target session'

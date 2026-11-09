@@ -115,10 +115,19 @@ pub fn logs(runtime: *Runtime, arguments: Args) !void {
 }
 
 pub fn frame_name(name: []const u8) bool {
+    if (snapshot_name(name)) return true;
     if (name.len != 36 and name.len != 37) return false;
     const extension = name[32..];
     if (!std.mem.eql(u8, extension, ".png") and !std.mem.eql(u8, extension, ".json")) return false;
     for (name[0..32]) |character| if (!std.ascii.isHex(character)) return false;
+    return true;
+}
+
+/// Accessibility snapshots: eight hexadecimal digits and ".a11y".
+fn snapshot_name(name: []const u8) bool {
+    if (name.len != 13) return false;
+    if (!std.mem.eql(u8, name[8..], ".a11y")) return false;
+    for (name[0..8]) |character| if (!std.ascii.isHex(character)) return false;
     return true;
 }
 

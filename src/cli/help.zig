@@ -12,7 +12,9 @@ pub const text = "hyprhand " ++ version.string ++
     \\    [--scale 0.1..2] [--max-edge PX] [--since FRAME_ID] [--retry 0..10]
     \\    [--backend auto|helper]
     \\  cursor [--frame ID]
-    \\  accessibility [--window ADDRESS] [--depth 5] [--limit 100] [--timeout-ms 5000]
+    \\  accessibility [--window ADDRESS [--interactive] [--frame ID]] [--depth 5]
+    \\    [--limit 100] [--timeout-ms 5000]  With --window: refs @SNAP:eN, desktop
+    \\    bounds, and frame_point (a --frame pixel ready for click)
     \\  wait stable [--pixels] [--monitor NAME] [--stable-ms 300] [--timeout-ms 5000]
     \\  wait window --class CLASS [--timeout-ms 5000]
     \\  wait focus --window ADDRESS | wait workspace --workspace NUMBER
@@ -33,6 +35,9 @@ pub const text = "hyprhand " ++ version.string ++
     \\  type --window ADDRESS --text TEXT [--backend auto|native|helper|clipboard]
     \\    clipboard: wl-copy into the session clipboard (kept) + ctrl+v; never host
     \\  key CHORD --window ADDRESS [--repeat 1..100] [--backend auto|native|helper]
+    \\  act VERB --ref @SNAP:eN [--text VALUE]   Semantic AT-SPI action, no pointer:
+    \\    click|focus|set-value|toggle|check|uncheck|expand|collapse|select|scroll-to
+    \\    Verified by read-back where possible; ActionNotSupported means use the pointer.
     \\
     \\Managed sessions (input isolation, NOT filesystem/credential sandboxing):
     \\  session create NAME [--nested] [--lua]
@@ -48,6 +53,8 @@ pub const text = "hyprhand " ++ version.string ++
     \\    restores it. state reports human_takeover and control_enabled.
     \\
     \\Input accepts --dry-run. Coordinates are screenshot pixels, not desktop pixels.
+    \\Errors and input results carry disposition {delivery, retry_safe}: retry only
+    \\when retry_safe is true; otherwise observe first.
     \\Pointer approach is smooth (auto 200..600ms); --move-duration-ms 50..10000
     \\overrides it for move/click/doubleclick/scroll/drag. Use 0 for instant approach.
     \\Drag --duration-ms controls the separate, smooth button-held segment.

@@ -19,6 +19,8 @@ const Pointer = pointer_device.Pointer;
 const motion = @import("motion.zig");
 const scroll_pacing = @import("scroll.zig");
 const Aura = @import("aura.zig").Aura;
+const delivery = @import("../runtime/delivery.zig");
+const semantic = @import("../accessibility/semantic.zig");
 
 fn validate_address(address: []const u8) !void {
     if (address.len < 3) return error.InvalidWindowAddress;
@@ -119,6 +121,7 @@ fn x11_wheel(runtime: *Runtime, dx: i32, dy: i32) !void {
     for (steps) |step| {
         if (step.amount == 0) continue;
         const button = if (step.amount > 0) step.positive else step.negative;
+        delivery.mark_sent();
         const repeat_text = try std.fmt.allocPrint(runtime.allocator, "{d}", .{@abs(step.amount)});
         const button_text = try std.fmt.allocPrint(runtime.allocator, "{d}", .{button});
         try runtime.run_helper(
@@ -562,6 +565,8 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
     defer if (action) |*guard| guard.deinit();
     runtime.action = if (action) |*guard| guard else null;
     defer runtime.action = null;
+    // Semantic actions resolve their own target and report their own dry run.
+    if (arguments.command == .act) return semantic.run(runtime, arguments);
 
     var target: ?PointerTarget = if (arguments.frame) |frame_id|
         try resolve_pointer_target(runtime, arguments, frame_id)
@@ -585,9 +590,34 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         return;
     }
 
+    // Pointer devices mark delivery at the first button or wheel event, so an
+    // approach that aborts reports nothing delivered. Other commands act at once.
     if (target) |*pointer_target| {
         try run_pointer_action(runtime, arguments, pointer_target);
-    } else switch (arguments.command) {
+    } else {
+        delivery.mark_sent();
+        // launch reports the started process itself.
+        if (arguments.command == .launch) return sessions.launch(runtime, arguments);
+        try run_other_action(runtime, arguments, validated);
+    }
+    delivery.set(.delivered_unverified);
+
+    try runtime.emit(.{
+        .ok = true,
+        .action = @tagName(arguments.command),
+        .session_id = runtime.session_id,
+        .status = "sent",
+        .disposition = delivery.disposition(),
+        .desktop_point = point,
+        .scroll_mode_requested = if (arguments.command == .scroll) arguments.scroll_mode else null,
+        .modifiers = arguments.mods,
+        .click_count = if (arguments.command == .click) arguments.click_count else null,
+        .repeat = if (arguments.command == .key) arguments.key_repeat else null,
+    });
+}
+
+fn run_other_action(runtime: *Runtime, arguments: args.Args, validated: Validated) !void {
+    switch (arguments.command) {
         .focus => try run_focus(runtime, arguments.focus_window.?),
         .workspace => try run_workspace(runtime, validated.workspace_number.?),
         .type => try type_text(runtime, arguments),
@@ -595,21 +625,8 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
             const chord = arguments.key_chord.?;
             try press_chord(runtime, arguments, chord, validated.key_argv.?, arguments.key_repeat);
         },
-        .launch => return sessions.launch(runtime, arguments),
         else => unreachable,
     }
-
-    try runtime.emit(.{
-        .ok = true,
-        .action = @tagName(arguments.command),
-        .session_id = runtime.session_id,
-        .status = "sent",
-        .desktop_point = point,
-        .scroll_mode_requested = if (arguments.command == .scroll) arguments.scroll_mode else null,
-        .modifiers = arguments.mods,
-        .click_count = if (arguments.command == .click) arguments.click_count else null,
-        .repeat = if (arguments.command == .key) arguments.key_repeat else null,
-    });
 }
 
 /// What validation computed that execution needs again.

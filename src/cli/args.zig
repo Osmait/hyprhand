@@ -31,7 +31,9 @@ pub const Command = enum {
     logs,
     gc,
     accessibility,
+    act,
     _a11y,
+    _a11y_act,
     _cursor_probe,
     _preview_frame,
     _preview_stream,
@@ -45,6 +47,19 @@ pub const Backend = enum { auto, native, helper, clipboard };
 pub const Indicator = enum { none, outline };
 pub const SessionVerb = enum { create, inspect, destroy };
 pub const WaitCondition = enum { stable, window, focus, workspace };
+/// Semantic accessibility actions of `act`.
+pub const ActVerb = enum {
+    click,
+    focus,
+    @"set-value",
+    toggle,
+    check,
+    uncheck,
+    expand,
+    collapse,
+    select,
+    @"scroll-to",
+};
 
 /// The deepest accessibility tree `--depth` may request.
 pub const accessibility_depth_max = 32;
@@ -102,6 +117,11 @@ pub const Args = struct {
     key_repeat: u32 = 1,
     /// `state` and `windows`: a short summary instead of raw compositor JSON.
     compact: bool = false,
+    /// `act`: the verb and the accessibility ref it acts on.
+    act_verb: ?ActVerb = null,
+    ref: ?[]const u8 = null,
+    /// `accessibility`: report only elements that received a ref.
+    interactive: bool = false,
     dry_run: bool = false,
     timeout_ms: u32 = 5000,
     stable_ms: u32 = 300,
@@ -130,7 +150,7 @@ pub const Args = struct {
 
     pub fn mutates(self: Args) bool {
         return self.pointer() or switch (self.command) {
-            .focus, .workspace, .type, .key, .launch => true,
+            .focus, .workspace, .type, .key, .launch, .act => true,
             else => false,
         };
     }
@@ -207,7 +227,7 @@ fn windowed(arguments: Args) bool {
 /// `--frame`: the frame a pointer acts on, an observe region is drawn on, or
 /// the cursor position is mapped into.
 fn framed(arguments: Args) bool {
-    return arguments.pointer() or only(&.{ .observe, .cursor })(arguments);
+    return arguments.pointer() or only(&.{ .observe, .cursor, .accessibility })(arguments);
 }
 
 /// `--x --y`: a pointer coordinate, or the first corner of an observe region.
@@ -289,7 +309,9 @@ const options = [_]Option{
     .{ .name = "--to-x", .field = "to_x", .allowed = only(&.{ .drag, .observe }) },
     .{ .name = "--to-y", .field = "to_y", .allowed = only(&.{ .drag, .observe }) },
     .{ .name = "--duration-ms", .field = "duration_ms", .allowed = only(&.{ .drag, .scroll }) },
-    .{ .name = "--text", .field = "text", .allowed = only(&.{.type}) },
+    .{ .name = "--text", .field = "text", .allowed = only(&.{ .type, .act }) },
+    .{ .name = "--ref", .field = "ref", .allowed = only(&.{.act}) },
+    .{ .name = "--interactive", .field = "interactive", .allowed = accessibility_only },
     .{
         .name = "--button",
         .field = "button",
@@ -366,6 +388,11 @@ fn positional(arguments: *Args, argument: []const u8) !void {
         .focus => try positional_store([]const u8, &arguments.focus_window, argument),
         .workspace => try positional_store([]const u8, &arguments.workspace_target, argument),
         .key => try positional_store([]const u8, &arguments.key_chord, argument),
+        .act => {
+            const verb = std.meta.stringToEnum(ActVerb, argument) orelse
+                return error.InvalidActVerb;
+            try positional_store(ActVerb, &arguments.act_verb, verb);
+        },
         .wait => {
             const condition = std.meta.stringToEnum(WaitCondition, argument) orelse
                 return error.InvalidWaitCondition;
@@ -541,6 +568,10 @@ fn validate_shape(arguments: Args) !void {
         .key => if (arguments.key_chord == null) return error.MissingArgument,
         .wait => if (arguments.wait_condition == null) return error.MissingArgument,
         .type => if (arguments.text == null) return error.MissingText,
+        .act => {
+            if (arguments.act_verb == null) return error.MissingArgument;
+            if (arguments.ref == null) return error.RefRequired;
+        },
         .launch => if (arguments.program.len == 0) return error.MissingProgram,
         .session => {
             const verb = arguments.session_verb orelse return error.MissingArgument;

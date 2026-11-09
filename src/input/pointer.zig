@@ -2,6 +2,7 @@ const std = @import("std");
 const native = @import("../platform/native.zig");
 const c = native.c;
 const Connection = @import("../platform/wayland.zig").Connection;
+const delivery = @import("../runtime/delivery.zig");
 
 /// One wheel detent expressed in wl_fixed_t (24.8) surface units.
 pub const wheel_detent_units: i32 = 15 * 256;
@@ -66,6 +67,7 @@ pub const Pointer = struct {
     }
 
     pub fn press(self: *Pointer, button: u32) !void {
+        delivery.mark_sent();
         self.held = button;
         c.zwlr_virtual_pointer_v1_button(self.device, native.timestamp_ms(), button, 1);
         c.zwlr_virtual_pointer_v1_frame(self.device);
@@ -100,6 +102,7 @@ pub const Pointer = struct {
         // when that expected application action changes the snapshot.
         const saved = self.connection.suspend_guard();
         defer self.connection.runtime = saved;
+        delivery.mark_sent();
         c.zwlr_virtual_pointer_v1_button(self.device, native.timestamp_ms(), button, 1);
         c.zwlr_virtual_pointer_v1_frame(self.device);
         c.zwlr_virtual_pointer_v1_button(self.device, native.timestamp_ms(), button, 0);
@@ -123,6 +126,7 @@ pub const Pointer = struct {
     }
 
     pub fn scroll(self: *Pointer, dx: i32, dy: i32) !void {
+        delivery.mark_sent();
         self.axis_discrete(.vertical, dy);
         self.axis_discrete(.horizontal, dx);
         c.zwlr_virtual_pointer_v1_frame(self.device);
@@ -147,6 +151,7 @@ pub const Pointer = struct {
     /// Fixed-point axis distances, without coarse wheel detents. Applications
     /// apply their own scale; cumulative distance is conserved by the driver.
     pub fn scroll_continuous(self: *Pointer, dx: i32, dy: i32) !void {
+        delivery.mark_sent();
         self.axis_continuous(.vertical, dy);
         self.axis_continuous(.horizontal, dx);
         c.zwlr_virtual_pointer_v1_frame(self.device);
