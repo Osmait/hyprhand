@@ -111,8 +111,9 @@ controls that window:
 - Managed sessions disable XWayland and remove the host `DISPLAY`.
   GTK/Qt/browser settings route supported apps to Wayland.
 - Recognized Chromium-family launches use a private user-data directory and
-  Wayland flags, and get `ACCESSIBILITY_ENABLED=1` so `accessibility` can read
-  web content (Chromium otherwise exposes an empty tree). A second launch reuses
+  Wayland flags, plus `--force-renderer-accessibility` and `ACCESSIBILITY_ENABLED=1`
+  so `accessibility` can read web content (with either alone Chromium exposes an
+  empty web view). A second launch reuses
   the running browser and its environment. Firefox gets a private profile and `--no-remote`; profile
   overrides are rejected. Generic applications may still reuse another process;
   verify the actual window and PID.
