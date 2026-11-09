@@ -29,7 +29,7 @@ first session. Commands and documentation refer to source version **0.4.0**.
 - [Packaging](../packaging/README.md): local archives, manifests and verification.
 - [Security](../SECURITY.md): trust boundaries, data handling and reporting.
 - [Third-party notices](../THIRD_PARTY_NOTICES.md): vendored protocol attribution.
-- [Releasing](releasing.md): license decision, publication checks and package verification.
+- [Releasing](releasing.md): license, publication checks and package verification.
 
 ## Historical evidence
 
