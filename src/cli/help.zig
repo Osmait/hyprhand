@@ -7,8 +7,11 @@ pub const text = "hyprhand " ++ version.string ++
     \\JSON output; events emits NDJSON. No MCP server or AI model.
     \\
     \\Observe and inspect:
-    \\  doctor | state | monitors | windows | workspaces | sessions
-    \\  observe [--monitor NAME] [--scale 0.1..2] [--backend auto|helper] [--retry 0..10]
+    \\  doctor | monitors | workspaces | sessions | state|windows [--compact]
+    \\  observe [--monitor NAME | --window ADDRESS | --frame ID --x X --y Y --to-x X --to-y Y]
+    \\    [--scale 0.1..2] [--max-edge PX] [--since FRAME_ID] [--retry 0..10]
+    \\    [--backend auto|helper]
+    \\  cursor [--frame ID]
     \\  accessibility [--window ADDRESS] [--depth 5] [--limit 100] [--timeout-ms 5000]
     \\  wait stable [--pixels] [--monitor NAME] [--stable-ms 300] [--timeout-ms 5000]
     \\  wait window --class CLASS [--timeout-ms 5000]
@@ -21,13 +24,15 @@ pub const text = "hyprhand " ++ version.string ++
     \\  enable [--indicator none|outline] | stop
     \\  focus ADDRESS | workspace NUMBER
     \\  move --frame ID --x X --y Y
-    \\  click|doubleclick --frame ID --x X --y Y [--button left|right|middle]
+    \\  click|doubleclick --frame ID --x X --y Y [--button left|right|middle|back|forward]
+    \\    click --count 1..3 (3 = triple click); --mods ctrl+shift holds modifiers
+    \\    during click/doubleclick/drag/scroll (not on XWayland)
     \\  drag --frame ID --x X --y Y --to-x X --to-y Y [--duration-ms 500]
     \\  scroll --frame ID --x X --y Y [--dy STEPS] [--dx STEPS]
     \\    [--scroll-mode auto|wheel|continuous] [--duration-ms 500]
     \\  type --window ADDRESS --text TEXT [--backend auto|native|helper|clipboard]
     \\    clipboard: wl-copy into the session clipboard (kept) + ctrl+v; never host
-    \\  key CHORD --window ADDRESS [--backend auto|native|helper]
+    \\  key CHORD --window ADDRESS [--repeat 1..100] [--backend auto|native|helper]
     \\
     \\Managed sessions (input isolation, NOT filesystem/credential sandboxing):
     \\  session create NAME [--nested] [--lua]
@@ -58,5 +63,9 @@ pub const text = "hyprhand " ++ version.string ++
     \\Headless needs compatible GPU buffers; on NVIDIA build the bridge
     \\(scripts/install.sh --with-bridge). --nested opens a compositor window.
     \\observe --retry N retries timeouts and stale frames N times, 0.7s apart.
+    \\Fewer image tokens: --window crops to one window, --frame with a box zooms into
+    \\an earlier frame, --max-edge caps the long side, and --since FRAME_ID reports
+    \\changed:false when the pixels are identical (no need to view the image again).
+    \\state/windows --compact list windows in a fraction of the raw JSON.
     \\
 ;
