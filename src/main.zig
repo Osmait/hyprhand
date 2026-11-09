@@ -23,6 +23,8 @@ const semantic = @import("accessibility/semantic.zig");
 const sequence_steps = @import("cli/sequence.zig");
 const refs = @import("accessibility/refs.zig");
 const gate = @import("runtime/gate.zig");
+const journal = @import("runtime/journal.zig");
+const replay_steps = @import("runtime/replay.zig");
 const control_probe = @import("accessibility/probe.zig");
 const preview = @import("preview/controller.zig");
 const takeover = @import("preview/takeover.zig");
@@ -494,13 +496,151 @@ fn worse(a: delivery.Delivery, b: delivery.Delivery) delivery.Delivery {
 fn audited(runtime: *Runtime, arguments: args.Args) !void {
     const action = @tagName(arguments.command);
     try operations.log(runtime, action, if (arguments.dry_run) "dry_run" else "started");
+    // A journal records the target before the action can change it.
+    const recording = journal.before(runtime, arguments) catch null;
 
     actions.run(runtime, arguments) catch |err| {
         operations.log(runtime, action, @errorName(err)) catch {};
+        if (recording) |context| journal.append(runtime, context, err) catch {};
         return err;
     };
 
     operations.log(runtime, action, "completed") catch {};
+    if (recording) |context| journal.append(runtime, context, null) catch {};
+}
+
+/// `journal start NAME`, `journal stop`, `journal show NAME`.
+fn journal_command(runtime: *Runtime, arguments: args.Args) !void {
+    switch (arguments.journal_verb.?) {
+        .start => {
+            try journal.start(runtime, arguments.journal_name.?);
+            try runtime.emit(.{
+                .ok = true,
+                .session_id = runtime.session_id,
+                .journal = arguments.journal_name.?,
+                .status = "recording",
+            });
+        },
+        .stop => {
+            const name = try journal.stop(runtime) orelse return error.JournalNotActive;
+            try runtime.emit(.{
+                .ok = true,
+                .session_id = runtime.session_id,
+                .journal = name,
+                .status = "stopped",
+                .steps = (try journal.load(runtime, name)).len,
+            });
+        },
+        .show => try runtime.emit(.{
+            .ok = true,
+            .session_id = runtime.session_id,
+            .journal = arguments.journal_name.?,
+            .active = if (try journal.active(runtime)) |name|
+                std.mem.eql(u8, name, arguments.journal_name.?)
+            else
+                false,
+            .steps = try journal.load(runtime, arguments.journal_name.?),
+        }),
+    }
+}
+
+/// One journal step as `replay` reports it.
+const ReplayReport = struct {
+    index: usize,
+    command: args.Command,
+    /// skipped (failed when recorded), planned, done, failed or unresolved.
+    status: []const u8,
+    window: ?[]const u8 = null,
+    ref: ?[]const u8 = null,
+    point: ?[2]u32 = null,
+    err: ?struct { code: []const u8, message: []const u8, detail: ?[]const u8 = null } = null,
+    disposition: ?delivery.Disposition = null,
+    result: ?std.json.Value = null,
+};
+
+/// `replay NAME [--execute]`: plans every step, or resolves and runs them in
+/// order through the normal input path until the first failure.
+fn replay(runtime: *Runtime, arguments: args.Args) !void {
+    const steps = try journal.load(runtime, arguments.journal_name.?);
+    var reports: std.ArrayList(ReplayReport) = .empty;
+    var overall: delivery.Delivery = .not_delivered;
+    var failed: ?usize = null;
+    for (steps, 0..) |step, index| {
+        const report_item = try replay_step(runtime, arguments, step, index);
+        if (report_item.disposition) |disposition| {
+            overall = worse(overall, disposition.delivery);
+        }
+        try reports.append(runtime.allocator, report_item);
+        const stopped = std.mem.eql(u8, report_item.status, "failed") or
+            (arguments.execute and std.mem.eql(u8, report_item.status, "unresolved"));
+        if (stopped) {
+            failed = index;
+            break;
+        }
+    }
+    delivery.set(overall);
+    try runtime.emit(.{
+        .ok = failed == null,
+        .session_id = runtime.session_id,
+        .journal = arguments.journal_name.?,
+        .mode = if (arguments.execute) "execute" else "plan",
+        .steps = reports.items,
+        .not_executed = steps.len - reports.items.len,
+        .failed_step = failed,
+        .disposition = delivery.disposition(),
+    });
+    if (failed != null) return error.AlreadyReported;
+}
+
+fn replay_step(
+    runtime: *Runtime,
+    arguments: args.Args,
+    step: journal.Step,
+    index: usize,
+) !ReplayReport {
+    var item = ReplayReport{ .index = index, .command = step.command, .status = "planned" };
+    if (!step.ok) {
+        item.status = "skipped";
+        return item;
+    }
+    const resolved = replay_steps.resolve(runtime, step, arguments.session) catch |err| {
+        item.status = "unresolved";
+        item.err = .{ .code = @errorName(err), .message = hint(err) };
+        return item;
+    };
+    item.window = resolved.window;
+    item.ref = resolved.ref;
+    item.point = resolved.point;
+    if (!arguments.execute) return item;
+
+    if (resolved.focus_first) |window| {
+        if (!std.mem.eql(u8, window, try runtime.active_window())) {
+            const focus = args.Args{
+                .command = .focus,
+                .session = arguments.session,
+                .explicit_session = true,
+                .focus_window = window,
+            };
+            const focused = try sequence_step(runtime, focus, index);
+            if (!focused.ok) return replay_failure(item, focused);
+        }
+    }
+    const done = try sequence_step(runtime, resolved.action, index);
+    if (!done.ok) return replay_failure(item, done);
+    item.status = "done";
+    item.disposition = done.disposition;
+    item.result = done.result;
+    return item;
+}
+
+fn replay_failure(item: ReplayReport, step_report: StepReport) ReplayReport {
+    var failed = item;
+    failed.status = "failed";
+    failed.disposition = step_report.disposition;
+    if (step_report.err) |err| {
+        failed.err = .{ .code = err.code, .message = err.message, .detail = err.detail };
+    }
+    return failed;
 }
 
 fn execute(init: std.process.Init, arguments: args.Args) !void {
@@ -541,6 +681,8 @@ fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
         .workspaces => try execute_query(runtime, "workspaces"),
         .observe => try observation.observe_with_retry(runtime, arguments),
         .sequence => try sequence(runtime, arguments),
+        .journal => try journal_command(runtime, arguments),
+        .replay => try replay(runtime, arguments),
         .cursor => try observation.cursor(runtime, arguments),
         .enable => {
             if (arguments.gate) |mode| try gate.write_mode(runtime, mode);
@@ -659,6 +801,19 @@ fn hint_semantic(err: anyerror) ?[]const u8 {
         error.AuthenticationPrompt => "A sign-in, polkit, keyring or permission prompt " ++
             "is in front (err.detail names it). Never answer it: ask the human to handle " ++
             "it, through the preview's Take over in a managed session. Nothing was sent.",
+        error.JournalExists => "A journal with that name exists; choose another name.",
+        error.JournalActive => "Another journal is recording; journal stop first.",
+        error.JournalNotActive => "No journal is recording in this session.",
+        error.JournalNotFound => "No journal with that name in this session.",
+        error.ReplayWindowNotFound => "No window with the recorded class is open. " ++
+            "Open it, or replay from a later step.",
+        error.ReplayWindowAmbiguous => "Several windows share the recorded class and title.",
+        error.ReplayElementNotFound, error.ReplayElementAmbiguous => "The recorded control " ++
+            "(role and name) is missing or not unique in that window now.",
+        error.ReplayLayoutChanged => "The step was recorded as a point relative to the " ++
+            "window, and the window's size changed: aim it again by hand.",
+        error.ReplaySecretStep => "The step typed into a password field; its text was " ++
+            "never stored. Hand that step to the human.",
         error.ConfirmationRequired => "This control pays, sends, publishes, creates an " ++
             "account, deletes or accepts terms (err.confirmation). Ask the human; only if " ++
             "they agree, repeat the same command with --ack ID. Nothing was sent.",
@@ -880,6 +1035,8 @@ test {
     _ = @import("cli/sequence.zig");
     _ = @import("capture/png.zig");
     _ = @import("runtime/gate.zig");
+    _ = @import("runtime/journal.zig");
+    _ = @import("runtime/replay.zig");
 }
 
 test {

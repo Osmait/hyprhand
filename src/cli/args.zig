@@ -33,6 +33,8 @@ pub const Command = enum {
     accessibility,
     act,
     sequence,
+    journal,
+    replay,
     _a11y,
     _a11y_act,
     _a11y_probe,
@@ -49,6 +51,8 @@ pub const Backend = enum { auto, native, helper, clipboard };
 pub const Indicator = enum { none, outline };
 pub const SessionVerb = enum { create, inspect, destroy };
 pub const WaitCondition = enum { stable, window, focus, workspace };
+pub const JournalVerb = enum { start, stop, show };
+
 /// How the confirmation gate treats consequential actions (see gate.zig).
 pub const GateMode = enum { ask, human, off };
 
@@ -137,6 +141,11 @@ pub const Args = struct {
     ref: ?[]const u8 = null,
     /// `accessibility`: report only elements that received a ref.
     interactive: bool = false,
+    /// `journal VERB [NAME]` and `replay NAME`.
+    journal_verb: ?JournalVerb = null,
+    journal_name: ?[]const u8 = null,
+    /// `replay`: send input; without it, replay only plans.
+    execute: bool = false,
     /// `enable`: the confirmation gate's mode.
     gate: ?GateMode = null,
     /// Input commands: a confirmation ID the human agreed to.
@@ -352,6 +361,7 @@ const options = [_]Option{
     .{ .name = "--duration-ms", .field = "duration_ms", .allowed = only(&.{ .drag, .scroll }) },
     .{ .name = "--text", .field = "text", .allowed = only(&.{ .type, .act }) },
     .{ .name = "--ref", .field = "ref", .allowed = only(&.{.act}) },
+    .{ .name = "--execute", .field = "execute", .allowed = only(&.{.replay}) },
     .{
         .name = "--gate",
         .field = "gate",
@@ -443,6 +453,16 @@ fn positional(arguments: *Args, argument: []const u8) !void {
                 return error.InvalidActVerb;
             try positional_store(ActVerb, &arguments.act_verb, verb);
         },
+        .journal => {
+            if (arguments.journal_verb == null) {
+                const verb = std.meta.stringToEnum(JournalVerb, argument) orelse
+                    return error.InvalidJournalCommand;
+                arguments.journal_verb = verb;
+            } else {
+                try positional_store([]const u8, &arguments.journal_name, argument);
+            }
+        },
+        .replay => try positional_store([]const u8, &arguments.journal_name, argument),
         .wait => {
             const condition = std.meta.stringToEnum(WaitCondition, argument) orelse
                 return error.InvalidWaitCondition;
@@ -630,6 +650,7 @@ fn validate_shape(arguments: Args) !void {
             if (arguments.act_verb == null) return error.MissingArgument;
             if (arguments.ref == null) return error.RefRequired;
         },
+        .journal, .replay => try validate_journal(arguments),
         .launch => if (arguments.program.len == 0) return error.MissingProgram,
         .session => {
             const verb = arguments.session_verb orelse return error.MissingArgument;
@@ -646,6 +667,20 @@ fn validate_shape(arguments: Args) !void {
         },
         else => {},
     }
+}
+
+/// `journal start|show NAME`, `journal stop`, and `replay NAME` (explicit session).
+fn validate_journal(arguments: Args) !void {
+    const named = arguments.journal_name != null;
+    if (named and !valid_name(arguments.journal_name.?)) return error.InvalidJournalName;
+    if (arguments.command == .replay) {
+        if (!named) return error.MissingArgument;
+        if (!arguments.explicit_session) return error.SessionRequired;
+        return;
+    }
+    const verb = arguments.journal_verb orelse return error.MissingArgument;
+    if (verb != .stop and !named) return error.MissingArgument;
+    if (verb == .stop and named) return error.UnexpectedArgument;
 }
 
 /// `observe` captures one output (`--monitor`), one window (`--window`), or a
@@ -989,4 +1024,18 @@ test "marks are drawn per window and aimed at instead of coordinates" {
         "click", "--session", "agent", "--frame", "f", "--mark", "3", "--x", "1", "--y", "1",
     }));
     try std.testing.expectError(error.UnknownOption, parse(&.{ "key", "a", "--mark", "1" }));
+}
+
+test "journal verbs and replay names" {
+    const started = try parse(&.{ "journal", "start", "checkout", "--session", "agent" });
+    try std.testing.expectEqual(JournalVerb.start, started.journal_verb.?);
+    try std.testing.expectEqualStrings("checkout", started.journal_name.?);
+    _ = try parse(&.{ "journal", "stop", "--session", "agent" });
+    try std.testing.expectError(error.MissingArgument, parse(&.{ "journal", "start" }));
+    try std.testing.expectError(error.UnexpectedArgument, parse(&.{ "journal", "stop", "x" }));
+    try std.testing.expectError(error.InvalidJournalCommand, parse(&.{ "journal", "erase", "x" }));
+    try std.testing.expectError(error.InvalidJournalName, parse(&.{ "journal", "show", "../x" }));
+    const replay = try parse(&.{ "replay", "checkout", "--session", "agent", "--execute" });
+    try std.testing.expect(replay.execute and !replay.mutates());
+    try std.testing.expectError(error.SessionRequired, parse(&.{ "replay", "checkout" }));
 }

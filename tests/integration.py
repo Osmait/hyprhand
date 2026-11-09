@@ -454,6 +454,55 @@ else:
         self.cli("click", "--frame", f["frame_id"], "--x", "10", "--y", "10",
                  "--session", "host", "--dry-run")
 
+    def test_journal_records_and_replay_repeats_input(self):
+        self.cli("enable")
+        self.cli("journal", "start", "demo", "--session", "host")
+        self.error("JournalExists", "journal", "start", "demo", "--session", "host")
+        self.cli("key", "Down", "--window", self.address, "--repeat", "2", "--session", "host")
+        self.cli("type", "--window", self.address, "--text", "hola ñ", "--session", "host")
+        self.error("WindowNotFound", "key", "Up", "--window", "0x999", "--session", "host")
+        f = self.frame()
+        # No Wayland here: the click fails, and is recorded as failed.
+        self.error("WaylandUnavailable", "click", "--frame", f["frame_id"], "--x", "100",
+                   "--y", "50", "--session", "host")
+        self.cli("key", "Up", "--window", self.address, "--session", "host", "--dry-run")
+        stopped = self.cli("journal", "stop", "--session", "host")
+        self.assertEqual(stopped["steps"], 3)
+        shown = self.cli("journal", "show", "demo", "--session", "host")
+        self.assertIs(shown["active"], False)
+        key, typed, click = shown["steps"]
+        self.assertEqual((key["command"], key["chord"], key["key_repeat"]), ("key", "Down", 2))
+        self.assertEqual(key["window"], {"class": "test", "title": "Test window"})
+        self.assertEqual((typed["text"], typed["text_length"], typed["secret"]), ("hola ñ", 7, False))
+        self.assertEqual((click["ok"], click["error_code"]), (False, "WaylandUnavailable"))
+        self.assertEqual(click["point"], [100, 50])
+        self.assertEqual(click["window_size"], [1280, 720])
+
+        plan = self.cli("replay", "demo", "--session", "host")
+        self.assertEqual(plan["mode"], "plan")
+        self.assertEqual([s["status"] for s in plan["steps"]], ["planned", "planned", "skipped"])
+        self.assertEqual(plan["steps"][0]["window"], self.address)
+        (self.root / "input.json").unlink()
+        done = self.cli("replay", "demo", "--session", "host", "--execute")
+        self.assertEqual([s["status"] for s in done["steps"]], ["done", "done", "skipped"])
+        self.assertEqual(json.loads((self.root / "input.json").read_text())["text"], "hola ñ")
+        self.assertEqual(done["disposition"]["delivery"], "delivered_unverified")
+
+        self.extra_clients = [dict(address="0x456", at=[0, 0], size=[10, 10], monitor=0,
+                                   workspace={"id": 1}, mapped=True, pid=9, **{"class": "test"},
+                                   title="Test window")]
+        ambiguous = self.run_replay("demo")
+        self.assertEqual(ambiguous["steps"][0]["status"], "unresolved")
+        self.assertEqual(ambiguous["steps"][0]["err"]["code"], "ReplayWindowAmbiguous")
+        self.error("JournalNotFound", "replay", "nope", "--session", "host")
+        self.error("SessionRequired", "replay", "demo")
+
+    def run_replay(self, name):
+        result = subprocess.run([str(BIN), "replay", name, "--session", "host", "--execute"],
+                                env=self.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        return json.loads(result.stdout)
+
     def test_stale_geometry(self):
         f = self.frame()
         self.x += 10

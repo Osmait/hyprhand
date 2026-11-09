@@ -127,7 +127,14 @@ cheaper and steadier than the pointer.
    first failure stops the rest (`failed_step`, `not_executed`). Read each
    step's `disposition`. Do not sequence steps whose targets depend on what an
    earlier step changes: observe in between instead.
-10. **Finish.** `stop --session S`. Destroy only sessions you created for the
+10. **Record what works.** For a task the human will want repeated, wrap it in
+    `journal start NAME` / `journal stop`. Later, `replay NAME` plans it against
+    the live desktop and `replay NAME --execute` repeats it through every guard
+    and the confirmation gate, stopping at the first step it cannot match
+    (`unresolved`) or that fails. Steps typed into password fields are never
+    stored: replay stops there for the human. Review the plan before executing,
+    and observe after it: a replay proves dispatch, not the outcome.
+11. **Finish.** `stop --session S`. Destroy only sessions you created for the
    task, when no longer needed; destroy closes their apps and compositor but
    keeps profiles and logs until logout.
 
