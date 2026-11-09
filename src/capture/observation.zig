@@ -1,5 +1,6 @@
 //! Screenshot observation, scoped revisions, and frame persistence.
 const std = @import("std");
+const assert = std.debug.assert;
 const args = @import("../cli/args.zig");
 const geometry = @import("../core/geometry.zig");
 const native = @import("../platform/native.zig");
@@ -8,6 +9,8 @@ const Runtime = @import("../runtime/runtime.zig").Runtime;
 const operations = @import("../runtime/operations.zig");
 const sessions = @import("../runtime/sessions.zig");
 const aura = @import("../input/aura.zig");
+const png = @import("png.zig");
+const marks = @import("marks.zig");
 const eq = @import("../core/text.zig").eq;
 
 pub const Client = struct {
@@ -24,6 +27,7 @@ pub const Client = struct {
     xwayland: bool = false,
     pid: i64 = 0,
     class: []const u8 = "",
+    title: []const u8 = "",
 
     /// True when `point` (desktop coordinates) lies inside the window rectangle.
     pub fn contains(self: Client, point: geometry.Point) bool {
@@ -209,10 +213,156 @@ pub fn observe(runtime: *Runtime, arguments: args.Args) !void {
     // Fail fast instead of letting grim wait the whole budget for a frame.
     try sessions.check_nested_window(runtime);
 
-    const monitor_name = arguments.monitor orelse try focused_monitor_name(runtime);
-    const before = try snapshot(runtime, monitor_name);
-    const monitor = try monitor_by_name(before, monitor_name);
-    const rect = try monitor.rect();
+    // Load the comparison frame first: a missing one fails before capturing.
+    const previous: ?geometry.Frame = if (arguments.since) |frame_id|
+        try load_frame(runtime, frame_id)
+    else
+        null;
+    const started = native.now_ms();
+    var frame = try capture(runtime, arguments, try capture_scope(runtime, arguments));
+    var marked: ?marks.Marked = null;
+    if (arguments.marks) {
+        marked = try marks.apply(runtime, frame, frame.window.?);
+        frame.marks = marked.?.marks;
+        frame.marked_image_path = marked.?.image_path;
+    }
+    try observe_write_metadata(runtime, frame);
+    const comparison: ?Comparison = if (previous) |earlier|
+        compare(runtime, earlier, frame)
+    else
+        null;
+    try runtime.emit(.{
+        .ok = true,
+        .frame = frame,
+        .capture_duration_ms = native.now_ms() - started,
+        .changed = if (comparison) |result| result.changed else null,
+        .diff = if (comparison) |result| result.diff else null,
+        .marks = if (marked) |result| result.legend else null,
+        .snapshot = if (marked) |result| result.snapshot else null,
+    });
+}
+
+const Comparison = struct { changed: bool, diff: ?png.Diff };
+
+/// Whether the screen changed since `earlier`. Identical bytes are unchanged;
+/// otherwise both images are decoded and compared, and a change no bigger than
+/// a text cursor does not count. Images that cannot be compared are changed.
+fn compare(runtime: *Runtime, earlier: geometry.Frame, later: geometry.Frame) Comparison {
+    if (!same_box(earlier, later)) return .{ .changed = true, .diff = null };
+    const same_bytes = earlier.image_sha256.len != 0 and
+        eq(earlier.image_sha256, later.image_sha256);
+    const unchanged = png.Diff{ .changed_pixels = 0, .box = null, .cursor_like = false };
+    if (same_bytes) return .{ .changed = false, .diff = unchanged };
+    const unknown = Comparison{ .changed = true, .diff = null };
+    const result = pixel_diff(runtime, earlier, later) catch return unknown;
+    const difference = result orelse return unknown;
+    const changed = difference.changed_pixels > 0 and !difference.cursor_like;
+    return .{ .changed = changed, .diff = difference };
+}
+
+fn pixel_diff(runtime: *Runtime, earlier: geometry.Frame, later: geometry.Frame) !?png.Diff {
+    const limit = 256 * 1024 * 1024;
+    const before_bytes = try runtime.read_file(earlier.image_path, limit);
+    const after_bytes = try runtime.read_file(later.image_path, limit);
+    const before = try png.decode(runtime.allocator, before_bytes);
+    const after = try png.decode(runtime.allocator, after_bytes);
+    return png.diff(before, after);
+}
+
+/// A capture of `arguments`' scope, saved like `observe` saves it, without a
+/// report: replay aims its pointer steps at a fresh frame.
+pub fn observe_frame(runtime: *Runtime, arguments: args.Args) !geometry.Frame {
+    try runtime.prepare();
+    try runtime.validate_display();
+    try runtime.unlocked();
+    const frame = try capture(runtime, arguments, try capture_scope(runtime, arguments));
+    try observe_write_metadata(runtime, frame);
+    return frame;
+}
+
+/// The output an observation captures and, for `--frame`, the frame its
+/// region is drawn on. The crop box itself is resolved from the snapshot taken
+/// around the capture, so it always matches the captured layout.
+const CaptureScope = struct {
+    monitor_name: []const u8,
+    region_frame: ?geometry.Frame = null,
+};
+
+fn capture_scope(runtime: *Runtime, arguments: args.Args) !CaptureScope {
+    if (arguments.window) |address| {
+        const monitors = try runtime.query_json([]geometry.Monitor, "monitors");
+        const clients = try runtime.query_json([]Client, "clients");
+        const client = find_client(clients, address) orelse return error.WindowNotFound;
+        const monitor = try client_monitor(monitors, client);
+        return .{ .monitor_name = monitor.name };
+    }
+    if (arguments.frame) |frame_id| {
+        const frame = try load_frame(runtime, frame_id);
+        return .{ .monitor_name = frame.monitor_id, .region_frame = frame };
+    }
+    return .{ .monitor_name = arguments.monitor orelse try focused_monitor_name(runtime) };
+}
+
+fn find_client(clients: []const Client, address: []const u8) ?Client {
+    for (clients) |client| {
+        if (eq(client.address, address)) return client;
+    }
+    return null;
+}
+
+fn client_monitor(monitors: []const geometry.Monitor, client: Client) !geometry.Monitor {
+    for (monitors) |monitor| {
+        if (monitor.id == client.monitor) return monitor;
+    }
+    return error.WindowNotVisible;
+}
+
+/// The logical box `--window` or a `--frame` region crops to, inside the
+/// output. Null captures the whole output.
+fn capture_box(
+    runtime: *Runtime,
+    arguments: args.Args,
+    scope: CaptureScope,
+    layout: Snapshot,
+    monitor: geometry.Monitor,
+) !?geometry.Rect {
+    const output = try monitor.rect();
+    if (arguments.window) |address| {
+        const client = find_client(layout.clients, address) orelse return error.WindowNotFound;
+        if (!client.mapped) return error.WindowNotVisible;
+        if (client.hidden) return error.WindowNotVisible;
+        if (client.monitor != monitor.id) return error.StaleObservation;
+        const special = monitor.specialWorkspace.id;
+        const on_special = special != 0 and client.workspace.id == special;
+        const shown = client.workspace.id == monitor.activeWorkspace.id or on_special;
+        if (!shown) return error.WindowNotVisible;
+
+        const window = geometry.Rect{
+            .x = @floatFromInt(client.at[0]),
+            .y = @floatFromInt(client.at[1]),
+            .width = @floatFromInt(client.size[0]),
+            .height = @floatFromInt(client.size[1]),
+        };
+        return window.intersection(output) orelse error.WindowNotVisible;
+    }
+    if (scope.region_frame) |frame| {
+        // The region is drawn on that frame: it must still show this layout.
+        try frame.validate(runtime.instance, runtime.display, layout.revision, native.now_ms());
+        const box = try frame.box(arguments.x.?, arguments.y.?, arguments.to_x.?, arguments.to_y.?);
+        return box.whole_pixels().intersection(output) orelse error.CoordinatesOutOfBounds;
+    }
+    return null;
+}
+
+/// Captures the scope with grim between two equal layout snapshots and
+/// returns the frame that maps its pixels back onto the desktop.
+fn capture(runtime: *Runtime, arguments: args.Args, scope: CaptureScope) !geometry.Frame {
+    const before = try snapshot(runtime, scope.monitor_name);
+    const monitor = try monitor_by_name(before, scope.monitor_name);
+    const box = try capture_box(runtime, arguments, scope, before, monitor);
+    const logical = box orelse try monitor.rect();
+    const scale = capture_scale(arguments, logical);
+
     const frame_id = try runtime.random_token();
     const image_name = try std.fmt.allocPrint(runtime.allocator, "{s}.png", .{frame_id});
     const image_path = try runtime.state_path(image_name);
@@ -220,25 +370,20 @@ pub fn observe(runtime: *Runtime, arguments: args.Args) !void {
 
     const started = native.now_ms();
     const unix_ms = @as(i64, @intCast(c.time(null))) * 1000;
-    const scale = try std.fmt.allocPrint(runtime.allocator, "{d}", .{arguments.scale});
     try runtime.run_helper(
-        &.{ "grim", "-t", "png", "-s", scale, "-o", monitor.name, image_path },
+        try grim_argv(runtime.allocator, monitor.name, box, scale, image_path),
         null,
         false,
     );
     try runtime.unlocked();
-    const after = try snapshot(runtime, monitor_name);
+    const after = try snapshot(runtime, scope.monitor_name);
     if (!eq(before.revision, after.revision)) return error.StaleObservation;
 
-    // Read only the PNG header, without decoding or allocating the image.
-    const fd = c.open(image_path, c.O_RDONLY | c.O_CLOEXEC | c.O_NOFOLLOW);
-    if (fd < 0) return error.InvalidScreenshot;
-    defer _ = c.close(fd);
-    var header: [24]u8 = undefined;
-    if (c.read(fd, &header, header.len) != header.len) return error.InvalidScreenshot;
-    const size = try geometry.png_size(&header);
-
-    const frame = geometry.Frame{
+    const image = try read_image(image_path);
+    if (arguments.max_edge) |max_edge| {
+        if (@max(image.width, image.height) > max_edge) return error.CaptureExceedsMaxEdge;
+    }
+    return .{
         .session_id = runtime.session_id,
         .instance = runtime.instance,
         .wayland_display = runtime.display,
@@ -248,16 +393,115 @@ pub fn observe(runtime: *Runtime, arguments: args.Args) !void {
         .monitor_id = monitor.name,
         .workspace_id = monitor.activeWorkspace.id,
         .image_path = image_path,
-        .image_width = size.width,
-        .image_height = size.height,
-        .logical = rect,
+        .image_width = image.width,
+        .image_height = image.height,
+        .logical = logical,
         .layout_revision = after.revision,
+        .capture_scale = scale,
+        .window = arguments.window,
+        .image_sha256 = try runtime.allocator.dupe(u8, &image.sha256),
     };
-    try observe_write_metadata(runtime, frame);
+}
+
+/// `--scale`, lowered when needed so the longest image side fits `--max-edge`.
+fn capture_scale(arguments: args.Args, logical: geometry.Rect) f64 {
+    const max_edge = arguments.max_edge orelse return arguments.scale;
+    const long_side = @max(logical.width, logical.height);
+    assert(long_side > 0);
+    // Half a pixel of headroom absorbs grim rounding the scaled size up.
+    const fitted = (@as(f64, @floatFromInt(max_edge)) - 0.5) / long_side;
+    return @min(arguments.scale, fitted);
+}
+
+fn grim_argv(
+    allocator: std.mem.Allocator,
+    monitor_name: []const u8,
+    box: ?geometry.Rect,
+    scale: f64,
+    image_path: []const u8,
+) ![]const []const u8 {
+    const scale_text = try std.fmt.allocPrint(allocator, "{d}", .{scale});
+    const rect = box orelse return allocator.dupe([]const u8, &.{
+        "grim", "-t", "png", "-s", scale_text, "-o", monitor_name, image_path,
+    });
+    // grim -g takes whole logical pixels in layout coordinates: "X,Y WxH".
+    assert(rect.width >= 1);
+    assert(rect.height >= 1);
+    const geometry_text = try std.fmt.allocPrint(allocator, "{d},{d} {d}x{d}", .{
+        @as(i64, @intFromFloat(rect.x)),
+        @as(i64, @intFromFloat(rect.y)),
+        @as(i64, @intFromFloat(rect.width)),
+        @as(i64, @intFromFloat(rect.height)),
+    });
+    return allocator.dupe([]const u8, &.{
+        "grim", "-t", "png", "-s", scale_text, "-g", geometry_text, image_path,
+    });
+}
+
+const Image = struct { width: u32, height: u32, sha256: [64]u8 };
+
+/// The PNG size from its header and the SHA-256 of the whole file, read in
+/// chunks without decoding or holding the image in memory.
+fn read_image(image_path: [:0]const u8) !Image {
+    const fd = c.open(image_path, c.O_RDONLY | c.O_CLOEXEC | c.O_NOFOLLOW);
+    if (fd < 0) return error.InvalidScreenshot;
+    defer _ = c.close(fd);
+
+    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+    var header: [24]u8 = undefined;
+    var header_length: usize = 0;
+    var buffer: [64 * 1024]u8 = undefined;
+    while (true) {
+        const read_result = c.read(fd, &buffer, buffer.len);
+        if (read_result < 0 and native.errno() == c.EINTR) continue;
+        if (read_result < 0) return error.InvalidScreenshot;
+        if (read_result == 0) break;
+        const chunk = buffer[0..@intCast(read_result)];
+        const wanted = @min(header.len - header_length, chunk.len);
+        @memcpy(header[header_length..][0..wanted], chunk[0..wanted]);
+        header_length += wanted;
+        hasher.update(chunk);
+    }
+    if (header_length != header.len) return error.InvalidScreenshot;
+    const size = try geometry.png_size(&header);
+    return .{
+        .width = size.width,
+        .height = size.height,
+        .sha256 = std.fmt.bytesToHex(hasher.finalResult(), .lower),
+    };
+}
+
+/// True when two frames show the same desktop box at the same image size.
+fn same_box(earlier: geometry.Frame, later: geometry.Frame) bool {
+    if (!eq(earlier.monitor_id, later.monitor_id)) return false;
+    if (!std.meta.eql(earlier.logical, later.logical)) return false;
+    if (earlier.image_width != later.image_width) return false;
+    return earlier.image_height == later.image_height;
+}
+
+/// `cursor`: the pointer position on the desktop and, with `--frame`, the
+/// frame pixel that shows it, so an agent can verify a hover without a capture.
+pub fn cursor(runtime: *Runtime, arguments: args.Args) !void {
+    const position = try runtime.query_json(geometry.Point, "cursorpos");
+    var frame_pixel: ?geometry.Point = null;
+    var frame_current: ?bool = null;
+    if (arguments.frame) |frame_id| {
+        const frame = try load_frame(runtime, frame_id);
+        frame_pixel = frame.pixel(position);
+        const layout = try snapshot(runtime, frame.monitor_id);
+        const now = native.now_ms();
+        frame_current = true;
+        frame.validate(runtime.instance, runtime.display, layout.revision, now) catch |err| {
+            if (err != error.StaleObservation) return err;
+            frame_current = false;
+        };
+    }
     try runtime.emit(.{
         .ok = true,
-        .frame = frame,
-        .capture_duration_ms = native.now_ms() - started,
+        .session_id = runtime.session_id,
+        .cursor = position,
+        .frame_pixel = frame_pixel,
+        .frame_current = frame_current,
     });
 }
 
@@ -280,7 +524,8 @@ pub fn load_frame(runtime: *Runtime, frame_id: []const u8) !geometry.Frame {
 
     const metadata_name = try std.fmt.allocPrint(runtime.allocator, "{s}.json", .{frame_id});
     const metadata_path = try runtime.state_path(metadata_name);
-    const data = runtime.read_file(metadata_path, 16384) catch |err| switch (err) {
+    // Marks make metadata grow with the number of operable elements.
+    const data = runtime.read_file(metadata_path, 4 * 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => return error.FrameNotFound,
         else => return err,
     };

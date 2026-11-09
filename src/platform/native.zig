@@ -73,3 +73,18 @@ pub fn next_entry(directory: *c.DIR) !?[]const u8 {
     };
     return std.mem.span(@as([*:0]const u8, @ptrCast(&entry.*.d_name)));
 }
+
+/// Everything on standard input, up to `limit` bytes.
+pub fn read_stdin(allocator: std.mem.Allocator, limit: usize) ![]const u8 {
+    var input: std.ArrayList(u8) = .empty;
+    var buffer: [16 * 1024]u8 = undefined;
+    while (input.items.len < limit) {
+        const count = c.read(0, &buffer, buffer.len);
+        if (count < 0 and errno() == c.EINTR) continue;
+        if (count < 0) return error.InvalidRequest;
+        if (count == 0) break;
+        try input.appendSlice(allocator, buffer[0..@intCast(count)]);
+    }
+    if (input.items.len >= limit) return error.InvalidRequest;
+    return input.toOwnedSlice(allocator);
+}
