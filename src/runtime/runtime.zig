@@ -75,6 +75,9 @@ pub const Runtime = struct {
     nested_host: ?NestedHost = null,
     /// Set only while an input action runs; see ActionGuard.
     action: ?*ActionGuard = null,
+    /// When set, `emit` appends its JSON here instead of printing it: `--then`
+    /// and `sequence` compose several results into one response.
+    output: ?*std.ArrayList(u8) = null,
 
     pub fn init(context: std.process.Init) !Runtime {
         const allocator = context.arena.allocator();
@@ -230,6 +233,11 @@ pub const Runtime = struct {
     }
 
     pub fn emit(self: *Runtime, data: anytype) !void {
+        if (self.output) |sink| {
+            const encoded = try std.json.Stringify.valueAlloc(self.allocator, data, .{});
+            try sink.appendSlice(self.allocator, encoded);
+            return;
+        }
         // Bounded streaming output: no per-event serialization allocations.
         var buffer: [4096]u8 = undefined;
         var writer = std.Io.File.stdout().writer(self.io, &buffer);

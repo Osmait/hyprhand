@@ -326,6 +326,82 @@ else:
                  "--session", "host", "--dry-run")
         self.assertFalse((self.root / "input.json").exists())
 
+    def run_sequence(self, steps, *extra, ok=True):
+        result = subprocess.run([str(BIN), "sequence", "--session", "host", *extra],
+                                input=json.dumps(steps), env=self.env, capture_output=True,
+                                text=True, timeout=30)
+        payload = json.loads(result.stdout)
+        self.assertEqual(result.returncode == 0, ok, (result.stdout, result.stderr))
+        return payload
+
+    def test_then_reports_state_or_a_compared_capture_in_one_response(self):
+        self.cli("enable")
+        result = self.cli("key", "Down", "--window", self.address, "--session", "host",
+                          "--then", "state", "--settle-ms", "0")
+        self.assertEqual(result["action"], "key")
+        self.assertEqual(result["then"]["windows"][0]["address"], self.address)
+        self.client_size = [400, 300]
+        typed = self.cli("type", "--window", self.address, "--text", "x", "--session", "host",
+                         "--then", "observe", "--max-edge", "200", "--settle-ms", "0")
+        frame = typed["then"]["frame"]
+        self.assertEqual(frame["window"], self.address)
+        self.assertLessEqual(max(frame["image_width"], frame["image_height"]), 200)
+        f = self.frame()
+        clicked = self.cli("click", "--frame", f["frame_id"], "--x", "10", "--y", "10",
+                           "--session", "host", "--dry-run", "--then", "observe")
+        self.assertNotIn("then", clicked)
+        self.error("InvalidMaxEdge", "key", "a", "--window", self.address, "--session", "host",
+                   "--max-edge", "100")
+
+    def test_then_report_failure_does_not_hide_the_action(self):
+        self.cli("enable")
+        result = self.cli("key", "Down", "--window", "0x123", "--session", "host",
+                          "--then", "accessibility", "--settle-ms", "0")
+        self.assertIs(result["ok"], True)
+        self.assertIs(result["then"]["ok"], False)
+
+    def test_sequence_runs_steps_in_order_and_reports_each(self):
+        self.cli("enable")
+        helper = ["--backend", "helper"]
+        steps = [["key", "Down", "--window", self.address, *helper],
+                 ["type", "--window", self.address, "--text", "hola", *helper],
+                 ["wait", "focus", "--window", self.address]]
+        result = self.run_sequence(steps, "--then", "state", "--settle-ms", "0")
+        self.assertEqual([s["command"] for s in result["steps"]], ["key", "type", "wait"])
+        self.assertEqual(result["completed"], 3)
+        self.assertEqual(result["disposition"]["delivery"], "delivered_unverified")
+        self.assertEqual(result["then"]["active_window"], self.address)
+        self.assertEqual(json.loads((self.root / "input.json").read_text())["text"], "hola")
+
+    def test_sequence_stops_at_the_first_failure(self):
+        self.cli("enable")
+        helper = ["--backend", "helper"]
+        steps = [["key", "Down", "--window", self.address, *helper],
+                 ["key", "Up", "--window", "0x999", *helper],
+                 ["type", "--window", self.address, "--text", "never", *helper]]
+        result = self.run_sequence(steps, ok=False)
+        self.assertIs(result["ok"], False)
+        self.assertEqual(result["failed_step"], 1)
+        self.assertEqual(result["steps"][1]["err"]["code"], "WindowNotFound")
+        self.assertIs(result["steps"][1]["disposition"]["retry_safe"], True)
+        self.assertEqual(result["not_executed"], 1)
+        self.assertEqual(result["disposition"]["delivery"], "delivered_unverified")
+        self.assertNotIn("never", (self.root / "input.json").read_text())
+
+    def test_sequence_validates_every_step_before_sending_anything(self):
+        self.cli("enable")
+        for steps in ([["key", "Down", "--window", self.address],
+                       ["click", "--frame", "f"]],
+                      [["key", "Down", "--window", self.address, "--session", "other"]],
+                      [["state"]], [], {"key": "a"}):
+            result = self.run_sequence(steps, ok=False)
+            self.assertIn(result["err"]["code"], ("InvalidSequenceStep", "InvalidSequence"))
+            self.assertIs(result["disposition"]["retry_safe"], True)
+        self.assertFalse((self.root / "input.json").exists())
+        dry = self.run_sequence([["key", "Down", "--window", self.address]], "--dry-run")
+        self.assertIs(dry["steps"][0]["result"]["dry_run"], True)
+        self.assertFalse((self.root / "input.json").exists())
+
     def test_stale_geometry(self):
         f = self.frame()
         self.x += 10

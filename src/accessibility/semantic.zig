@@ -184,7 +184,7 @@ const Target = struct {
 };
 
 pub fn worker(runtime: *Runtime) !void {
-    const input = try read_stdin(runtime.allocator, 1024 * 1024);
+    const input = try native.read_stdin(runtime.allocator, 1024 * 1024);
     const request = try runtime.parse_json(Request, input);
     try runtime.validate_display();
     try runtime.unlocked();
@@ -249,19 +249,6 @@ fn interface_names(allocator: std.mem.Allocator, details: atspi.Info) ![]const [
         if (details.has_interface(interface.bit)) try names.append(allocator, interface.name);
     }
     return names.toOwnedSlice(allocator);
-}
-
-fn read_stdin(allocator: std.mem.Allocator, limit: usize) ![]const u8 {
-    var input: std.ArrayList(u8) = .empty;
-    var buffer: [16 * 1024]u8 = undefined;
-    while (input.items.len < limit) {
-        const count = native.c.read(0, &buffer, buffer.len);
-        if (count < 0 and native.errno() == native.c.EINTR) continue;
-        if (count < 0) return error.InvalidRequest;
-        if (count == 0) break;
-        try input.appendSlice(allocator, buffer[0..@intCast(count)]);
-    }
-    return input.toOwnedSlice(allocator);
 }
 
 // ------------------------------------------------------------ resolution ---

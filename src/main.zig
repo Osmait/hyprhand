@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const args = @import("cli/args.zig");
 const help = @import("cli/help.zig").text;
 const version = @import("version.zig");
@@ -19,6 +20,8 @@ const delivery = @import("runtime/delivery.zig");
 const cursor_capture = @import("capture/cursor_capture.zig");
 const accessibility = @import("accessibility/tree.zig");
 const semantic = @import("accessibility/semantic.zig");
+const sequence_steps = @import("cli/sequence.zig");
+const refs = @import("accessibility/refs.zig");
 const preview = @import("preview/controller.zig");
 const takeover = @import("preview/takeover.zig");
 
@@ -294,6 +297,196 @@ fn state_control_enabled(runtime: *Runtime) !bool {
     return true;
 }
 
+/// An input command followed by its `--then` report, in one response. If the
+/// action fails, the error is reported as usual and nothing is captured.
+fn audited_then(runtime: *Runtime, arguments: args.Args) !void {
+    if (arguments.then == .none or arguments.dry_run) return audited(runtime, arguments);
+    var sink: std.ArrayList(u8) = .empty;
+    runtime.output = &sink;
+    audited(runtime, arguments) catch |err| {
+        runtime.output = null;
+        return err;
+    };
+    runtime.output = null;
+
+    var action = try runtime.parse_json(std.json.Value, sink.items);
+    if (action != .object) return error.InvalidThen;
+    try action.object.put(runtime.allocator, "then", try then_report(runtime, arguments));
+    try runtime.emit(action);
+}
+
+/// What `--then` reports after an action. A failed report never hides the
+/// action's success: it is returned as `{"ok":false,"err":…}`.
+fn then_report(runtime: *Runtime, arguments: args.Args) !std.json.Value {
+    assert(arguments.then != .none);
+    const settle_until = native.now_ms() + arguments.settle_ms;
+    while (native.now_ms() < settle_until) {
+        try native.check_cancelled();
+        native.sleep_ms(@intCast(@min(20, settle_until - native.now_ms())));
+    }
+    var sink: std.ArrayList(u8) = .empty;
+    runtime.output = &sink;
+    defer runtime.output = null;
+    const outcome = switch (arguments.then) {
+        .none => unreachable,
+        .state => state_compact(runtime),
+        .observe => observation.observe(runtime, try then_observe_args(runtime, arguments)),
+        .accessibility => accessibility.tree(runtime, try then_tree_args(runtime, arguments)),
+    };
+    outcome catch |err| {
+        const failure = .{ .ok = false, .err = .{ .code = @errorName(err), .message = hint(err) } };
+        const encoded = try std.json.Stringify.valueAlloc(runtime.allocator, failure, .{});
+        return runtime.parse_json(std.json.Value, encoded);
+    };
+    return runtime.parse_json(std.json.Value, sink.items);
+}
+
+/// The window an action worked on, when it names one.
+fn then_window(runtime: *Runtime, arguments: args.Args) ?[]const u8 {
+    if (arguments.window) |window| return window;
+    if (arguments.focus_window) |window| return window;
+    if (arguments.command == .act) {
+        const ref = refs.Ref.parse(arguments.ref.?) catch return null;
+        const snapshot = accessibility.load_snapshot(runtime, ref) catch return null;
+        return snapshot.window;
+    }
+    return null;
+}
+
+/// `--then observe`: the action's own frame scope, compared with that frame,
+/// otherwise the action's window, otherwise the focused output.
+fn then_observe_args(runtime: *Runtime, arguments: args.Args) !args.Args {
+    var observe_args = args.Args{
+        .command = .observe,
+        .session = arguments.session,
+        .explicit_session = true,
+        .max_edge = arguments.max_edge,
+    };
+    if (arguments.frame) |frame_id| {
+        const frame = try observation.load_frame(runtime, frame_id);
+        observe_args.since = frame_id;
+        if (frame.window) |window| {
+            observe_args.window = window;
+        } else {
+            observe_args.monitor = frame.monitor_id;
+        }
+        return observe_args;
+    }
+    observe_args.window = then_window(runtime, arguments);
+    return observe_args;
+}
+
+/// `--then accessibility`: the operable elements of the action's window, or
+/// of the focused window.
+fn then_tree_args(runtime: *Runtime, arguments: args.Args) !args.Args {
+    const window = then_window(runtime, arguments) orelse try runtime.active_window();
+    return .{
+        .command = .accessibility,
+        .session = arguments.session,
+        .explicit_session = true,
+        .window = window,
+        .interactive = true,
+        .depth = 20,
+        .limit = 1000,
+    };
+}
+
+/// One step of a `sequence` as reported.
+const StepReport = struct {
+    index: usize,
+    command: []const u8,
+    ok: bool,
+    result: ?std.json.Value = null,
+    err: ?struct { code: []const u8, message: []const u8, detail: ?[]const u8 } = null,
+    disposition: delivery.Disposition,
+};
+
+/// `sequence`: validated steps, run in order until the first failure.
+fn sequence(runtime: *Runtime, arguments: args.Args) !void {
+    const input = try native.read_stdin(runtime.allocator, 1024 * 1024);
+    const steps = try sequence_steps.parse(
+        runtime.allocator,
+        input,
+        arguments.session,
+        arguments.dry_run,
+    );
+    var reports: std.ArrayList(StepReport) = .empty;
+    var overall: delivery.Delivery = .not_delivered;
+    var failed: ?usize = null;
+    for (steps, 0..) |step, index| {
+        const step_report = try sequence_step(runtime, step, index);
+        overall = worse(overall, step_report.disposition.delivery);
+        try reports.append(runtime.allocator, step_report);
+        if (!step_report.ok) {
+            failed = index;
+            break;
+        }
+    }
+    delivery.set(overall);
+    const last = steps[reports.items.len - 1];
+    var then_args = last;
+    then_args.then = arguments.then;
+    then_args.settle_ms = arguments.settle_ms;
+    then_args.max_edge = arguments.max_edge;
+    const run_then = arguments.then != .none and !arguments.dry_run;
+    try runtime.emit(.{
+        .ok = failed == null,
+        .session_id = runtime.session_id,
+        .dry_run = arguments.dry_run,
+        .steps = reports.items,
+        .completed = if (failed) |index| index else steps.len,
+        .not_executed = steps.len - reports.items.len,
+        .failed_step = failed,
+        .disposition = delivery.disposition(),
+        .then = if (run_then) try then_report(runtime, then_args) else null,
+    });
+    if (failed != null) return error.AlreadyReported;
+}
+
+/// Runs one step with its own budget, captures its response, and turns a
+/// failure into a report instead of an exit.
+fn sequence_step(runtime: *Runtime, step: args.Args, index: usize) !StepReport {
+    delivery.set(.not_delivered);
+    delivery.set_detail(null);
+    execute_limit_command(step);
+    defer native.clear_command_limit();
+    var sink: std.ArrayList(u8) = .empty;
+    runtime.output = &sink;
+    defer runtime.output = null;
+
+    const outcome = if (step.command == .wait) wait.run(runtime, step) else audited(runtime, step);
+    outcome catch |err| return .{
+        .index = index,
+        .command = @tagName(step.command),
+        .ok = false,
+        .err = .{ .code = @errorName(err), .message = hint(err), .detail = delivery.detail() },
+        .disposition = delivery.disposition(),
+    };
+    // Waits deliver nothing; actions report delivered_unverified or better.
+    return .{
+        .index = index,
+        .command = @tagName(step.command),
+        .ok = true,
+        .result = try runtime.parse_json(std.json.Value, sink.items),
+        .disposition = delivery.disposition(),
+    };
+}
+
+/// The less certain of two deliveries, for a sequence's overall disposition.
+fn worse(a: delivery.Delivery, b: delivery.Delivery) delivery.Delivery {
+    const rank = struct {
+        fn of(value: delivery.Delivery) u8 {
+            return switch (value) {
+                .not_delivered => 0,
+                .delivered_verified => 1,
+                .delivered_unverified => 2,
+                .delivery_uncertain => 3,
+            };
+        }
+    };
+    return if (rank.of(b) > rank.of(a)) b else a;
+}
+
 /// Runs one mutating command with an audit-log entry before and after it.
 fn audited(runtime: *Runtime, arguments: args.Args) !void {
     const action = @tagName(arguments.command);
@@ -328,7 +521,7 @@ fn execute(init: std.process.Init, arguments: args.Args) !void {
 }
 
 fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
-    if (arguments.mutates()) return audited(runtime, arguments);
+    if (arguments.mutates()) return audited_then(runtime, arguments);
 
     switch (arguments.command) {
         .doctor => try doctor(runtime),
@@ -344,6 +537,7 @@ fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
             try execute_query(runtime, "clients"),
         .workspaces => try execute_query(runtime, "workspaces"),
         .observe => try observation.observe_with_retry(runtime, arguments),
+        .sequence => try sequence(runtime, arguments),
         .cursor => try observation.cursor(runtime, arguments),
         .enable => try runtime.enable(arguments.indicator == .outline),
         .stop => try runtime.stop(),
@@ -637,6 +831,8 @@ pub fn main(init: std.process.Init) void {
         std.process.exit(2);
     };
     execute(init, arguments) catch |err| {
+        // `sequence` reports its own failures, step by step.
+        if (err == error.AlreadyReported) std.process.exit(1);
         report(init, err);
         std.process.exit(1);
     };
@@ -659,6 +855,7 @@ test {
     _ = @import("runtime/sandbox.zig");
     _ = @import("accessibility/refs.zig");
     _ = @import("accessibility/semantic.zig");
+    _ = @import("cli/sequence.zig");
 }
 
 test {

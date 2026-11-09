@@ -106,7 +106,22 @@ cheaper and steadier than the pointer.
      file saved, a form submitted or a calculation is right. Check the outcome.
    - `wait stable --pixels --session S` reduces paint races; it does not prove
      network requests finished.
-9. **Finish.** `stop --session S`. Destroy only sessions you created for the
+9. **Save round trips.** Add `--then accessibility` to `act` (or `--then observe`
+   to pointer and keyboard commands) to get the new state in the same
+   response; `then.changed` from `--then observe` says whether the screen moved.
+   When several targets are known in advance (refs of one snapshot, points of
+   one frame), send them as one `sequence`:
+   ```sh
+   printf '%s' '[["act","set-value","--ref","@a1b2c3d4:e2","--text","Ada"],
+                 ["act","check","--ref","@a1b2c3d4:e4"],
+                 ["act","click","--ref","@a1b2c3d4:e9"]]' |
+     hyprhand sequence --session S --then accessibility
+   ```
+   Steps omit `--session`. Every step is validated before the first runs; the
+   first failure stops the rest (`failed_step`, `not_executed`). Read each
+   step's `disposition`. Do not sequence steps whose targets depend on what an
+   earlier step changes: observe in between instead.
+10. **Finish.** `stop --session S`. Destroy only sessions you created for the
    task, when no longer needed; destroy closes their apps and compositor but
    keeps profiles and logs until logout.
 
