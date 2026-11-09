@@ -6,11 +6,17 @@ const text = @import("../core/text.zig");
 pub const left: u32 = 0x110;
 pub const right: u32 = 0x111;
 pub const middle: u32 = 0x112;
+/// The thumb buttons (BTN_SIDE, BTN_EXTRA). Browsers and file managers treat
+/// them as history back and forward, as they do for a physical mouse.
+pub const back: u32 = 0x113;
+pub const forward: u32 = 0x114;
 
 pub fn from_name(name: []const u8) ?u32 {
     if (text.eq(name, "left")) return left;
     if (text.eq(name, "right")) return right;
     if (text.eq(name, "middle")) return middle;
+    if (text.eq(name, "back")) return back;
+    if (text.eq(name, "forward")) return forward;
     return null;
 }
 

@@ -1,4 +1,5 @@
 """CLI contract tests using a fake compositor and helpers; never inject input."""
+import base64
 import json
 import resource
 import os
@@ -26,6 +27,7 @@ class CLI(unittest.TestCase):
                         PATH=f"{self.root}:{os.environ['PATH']}", HYPRHAND_TEST_ROOT=str(self.root))
         self.address = "0x123"
         self.active = self.address
+        self.active_class = "test"
         self.locked = False
         self.hold_locked = threading.Event()
         self.locked_requested = threading.Event()
@@ -51,10 +53,34 @@ root = pathlib.Path(os.environ["HYPRHAND_TEST_ROOT"])
 if pathlib.Path(sys.argv[0]).name == "xdotool" and sys.argv[1] == "getwindowfocus":
     print(os.environ.get("HYPRHAND_TEST_X11_PID", "123"))
 elif pathlib.Path(sys.argv[0]).name == "grim":
-    pathlib.Path(sys.argv[-1]).write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 1920, 1080))
+    # Like grim: the image is the logical box (-g) or output (1280x720) times -s.
+    argv = sys.argv[1:]
+    (root / "grim.json").write_text(__import__("json").dumps(argv))
+    scale = float(argv[argv.index("-s") + 1]) if "-s" in argv else 1.0
+    width, height = 1280, 720
+    if "-g" in argv:
+        width, height = (int(v) for v in argv[argv.index("-g") + 1].split(" ")[1].split("x"))
+    import zlib
+    w, h = round(width * scale), round(height * scale)
+    pixels = bytearray(b"\\x80\\x80\\x80" * (w * h))
+    salt = os.environ.get("HYPRHAND_TEST_GRIM_SALT", "")
+    # "cursor": a 2 x 18 caret; "content": a 30 x 30 block; both at (10, 5).
+    box = {"cursor": (2, 18), "content": (30, 30)}.get(salt)
+    if box:
+        for y in range(5, min(h, 5 + box[1])):
+            for x in range(10, min(w, 10 + box[0])):
+                pixels[(y * w + x) * 3:(y * w + x) * 3 + 3] = b"\\x00\\x00\\x00"
+    raw = b"".join(b"\\x00" + bytes(pixels[y * w * 3:(y + 1) * w * 3]) for y in range(h))
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    header = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+    png = b"\\x89PNG\\r\\n\\x1a\\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 1)) + chunk(b"IEND", b"")
+    pathlib.Path(sys.argv[-1]).write_bytes(png)
 else:
     text = sys.stdin.read()
     (root / "input.json").write_text(__import__("json").dumps({"argv": sys.argv[1:], "text": text}))
+    with open(root / "calls.jsonl", "a") as calls:
+        calls.write(__import__("json").dumps(sys.argv) + "\\n")
     if text == "SLOW":
         time.sleep(20)
 '''
@@ -87,9 +113,13 @@ else:
                                "activeWorkspace": {"id": 1, "name": "1"}, "focused": True}]
                 elif command == "clients":
                     result = [{"address": self.address, "at": [self.x, 100], "size": self.client_size,
-                               "workspace": {"id": 1, "name": "1"}, "xwayland": self.xwayland, "pid": 123}] + self.extra_clients
+                               "workspace": {"id": 1, "name": "1"}, "monitor": 0, "class": "test",
+                               "title": "Test window", "mapped": True,
+                               "xwayland": self.xwayland, "pid": 123}] + self.extra_clients
                 elif command == "activewindow":
-                    result = {"address": self.active}
+                    result = {"address": self.active, "class": self.active_class}
+                elif command == "cursorpos":
+                    result = {"x": self.x + 10, "y": 110}
                 elif command == "layers":
                     result = self.layers
                 elif command == "locked":
@@ -129,14 +159,416 @@ else:
     def frame(self):
         return self.cli("observe")["frame"]
 
+    def grim_argv(self):
+        return json.loads((self.root / "grim.json").read_text())
+
     def test_observe_mapping_and_private_files(self):
-        f = self.frame()
+        f = self.cli("observe", "--scale", "1.5")["frame"]
+        self.assertEqual((f["image_width"], f["image_height"]), (1920, 1080))
         self.assertEqual(f["logical"], {"x": -1280, "y": 100, "width": 1280, "height": 720})
         result = self.cli("click", "--frame", f["frame_id"], "--x", "960", "--y", "540", "--session", "host", "--dry-run")
         self.assertEqual(result["desktop_point"], {"x": -640, "y": 460})
         self.assertEqual(Path(f["image_path"]).stat().st_mode & 0o777, 0o600)
         self.assertEqual(Path(f["image_path"]).parent.stat().st_mode & 0o777, 0o700)
         self.assertFalse(any("dispatch" in cmd for cmd in self.commands))
+
+    def test_observe_window_crop_and_max_edge(self):
+        self.client_size = [400, 300]
+        f = self.cli("observe", "--window", self.address, "--max-edge", "200")["frame"]
+        argv = self.grim_argv()
+        self.assertEqual(argv[argv.index("-g") + 1], "-1280,100 400x300")
+        self.assertNotIn("-o", argv)
+        self.assertEqual(f["logical"], {"x": -1280, "y": 100, "width": 400, "height": 300})
+        self.assertEqual(f["window"], self.address)
+        self.assertLessEqual(max(f["image_width"], f["image_height"]), 200)
+        self.assertLess(f["capture_scale"], 0.5)
+        result = self.cli("click", "--frame", f["frame_id"], "--x", "100", "--y", "75",
+                          "--session", "host", "--dry-run")
+        self.assertEqual(result["desktop_point"], {"x": -1080, "y": 250})
+
+    def test_observe_window_is_clipped_to_its_output_and_must_be_shown(self):
+        base = {"size": [400, 300], "monitor": 0, "mapped": True, "pid": 7}
+        self.extra_clients = [
+            dict(base, address="0x456", at=[-1380, 100], workspace={"id": 1}),
+            dict(base, address="0x789", at=[-1280, 100], workspace={"id": 2}),
+        ]
+        f = self.cli("observe", "--window", "0x456")["frame"]
+        self.assertEqual(f["logical"], {"x": -1280, "y": 100, "width": 300, "height": 300})
+        self.error("WindowNotVisible", "observe", "--window", "0x789")
+        self.error("WindowNotFound", "observe", "--window", "0xabc")
+        self.error("ConflictingObserveScope", "observe", "--window", "0x456", "--monitor", "DP-test")
+
+    def test_observe_region_zooms_into_an_earlier_frame(self):
+        f = self.cli("observe", "--scale", "1.5")["frame"]
+        zoom = self.cli("observe", "--frame", f["frame_id"], "--x", "1919", "--y", "1079",
+                        "--to-x", "960", "--to-y", "540", "--scale", "2")["frame"]
+        argv = self.grim_argv()
+        self.assertEqual(argv[argv.index("-g") + 1], "-640,460 640x360")
+        self.assertEqual(zoom["logical"], {"x": -640, "y": 460, "width": 640, "height": 360})
+        self.assertEqual((zoom["image_width"], zoom["image_height"]), (1280, 720))
+        result = self.cli("click", "--frame", zoom["frame_id"], "--x", "0", "--y", "0",
+                          "--session", "host", "--dry-run")
+        self.assertEqual(result["desktop_point"], {"x": -640, "y": 460})
+        self.error("InvalidObserveRegion", "observe", "--frame", f["frame_id"], "--x", "1")
+        self.error("CoordinatesOutOfBounds", "observe", "--frame", f["frame_id"], "--x", "0",
+                   "--y", "0", "--to-x", "1920", "--to-y", "10")
+        self.x = -1000
+        self.error("StaleObservation", "observe", "--frame", f["frame_id"], "--x", "0",
+                   "--y", "0", "--to-x", "10", "--to-y", "10")
+
+    def test_observe_since_reports_unchanged_pixels(self):
+        first = self.frame()
+        same = self.cli("observe", "--since", first["frame_id"])
+        self.assertIs(same["changed"], False)
+        self.assertNotEqual(same["frame"]["frame_id"], first["frame_id"])
+        self.assertEqual(len(same["frame"]["image_sha256"]), 64)
+        env = dict(self.env, HYPRHAND_TEST_GRIM_SALT="content")
+        moved = self.cli("observe", "--since", first["frame_id"], env=env)
+        self.assertIs(moved["changed"], True)
+        self.assertEqual(moved["diff"]["box"], {"x": 10, "y": 5, "width": 30, "height": 30})
+        self.assertEqual(moved["diff"]["changed_pixels"], 900)
+        blink = self.cli("observe", "--since", first["frame_id"],
+                         env=dict(self.env, HYPRHAND_TEST_GRIM_SALT="cursor"))
+        self.assertIs(blink["changed"], False)
+        self.assertIs(blink["diff"]["cursor_like"], True)
+        scaled = self.cli("observe", "--since", first["frame_id"], "--scale", "0.5")
+        self.assertIs(scaled["changed"], True)
+        self.assertIsNone(self.cli("observe")["changed"])
+        self.error("FrameNotFound", "observe", "--since", "0" * 32)
+
+    def test_cursor_maps_into_a_frame(self):
+        f = self.cli("observe", "--scale", "1.5")["frame"]
+        result = self.cli("cursor", "--frame", f["frame_id"])
+        self.assertEqual(result["cursor"], {"x": -1270, "y": 110})
+        self.assertEqual(result["frame_pixel"], {"x": 15, "y": 15})
+        self.assertIs(result["frame_current"], True)
+        self.assertIsNone(self.cli("cursor")["frame_pixel"])
+        self.x = -1000
+        self.assertIs(self.cli("cursor", "--frame", f["frame_id"])["frame_current"], False)
+
+    def test_compact_state_and_windows(self):
+        state = self.cli("state", "--compact")
+        window = state["windows"][0]
+        self.assertEqual(window["address"], self.address)
+        self.assertEqual(window["title"], "Test window")
+        self.assertEqual(window["workspace"], 1)
+        self.assertIs(window["visible"], True)
+        self.assertEqual(state["monitors"][0]["logical"],
+                         {"x": -1280, "y": 100, "width": 1280, "height": 720})
+        self.assertEqual(state["active_window"], self.address)
+        self.assertNotIn("workspaces", state)
+        self.assertEqual(self.cli("windows", "--compact")["data"], state["windows"])
+        raw = json.dumps(self.cli("state"))
+        self.assertLess(len(json.dumps(state["windows"])), len(raw))
+
+    def test_click_counts_buttons_and_held_modifiers(self):
+        f = self.frame()
+        click = ("click", "--frame", f["frame_id"], "--x", "10", "--y", "10", "--session", "host")
+        result = self.cli(*click, "--count", "3", "--mods", "ctrl+shift", "--button", "back",
+                          "--dry-run")
+        self.assertEqual(result["modifiers"], "ctrl+shift")
+        self.error("InvalidModifiers", *click, "--mods", "ctrl+hyper", "--dry-run")
+        self.error("InvalidModifiers", *click, "--mods", "ctrl+ctrl", "--dry-run")
+        self.error("InvalidClickCount", *click, "--count", "4", "--dry-run")
+        self.xwayland = True  # A different client list: observe again.
+        f = self.frame()
+        click = ("click", "--frame", f["frame_id"], "--x", "10", "--y", "10", "--session", "host")
+        self.error("ModifiersUnavailableForX11", *click, "--mods", "ctrl", "--dry-run")
+
+    def test_key_repeat_reaches_every_keyboard_route(self):
+        self.cli("enable")
+        self.cli("key", "Down", "--window", self.address, "--repeat", "3", "--session", "host")
+        calls = (self.root / "calls.jsonl").read_text().splitlines()
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all(json.loads(call)[1:] == ["-k", "Down"] for call in calls))
+        self.xwayland = True
+        self.cli("key", "Down", "--window", self.address, "--repeat", "4", "--session", "host")
+        captured = json.loads((self.root / "input.json").read_text())
+        self.assertEqual(captured["argv"], ["key", "--repeat", "4", "--delay", "25", "Down"])
+        self.error("InvalidRepeat", "key", "Down", "--window", self.address, "--repeat", "101",
+                   "--session", "host")
+
+    def test_disposition_says_whether_input_was_delivered(self):
+        bad = subprocess.run([str(BIN), "click", "--frame", "x"], env=self.env,
+                             capture_output=True, text=True, timeout=15)
+        self.assertEqual(json.loads(bad.stdout)["disposition"],
+                         {"delivery": "not_delivered", "retry_safe": True})
+        refused = self.cli("type", "--window", self.address, "--text", "hola", "--session", "host",
+                           ok=False)
+        self.assertEqual(refused["err"]["code"], "ControlStopped")
+        self.assertIs(refused["disposition"]["retry_safe"], True)
+        self.cli("enable")
+        sent = self.cli("key", "Down", "--window", self.address, "--session", "host")
+        self.assertEqual(sent["disposition"], {"delivery": "delivered_unverified",
+                                               "retry_safe": False})
+
+    def test_act_arguments_and_refs_fail_closed_before_any_worker(self):
+        act = ("act", "--session", "host")
+        self.error("RefRequired", *act[:1], "click", *act[1:])
+        self.error("InvalidActVerb", "act", "poke", "--ref", "@1a2b3c4d:e1", "--session", "host")
+        self.error("SessionRequired", "act", "click", "--ref", "@1a2b3c4d:e1")
+        self.error("UnknownOption", "act", "click", "--ref", "@1a2b3c4d:e1", "--session", "host",
+                   "--window", self.address)
+        self.cli("enable")
+        for ref in ("e1", "@e1", "@1A2B3C4D:e1", "@1a2b3c4d:e0"):
+            self.error("InvalidRef", "act", "click", "--ref", ref, "--session", "host")
+        self.error("SnapshotNotFound", "act", "click", "--ref", "@1a2b3c4d:e1",
+                   "--session", "host")
+        self.error("SnapshotNotFound", "act", "click", "--ref", "@1a2b3c4d:e1",
+                   "--session", "host", "--dry-run")
+
+    def test_accessibility_options_are_scoped(self):
+        self.error("UnknownOption", "observe", "--interactive")
+        self.error("UnknownOption", "act", "click", "--ref", "@1a2b3c4d:e1", "--session", "host",
+                   "--interactive")
+
+    def test_authentication_prompts_are_refused_before_any_input(self):
+        self.cli("enable")
+        self.active_class = "hyprpolkitagent"
+        result = self.cli("type", "--window", self.address, "--text", "secret",
+                          "--session", "host", ok=False)
+        self.assertEqual(result["err"]["code"], "AuthenticationPrompt")
+        self.assertEqual(result["err"]["detail"], "hyprpolkitagent")
+        self.assertIs(result["disposition"]["retry_safe"], True)
+        self.error("AuthenticationPrompt", "key", "Return", "--window", self.address,
+                   "--session", "host", "--dry-run")
+        self.active_class = "test"
+        self.layers = {"DP-test": {"levels": {"3": [{"namespace": "quickshell:polkit"}]}}}
+        self.error("AuthenticationPrompt", "key", "Return", "--window", self.address,
+                   "--session", "host")
+        self.layers = {}
+        self.extra_clients = [{"address": "0x999", "at": [-1280, 100], "size": [400, 300],
+                               "workspace": {"id": 1}, "monitor": 0, "mapped": True,
+                               "class": "gcr-prompter", "pid": 9}]
+        f = self.frame()
+        self.error("AuthenticationPrompt", "click", "--frame", f["frame_id"], "--x", "10",
+                   "--y", "10", "--session", "host", "--dry-run")
+        self.cli("click", "--frame", f["frame_id"], "--x", "1000", "--y", "10",
+                 "--session", "host", "--dry-run")
+        self.assertFalse((self.root / "input.json").exists())
+
+    def run_sequence(self, steps, *extra, ok=True):
+        result = subprocess.run([str(BIN), "sequence", "--session", "host", *extra],
+                                input=json.dumps(steps), env=self.env, capture_output=True,
+                                text=True, timeout=30)
+        payload = json.loads(result.stdout)
+        self.assertEqual(result.returncode == 0, ok, (result.stdout, result.stderr))
+        return payload
+
+    def test_then_reports_state_or_a_compared_capture_in_one_response(self):
+        self.cli("enable")
+        result = self.cli("key", "Down", "--window", self.address, "--session", "host",
+                          "--then", "state", "--settle-ms", "0")
+        self.assertEqual(result["action"], "key")
+        self.assertEqual(result["then"]["windows"][0]["address"], self.address)
+        self.client_size = [400, 300]
+        typed = self.cli("type", "--window", self.address, "--text", "x", "--session", "host",
+                         "--then", "observe", "--max-edge", "200", "--settle-ms", "0")
+        frame = typed["then"]["frame"]
+        self.assertEqual(frame["window"], self.address)
+        self.assertLessEqual(max(frame["image_width"], frame["image_height"]), 200)
+        f = self.frame()
+        clicked = self.cli("click", "--frame", f["frame_id"], "--x", "10", "--y", "10",
+                           "--session", "host", "--dry-run", "--then", "observe")
+        self.assertNotIn("then", clicked)
+        self.error("InvalidMaxEdge", "key", "a", "--window", self.address, "--session", "host",
+                   "--max-edge", "100")
+
+    def test_then_report_failure_does_not_hide_the_action(self):
+        self.cli("enable")
+        result = self.cli("key", "Down", "--window", "0x123", "--session", "host",
+                          "--then", "accessibility", "--settle-ms", "0")
+        self.assertIs(result["ok"], True)
+        self.assertIs(result["then"]["ok"], False)
+
+    def test_sequence_runs_steps_in_order_and_reports_each(self):
+        self.cli("enable")
+        helper = ["--backend", "helper"]
+        steps = [["key", "Down", "--window", self.address, *helper],
+                 ["type", "--window", self.address, "--text", "hola", *helper],
+                 ["wait", "focus", "--window", self.address]]
+        result = self.run_sequence(steps, "--then", "state", "--settle-ms", "0")
+        self.assertEqual([s["command"] for s in result["steps"]], ["key", "type", "wait"])
+        self.assertEqual(result["completed"], 3)
+        self.assertEqual(result["disposition"]["delivery"], "delivered_unverified")
+        self.assertEqual(result["then"]["active_window"], self.address)
+        self.assertEqual(json.loads((self.root / "input.json").read_text())["text"], "hola")
+
+    def test_sequence_stops_at_the_first_failure(self):
+        self.cli("enable")
+        helper = ["--backend", "helper"]
+        steps = [["key", "Down", "--window", self.address, *helper],
+                 ["key", "Up", "--window", "0x999", *helper],
+                 ["type", "--window", self.address, "--text", "never", *helper]]
+        result = self.run_sequence(steps, ok=False)
+        self.assertIs(result["ok"], False)
+        self.assertEqual(result["failed_step"], 1)
+        self.assertEqual(result["steps"][1]["err"]["code"], "WindowNotFound")
+        self.assertIs(result["steps"][1]["disposition"]["retry_safe"], True)
+        self.assertEqual(result["not_executed"], 1)
+        self.assertEqual(result["disposition"]["delivery"], "delivered_unverified")
+        self.assertNotIn("never", (self.root / "input.json").read_text())
+
+    def test_sequence_validates_every_step_before_sending_anything(self):
+        self.cli("enable")
+        for steps in ([["key", "Down", "--window", self.address],
+                       ["click", "--frame", "f"]],
+                      [["key", "Down", "--window", self.address, "--session", "other"]],
+                      [["state"]], [], {"key": "a"}):
+            result = self.run_sequence(steps, ok=False)
+            self.assertIn(result["err"]["code"], ("InvalidSequenceStep", "InvalidSequence"))
+            self.assertIs(result["disposition"]["retry_safe"], True)
+        self.assertFalse((self.root / "input.json").exists())
+        dry = self.run_sequence([["key", "Down", "--window", self.address]], "--dry-run")
+        self.assertIs(dry["steps"][0]["result"]["dry_run"], True)
+        self.assertFalse((self.root / "input.json").exists())
+
+    def test_marks_are_aimed_at_through_their_frame(self):
+        self.error("MarksRequireWindow", "observe", "--marks")
+        f = self.frame()
+        self.error("MarkNotFound", "click", "--frame", f["frame_id"], "--mark", "1",
+                   "--session", "host", "--dry-run")
+        self.error("ConflictingPointerTarget", "click", "--frame", f["frame_id"], "--mark", "1",
+                   "--x", "1", "--y", "1", "--session", "host", "--dry-run")
+        # A frame whose metadata lists marks: a mark resolves like its pixel.
+        metadata = Path(f["image_path"]).with_suffix(".json")
+        frame = json.loads(metadata.read_text())
+        frame["marks"] = [{"index": 4, "x": 960, "y": 540, "ref": None}]
+        metadata.write_text(json.dumps(frame))
+        by_mark = self.cli("click", "--frame", f["frame_id"], "--mark", "4", "--session", "host",
+                           "--dry-run")
+        by_pixel = self.cli("click", "--frame", f["frame_id"], "--x", "960", "--y", "540",
+                            "--session", "host", "--dry-run")
+        self.assertEqual(by_mark["desktop_point"], by_pixel["desktop_point"])
+
+    def test_confirmation_gate_modes(self):
+        self.assertEqual(self.cli("state", "--compact")["confirmation_gate"], "ask")
+        self.cli("enable", "--gate", "off")
+        self.assertEqual(self.cli("state", "--compact")["confirmation_gate"], "off")
+        self.error("GateHumanNeedsManagedSession", "enable", "--gate", "human")
+        self.error("InvalidGateMode", "enable", "--gate", "maybe")
+        self.error("UnknownOption", "type", "--window", self.address, "--text", "a",
+                   "--session", "host", "--ack", "12345678")
+        # Without an accessibility tree nothing is classified, so clicks pass.
+        self.cli("enable", "--gate", "ask")
+        f = self.frame()
+        self.cli("click", "--frame", f["frame_id"], "--x", "10", "--y", "10",
+                 "--session", "host", "--dry-run")
+
+    def test_journal_records_and_replay_repeats_input(self):
+        self.cli("enable")
+        self.cli("journal", "start", "demo", "--session", "host")
+        self.error("JournalExists", "journal", "start", "demo", "--session", "host")
+        self.cli("key", "Down", "--window", self.address, "--repeat", "2", "--session", "host")
+        self.cli("type", "--window", self.address, "--text", "hola ñ", "--session", "host")
+        self.error("WindowNotFound", "key", "Up", "--window", "0x999", "--session", "host")
+        f = self.frame()
+        # No Wayland here: the click fails, and is recorded as failed.
+        self.error("WaylandUnavailable", "click", "--frame", f["frame_id"], "--x", "100",
+                   "--y", "50", "--session", "host")
+        self.cli("key", "Up", "--window", self.address, "--session", "host", "--dry-run")
+        stopped = self.cli("journal", "stop", "--session", "host")
+        self.assertEqual(stopped["steps"], 3)
+        shown = self.cli("journal", "show", "demo", "--session", "host")
+        self.assertIs(shown["active"], False)
+        key, typed, click = shown["steps"]
+        self.assertEqual((key["command"], key["chord"], key["key_repeat"]), ("key", "Down", 2))
+        self.assertEqual(key["window"], {"class": "test", "title": "Test window"})
+        self.assertEqual((typed["text"], typed["text_length"], typed["secret"]), ("hola ñ", 7, False))
+        self.assertEqual((click["ok"], click["error_code"]), (False, "WaylandUnavailable"))
+        self.assertEqual(click["point"], [100, 50])
+        self.assertEqual(click["window_size"], [1280, 720])
+
+        plan = self.cli("replay", "demo", "--session", "host")
+        self.assertEqual(plan["mode"], "plan")
+        self.assertEqual([s["status"] for s in plan["steps"]], ["planned", "planned", "skipped"])
+        self.assertEqual(plan["steps"][0]["window"], self.address)
+        (self.root / "input.json").unlink()
+        done = self.cli("replay", "demo", "--session", "host", "--execute")
+        self.assertEqual([s["status"] for s in done["steps"]], ["done", "done", "skipped"])
+        self.assertEqual(json.loads((self.root / "input.json").read_text())["text"], "hola ñ")
+        self.assertEqual(done["disposition"]["delivery"], "delivered_unverified")
+
+        self.extra_clients = [dict(address="0x456", at=[0, 0], size=[10, 10], monitor=0,
+                                   workspace={"id": 1}, mapped=True, pid=9, **{"class": "test"},
+                                   title="Test window")]
+        ambiguous = self.run_replay("demo")
+        self.assertEqual(ambiguous["steps"][0]["status"], "unresolved")
+        self.assertEqual(ambiguous["steps"][0]["err"]["code"], "ReplayWindowAmbiguous")
+        self.error("JournalNotFound", "replay", "nope", "--session", "host")
+        self.error("SessionRequired", "replay", "demo")
+
+    def run_replay(self, name):
+        result = subprocess.run([str(BIN), "replay", name, "--session", "host", "--execute"],
+                                env=self.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        return json.loads(result.stdout)
+
+    def run_dialect(self, name, calls, *extra, ok=True):
+        result = subprocess.run([str(BIN), "dialect", name, "--session", "host",
+                                 "--backend", "helper", *extra],
+                                input=json.dumps(calls), env=self.env, capture_output=True,
+                                text=True, timeout=30)
+        payload = json.loads(result.stdout)
+        self.assertEqual(result.returncode == 0, ok, (result.stdout[:400], result.stderr))
+        return payload
+
+    def test_anthropic_dialect_answers_in_tool_results(self):
+        self.cli("enable")
+        def block(id, name, **input):
+            return {"type": "tool_use", "id": id, "name": name, "toolset_name": "computer",
+                    "input": input}
+        early = self.run_dialect("anthropic", [block("a", "left_click", coordinate=[5, 5])],
+                                 ok=False)["results"][0]
+        self.assertIs(early["is_error"], True)
+        self.assertIn("screenshot first", early["content"])
+        shot = self.run_dialect("anthropic", [{"type": "text", "text": "Looking"},
+                                              block("s", "screenshot")])
+        image = shot["results"][0]
+        self.assertEqual((image["tool_use_id"], image["toolset_name"]), ("s", "computer"))
+        self.assertEqual(image["content"][0]["source"]["media_type"], "image/png")
+        self.assertEqual(base64.b64decode(image["content"][0]["source"]["data"])[:4], b"\x89PNG")
+        self.assertIsNotNone(shot["frame_id"])
+        turn = self.run_dialect("anthropic", [
+            block("k", "key", text="ctrl+s"),
+            block("t", "type", text="hola"),
+            block("c", "left_click", coordinate=[10, 10]),
+            block("n", "key", text="Return")], ok=False)
+        k, t, c, n = turn["results"]
+        self.assertEqual((k["content"], t["content"]), ("OK", "OK"))
+        self.assertIs(c["is_error"], True)
+        self.assertIn("WaylandUnavailable", c["content"])
+        self.assertEqual(n["content"], "Not executed: an earlier computer action in this turn failed.")
+        self.assertEqual(turn["failed_call"], 2)
+        self.assertEqual(json.loads((self.root / "input.json").read_text())["text"], "hola")
+        hold = self.run_dialect("anthropic", [block("h", "hold_key", text="shift", duration=1)],
+                                ok=False)
+        self.assertIn("use key", hold["results"][0]["content"])
+
+    def test_openai_and_gemini_dialects_answer_with_a_screenshot(self):
+        self.cli("enable")
+        openai = self.run_dialect("openai", {"type": "computer_call", "call_id": "c1", "actions": [
+            {"type": "keypress", "keys": ["CTRL", "A"]}, {"type": "type", "text": "x"}]})
+        output = openai["results"]
+        self.assertEqual(len(output), 1)
+        self.assertEqual(output[0]["type"], "computer_call_output")
+        self.assertEqual(output[0]["call_id"], "c1")
+        self.assertTrue(output[0]["output"]["image_url"].startswith("data:image/png;base64,"))
+        gemini = self.run_dialect("gemini", [{"name": "type", "args": {"text": "hola",
+                                                                        "press_enter": True}}])
+        result = gemini["results"][0]
+        self.assertEqual(result["type"], "function_result")
+        self.assertEqual(result["result"][1]["mime_type"], "image/png")
+        self.assertEqual(json.loads((self.root / "input.json").read_text())["text"], "hola\n")
+        flagged = [{"name": "type", "args": {"text": "buy",
+                    "safety_decision": {"decision": "require_confirmation", "explanation": "x"}}}]
+        refused = self.run_dialect("gemini", flagged, ok=False)
+        self.assertIn("confirmation", json.loads(refused["results"][0]["result"][0]["text"])["error"])
+        confirmed = self.run_dialect("gemini", flagged, "--confirmed")
+        payload = json.loads(confirmed["results"][0]["result"][0]["text"])
+        self.assertIs(payload["safety_acknowledgement"], True)
+        self.error("SessionRequired", "dialect", "anthropic")
+        self.error("InvalidDialect", "dialect", "llama", "--session", "host")
 
     def test_stale_geometry(self):
         f = self.frame()

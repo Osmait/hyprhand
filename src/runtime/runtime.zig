@@ -5,6 +5,8 @@ const ipc = @import("../platform/ipc.zig");
 const child_process = @import("../platform/child_process.zig");
 const text = @import("../core/text.zig");
 const eq = text.eq;
+const auth_guard = @import("auth_guard.zig");
+const delivery = @import("delivery.zig");
 
 /// The configuration languages hyprhand can drive. Hyprland 0.57 and later
 /// only read Lua; earlier releases read Hyprlang.
@@ -73,6 +75,12 @@ pub const Runtime = struct {
     nested_host: ?NestedHost = null,
     /// Set only while an input action runs; see ActionGuard.
     action: ?*ActionGuard = null,
+    /// The environment before routing to a managed session: the host desktop,
+    /// where only a person can answer a confirmation notification.
+    host_env: ?*const std.process.Environ.Map = null,
+    /// When set, `emit` appends its JSON here instead of printing it: `--then`
+    /// and `sequence` compose several results into one response.
+    output: ?*std.ArrayList(u8) = null,
 
     pub fn init(context: std.process.Init) !Runtime {
         const allocator = context.arena.allocator();
@@ -201,10 +209,38 @@ pub const Runtime = struct {
     }
 
     pub fn active_window(self: *Runtime) ![]const u8 {
-        return (try self.query_json(struct { address: []const u8 = "" }, "activewindow")).address;
+        return (try self.focused_window()).address;
+    }
+
+    pub const FocusedWindow = struct { address: []const u8 = "", class: []const u8 = "" };
+
+    pub fn focused_window(self: *Runtime) !FocusedWindow {
+        return self.query_json(FocusedWindow, "activewindow");
+    }
+
+    /// Fails with `AuthenticationPrompt`, naming the prompt in the error detail.
+    pub fn prompt_error(self: *Runtime, name: []const u8) anyerror {
+        delivery.set_detail(self.allocator.dupe(u8, name) catch null);
+        return error.AuthenticationPrompt;
+    }
+
+    /// Refuses input while an authentication prompt is focused or drawn by
+    /// the shell. Nothing has been sent when this fails.
+    pub fn refuse_prompts(self: *Runtime) !void {
+        const focused = try self.focused_window();
+        if (auth_guard.prompt_class(focused.class)) return self.prompt_error(focused.class);
+        const layers = try self.query_json(std.json.Value, "layers");
+        if (try auth_guard.find_prompt_layer(self.allocator, layers)) |namespace| {
+            return self.prompt_error(namespace);
+        }
     }
 
     pub fn emit(self: *Runtime, data: anytype) !void {
+        if (self.output) |sink| {
+            const encoded = try std.json.Stringify.valueAlloc(self.allocator, data, .{});
+            try sink.appendSlice(self.allocator, encoded);
+            return;
+        }
         // Bounded streaming output: no per-event serialization allocations.
         var buffer: [4096]u8 = undefined;
         var writer = std.Io.File.stdout().writer(self.io, &buffer);
@@ -343,8 +379,11 @@ pub const Runtime = struct {
 
         if (!eq(action.control_token, try checker.token())) return error.ControlStopped;
         try checker.unlocked();
+        // A prompt that appears mid-action takes focus: stop before the next event.
+        const focused = try checker.focused_window();
+        if (auth_guard.prompt_class(focused.class)) return self.prompt_error(focused.class);
         if (action.target_window) |target| {
-            if (!eq(target, try checker.active_window())) return error.WindowNotFocused;
+            if (!eq(target, focused.address)) return error.WindowNotFocused;
         }
         if (action.frame_check) |frame_check| try frame_check.check(&checker, frame_check.context);
     }
@@ -594,6 +633,71 @@ pub const Runtime = struct {
         }
         if (c.lseek(fd, 0, c.SEEK_SET) < 0) return error.InputBufferFailed;
         return fd;
+    }
+
+    /// A worker's exit status and everything it wrote to stdout.
+    pub const Captured = struct { succeeded: bool, stdout: []const u8 };
+
+    /// Runs a hyprhand worker with `input` on stdin and returns its stdout.
+    /// Stdout goes to a memory file, so a worker never blocks on a full pipe.
+    /// `controlled` workers are killed as soon as the action guard fails.
+    pub fn run_capture(
+        self: *Runtime,
+        argv: []const []const u8,
+        input: []const u8,
+        controlled: bool,
+        budget_ms: u32,
+    ) !Captured {
+        const stdin_fd = try input_buffer(input);
+        defer _ = c.close(stdin_fd);
+        const stdout_fd = c.memfd_create("hyprhand-output", c.MFD_CLOEXEC);
+        if (stdout_fd < 0) return error.InputBufferFailed;
+        defer _ = c.close(stdout_fd);
+        if (controlled) try self.guard();
+
+        var child = try std.process.spawn(self.io, .{
+            .argv = argv,
+            .environ_map = self.env,
+            .stdin = .{ .file = .{ .handle = stdin_fd, .flags = .{ .nonblocking = false } } },
+            .stdout = .{ .file = .{ .handle = stdout_fd, .flags = .{ .nonblocking = false } } },
+            .stderr = .ignore,
+        });
+        defer child_process.terminate(&child, self.io);
+        const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));
+        if (pidfd < 0) return error.ProcessMonitorFailed;
+        defer _ = c.close(pidfd);
+
+        const deadline = native.now_ms() + budget_ms;
+        while (true) {
+            try native.check_cancelled();
+            if (controlled) try self.guard();
+            if (native.now_ms() >= deadline) return error.HelperTimeout;
+            var poll_fd = c.struct_pollfd{ .fd = pidfd, .events = c.POLLIN, .revents = 0 };
+            const ready = c.poll(&poll_fd, 1, 25);
+            if (ready < 0 and native.errno() != c.EINTR) return error.ProcessMonitorFailed;
+            if (ready > 0) break;
+        }
+        const termination = try child.wait(self.io);
+        const succeeded = switch (termination) {
+            .exited => |code| code == 0,
+            else => false,
+        };
+        return .{ .succeeded = succeeded, .stdout = try read_fd(self.allocator, stdout_fd) };
+    }
+
+    /// Everything in a rewound memory file, up to 16 MiB.
+    fn read_fd(allocator: std.mem.Allocator, fd: c_int) ![]const u8 {
+        if (c.lseek(fd, 0, c.SEEK_SET) < 0) return error.InputBufferFailed;
+        var output: std.ArrayList(u8) = .empty;
+        var buffer: [16 * 1024]u8 = undefined;
+        while (output.items.len < 16 * 1024 * 1024) {
+            const count = c.read(fd, &buffer, buffer.len);
+            if (count < 0 and native.errno() == c.EINTR) continue;
+            if (count < 0) return error.InputBufferFailed;
+            if (count == 0) break;
+            try output.appendSlice(allocator, buffer[0..@intCast(count)]);
+        }
+        return output.toOwnedSlice(allocator);
     }
 
     /// Run a bounded helper, with no shell and no text in its argv.

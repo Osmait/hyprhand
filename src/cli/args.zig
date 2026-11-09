@@ -13,6 +13,7 @@ pub const Command = enum {
     session,
     launch,
     observe,
+    cursor,
     preview,
     focus,
     workspace,
@@ -30,7 +31,14 @@ pub const Command = enum {
     logs,
     gc,
     accessibility,
+    act,
+    sequence,
+    journal,
+    replay,
+    dialect,
     _a11y,
+    _a11y_act,
+    _a11y_probe,
     _cursor_probe,
     _preview_frame,
     _preview_stream,
@@ -44,12 +52,48 @@ pub const Backend = enum { auto, native, helper, clipboard };
 pub const Indicator = enum { none, outline };
 pub const SessionVerb = enum { create, inspect, destroy };
 pub const WaitCondition = enum { stable, window, focus, workspace };
+pub const JournalVerb = enum { start, stop, show };
+/// Computer-use model dialects `hyprhand dialect` speaks.
+pub const DialectName = enum { anthropic, openai, gemini };
+
+/// How the confirmation gate treats consequential actions (see gate.zig).
+pub const GateMode = enum { ask, human, off };
+
+/// What an input command or `sequence` reports after acting, with `--then`.
+pub const Then = enum { none, state, observe, accessibility };
+
+/// The most steps one `sequence` runs.
+pub const sequence_steps_max = 50;
+
+/// Semantic accessibility actions of `act`.
+pub const ActVerb = enum {
+    click,
+    focus,
+    @"set-value",
+    toggle,
+    check,
+    uncheck,
+    expand,
+    collapse,
+    select,
+    @"scroll-to",
+};
 
 /// The deepest accessibility tree `--depth` may request.
 pub const accessibility_depth_max = 32;
 
 /// The most extra attempts `observe --retry` may request.
 pub const observe_retry_max = 10;
+
+/// Bounds of `observe --max-edge`, in image pixels.
+pub const max_edge_min = 64;
+pub const max_edge_max = 16384;
+
+/// The most clicks `click --count` sends: single, double or triple.
+pub const click_count_max = 3;
+
+/// The most taps `key --repeat` sends.
+pub const key_repeat_max = 100;
 
 pub const Args = struct {
     command: Command,
@@ -80,7 +124,43 @@ pub const Args = struct {
     dx: i32 = 0,
     dy: i32 = 0,
     scale: f64 = 1,
+    /// `observe`: the longest image side; lowers the scale, never raises it.
+    max_edge: ?u32 = null,
+    /// `observe`: a frame to compare the new capture with.
+    since: ?[]const u8 = null,
+    /// `observe --window`: draw numbered marks on the window's operable elements.
+    marks: bool = false,
+    /// Pointer commands: aim at a mark of `--frame` instead of `--x --y`.
+    mark: ?u32 = null,
     button: u32 = buttons.left,
+    click_count: u32 = 1,
+    /// Modifiers held during a pointer action, e.g. "ctrl+shift".
+    mods: ?[]const u8 = null,
+    key_repeat: u32 = 1,
+    /// `state` and `windows`: a short summary instead of raw compositor JSON.
+    compact: bool = false,
+    /// `act`: the verb and the accessibility ref it acts on.
+    act_verb: ?ActVerb = null,
+    ref: ?[]const u8 = null,
+    /// `accessibility`: report only elements that received a ref.
+    interactive: bool = false,
+    /// `journal VERB [NAME]` and `replay NAME`.
+    journal_verb: ?JournalVerb = null,
+    journal_name: ?[]const u8 = null,
+    /// `replay`: send input; without it, replay only plans.
+    execute: bool = false,
+    /// `dialect NAME`: the model's action format.
+    dialect_name: ?DialectName = null,
+    /// `dialect gemini`: the human confirmed the calls the model flagged.
+    confirmed: bool = false,
+    /// `enable`: the confirmation gate's mode.
+    gate: ?GateMode = null,
+    /// Input commands: a confirmation ID the human agreed to.
+    ack: ?[]const u8 = null,
+    /// Input commands and `sequence`: the state to report after acting.
+    then: Then = .none,
+    /// Input commands and `sequence`: the pause before the `--then` report.
+    settle_ms: u32 = 250,
     dry_run: bool = false,
     timeout_ms: u32 = 5000,
     stable_ms: u32 = 300,
@@ -95,6 +175,10 @@ pub const Args = struct {
     retry: u32 = 0,
     pixels: bool = false,
     nested: bool = false,
+    /// `session create`: run launched applications in a bubblewrap sandbox.
+    sandbox: bool = false,
+    /// `session create --sandbox`: and without network access.
+    offline: bool = false,
     headless_bridge: ?[]const u8 = null,
     lua: bool = false,
     backend: Backend = .auto,
@@ -109,7 +193,7 @@ pub const Args = struct {
 
     pub fn mutates(self: Args) bool {
         return self.pointer() or switch (self.command) {
-            .focus, .workspace, .type, .key, .launch => true,
+            .focus, .workspace, .type, .key, .launch, .act => true,
             else => false,
         };
     }
@@ -174,13 +258,39 @@ fn pointer_only(arguments: Args) bool {
 }
 
 fn dry_runnable(arguments: Args) bool {
-    return arguments.mutates() or arguments.command == .gc;
+    return arguments.mutates() or only(&.{ .gc, .sequence })(arguments);
+}
+
+/// `--then`: input commands, and `sequence` for its last step.
+fn reporting(arguments: Args) bool {
+    return arguments.mutates() or arguments.command == .sequence;
+}
+
+/// `--settle-ms`: the pause before a `--then` report or a dialect's screenshot.
+fn settled(arguments: Args) bool {
+    return arguments.command == .dialect or reporting(arguments);
+}
+
+/// `--max-edge`: observe, and the `--then observe` capture of an input command.
+fn edge_limited(arguments: Args) bool {
+    return only(&.{ .observe, .dialect })(arguments) or reporting(arguments);
 }
 
 fn windowed(arguments: Args) bool {
     return arguments.pointer() or
         arguments.is_accessibility() or
-        only(&.{ .type, .key, .wait })(arguments);
+        only(&.{ .type, .key, .wait, .observe, ._a11y_probe, .dialect })(arguments);
+}
+
+/// `--frame`: the frame a pointer acts on, an observe region is drawn on, or
+/// the cursor position is mapped into.
+fn framed(arguments: Args) bool {
+    return arguments.pointer() or only(&.{ .observe, .cursor, .accessibility })(arguments);
+}
+
+/// `--x --y`: a pointer coordinate, or the first corner of an observe region.
+fn positioned(arguments: Args) bool {
+    return arguments.pointer() or only(&.{ .observe, ._a11y_probe })(arguments);
 }
 
 fn timed(arguments: Args) bool {
@@ -237,6 +347,13 @@ const options = [_]Option{
         .allowed = only(&.{ ._preview_frame, ._preview_stop, ._preview_stream, ._preview_input }),
     },
     .{ .name = "--scale", .field = "scale", .allowed = only(&.{.observe}) },
+    .{ .name = "--max-edge", .field = "max_edge", .allowed = edge_limited },
+    .{ .name = "--then", .field = "then", .allowed = reporting, .invalid = error.InvalidThen },
+    .{ .name = "--settle-ms", .field = "settle_ms", .allowed = settled },
+    .{ .name = "--since", .field = "since", .allowed = only(&.{.observe}) },
+    .{ .name = "--marks", .field = "marks", .allowed = only(&.{.observe}) },
+    .{ .name = "--mark", .field = "mark", .allowed = pointer_only },
+    .{ .name = "--compact", .field = "compact", .allowed = only(&.{ .state, .windows }) },
     .{ .name = "--window", .field = "window", .allowed = windowed },
     .{
         .name = "--scroll-mode",
@@ -246,21 +363,43 @@ const options = [_]Option{
     },
     .{ .name = "--class", .field = "class", .allowed = only(&.{.wait}) },
     .{ .name = "--workspace", .field = "workspace_id", .allowed = only(&.{.wait}) },
-    .{ .name = "--frame", .field = "frame", .allowed = pointer_only },
-    .{ .name = "--x", .field = "x", .allowed = pointer_only },
-    .{ .name = "--y", .field = "y", .allowed = pointer_only },
+    .{ .name = "--frame", .field = "frame", .allowed = framed },
+    .{ .name = "--x", .field = "x", .allowed = positioned },
+    .{ .name = "--y", .field = "y", .allowed = positioned },
     .{ .name = "--move-duration-ms", .field = "move_duration_ms", .allowed = pointer_only },
     .{ .name = "--no-aura", .field = "no_aura", .allowed = pointer_only },
-    .{ .name = "--to-x", .field = "to_x", .allowed = only(&.{.drag}) },
-    .{ .name = "--to-y", .field = "to_y", .allowed = only(&.{.drag}) },
+    .{ .name = "--to-x", .field = "to_x", .allowed = only(&.{ .drag, .observe }) },
+    .{ .name = "--to-y", .field = "to_y", .allowed = only(&.{ .drag, .observe }) },
     .{ .name = "--duration-ms", .field = "duration_ms", .allowed = only(&.{ .drag, .scroll }) },
-    .{ .name = "--text", .field = "text", .allowed = only(&.{.type}) },
+    .{ .name = "--text", .field = "text", .allowed = only(&.{ .type, .act }) },
+    .{ .name = "--ref", .field = "ref", .allowed = only(&.{.act}) },
+    .{ .name = "--execute", .field = "execute", .allowed = only(&.{.replay}) },
+    .{ .name = "--confirmed", .field = "confirmed", .allowed = only(&.{.dialect}) },
+    .{
+        .name = "--gate",
+        .field = "gate",
+        .allowed = only(&.{.enable}),
+        .invalid = error.InvalidGateMode,
+    },
+    .{
+        .name = "--ack",
+        .field = "ack",
+        .allowed = only(&.{ .act, .click, .doubleclick, .key, .dialect }),
+    },
+    .{ .name = "--interactive", .field = "interactive", .allowed = accessibility_only },
     .{
         .name = "--button",
         .field = "button",
         .allowed = only(&.{ .click, .doubleclick, .drag }),
         .kind = .button,
     },
+    .{ .name = "--count", .field = "click_count", .allowed = only(&.{.click}) },
+    .{
+        .name = "--mods",
+        .field = "mods",
+        .allowed = only(&.{ .click, .doubleclick, .drag, .scroll }),
+    },
+    .{ .name = "--repeat", .field = "key_repeat", .allowed = only(&.{.key}) },
     .{ .name = "--dx", .field = "dx", .allowed = only(&.{.scroll}) },
     .{ .name = "--dy", .field = "dy", .allowed = only(&.{.scroll}) },
     .{ .name = "--timeout-ms", .field = "timeout_ms", .allowed = timed },
@@ -270,11 +409,13 @@ const options = [_]Option{
     .{ .name = "--depth", .field = "depth", .allowed = accessibility_only },
     .{ .name = "--older-than-ms", .field = "older_than_ms", .allowed = only(&.{.gc}) },
     .{ .name = "--nested", .field = "nested", .allowed = only(&.{.session}) },
+    .{ .name = "--sandbox", .field = "sandbox", .allowed = only(&.{.session}) },
+    .{ .name = "--offline", .field = "offline", .allowed = only(&.{.session}) },
     .{ .name = "--lua", .field = "lua", .allowed = only(&.{.session}) },
     .{
         .name = "--backend",
         .field = "backend",
-        .allowed = only(&.{ .observe, .type, .key }),
+        .allowed = only(&.{ .observe, .type, .key, .dialect }),
         .invalid = error.InvalidBackend,
     },
 };
@@ -324,6 +465,26 @@ fn positional(arguments: *Args, argument: []const u8) !void {
         .focus => try positional_store([]const u8, &arguments.focus_window, argument),
         .workspace => try positional_store([]const u8, &arguments.workspace_target, argument),
         .key => try positional_store([]const u8, &arguments.key_chord, argument),
+        .act => {
+            const verb = std.meta.stringToEnum(ActVerb, argument) orelse
+                return error.InvalidActVerb;
+            try positional_store(ActVerb, &arguments.act_verb, verb);
+        },
+        .journal => {
+            if (arguments.journal_verb == null) {
+                const verb = std.meta.stringToEnum(JournalVerb, argument) orelse
+                    return error.InvalidJournalCommand;
+                arguments.journal_verb = verb;
+            } else {
+                try positional_store([]const u8, &arguments.journal_name, argument);
+            }
+        },
+        .replay => try positional_store([]const u8, &arguments.journal_name, argument),
+        .dialect => {
+            const name = std.meta.stringToEnum(DialectName, argument) orelse
+                return error.InvalidDialect;
+            try positional_store(DialectName, &arguments.dialect_name, name);
+        },
         .wait => {
             const condition = std.meta.stringToEnum(WaitCondition, argument) orelse
                 return error.InvalidWaitCondition;
@@ -428,6 +589,20 @@ fn validate_values(arguments: Args) !void {
     if (arguments.depth < 1) return error.InvalidLimit;
     if (arguments.depth > accessibility_depth_max) return error.InvalidLimit;
     if (arguments.retry > observe_retry_max) return error.InvalidLimit;
+    if (arguments.max_edge) |max_edge| {
+        if (max_edge < max_edge_min) return error.InvalidMaxEdge;
+        if (max_edge > max_edge_max) return error.InvalidMaxEdge;
+    }
+    if (arguments.settle_ms > 10_000) return error.InvalidDuration;
+    if (arguments.click_count < 1) return error.InvalidClickCount;
+    if (arguments.click_count > click_count_max) return error.InvalidClickCount;
+    if (arguments.key_repeat < 1) return error.InvalidRepeat;
+    if (arguments.key_repeat > key_repeat_max) return error.InvalidRepeat;
+    if (arguments.mods) |mods| {
+        // Parsed against the modifier table by the input layer; bound it here.
+        if (mods.len == 0) return error.InvalidModifiers;
+        if (mods.len > 64) return error.InvalidModifiers;
+    }
     if (arguments.host_monitor) |name| {
         // The name reaches a host window rule; allow only output-name characters.
         if (!valid_output_name(name)) return error.InvalidMonitorName;
@@ -464,13 +639,21 @@ fn validate_shape(arguments: Args) !void {
     }
     if (arguments.pointer()) {
         if (arguments.frame == null) return error.FrameCoordinatesRequired;
-        if (arguments.x == null) return error.FrameCoordinatesRequired;
-        if (arguments.y == null) return error.FrameCoordinatesRequired;
+        const coordinates = arguments.x != null or arguments.y != null;
+        if (arguments.mark != null and coordinates) return error.ConflictingPointerTarget;
+        if (arguments.mark == null and arguments.x == null) return error.FrameCoordinatesRequired;
+        if (arguments.mark == null and arguments.y == null) return error.FrameCoordinatesRequired;
     }
     if (arguments.command == .drag) {
         if (arguments.to_x == null) return error.DragDestinationRequired;
         if (arguments.to_y == null) return error.DragDestinationRequired;
     }
+    if (arguments.command == .observe) try validate_observe_scope(arguments);
+    const capture_follows = arguments.command == .observe or arguments.then == .observe or
+        arguments.command == .dialect;
+    if (arguments.max_edge != null and !capture_follows) return error.InvalidMaxEdge;
+    const composite = arguments.command == .sequence or arguments.command == .dialect;
+    if (composite and !arguments.explicit_session) return error.SessionRequired;
     const requires_window = arguments.command == .type or arguments.command == .key;
     if (requires_window and arguments.window == null) return error.WindowRequired;
     if (arguments.backend == .clipboard) {
@@ -485,6 +668,12 @@ fn validate_shape(arguments: Args) !void {
         .key => if (arguments.key_chord == null) return error.MissingArgument,
         .wait => if (arguments.wait_condition == null) return error.MissingArgument,
         .type => if (arguments.text == null) return error.MissingText,
+        .act => {
+            if (arguments.act_verb == null) return error.MissingArgument;
+            if (arguments.ref == null) return error.RefRequired;
+        },
+        .journal, .replay => try validate_journal(arguments),
+        .dialect => if (arguments.dialect_name == null) return error.MissingArgument,
         .launch => if (arguments.program.len == 0) return error.MissingProgram,
         .session => {
             const verb = arguments.session_verb orelse return error.MissingArgument;
@@ -493,11 +682,50 @@ fn validate_shape(arguments: Args) !void {
             if (eq(name, "host")) return error.InvalidSessionName;
             const create_options = arguments.nested or
                 arguments.lua or
+                arguments.sandbox or
+                arguments.offline or
                 arguments.headless_bridge != null;
+            if (arguments.offline and !arguments.sandbox) return error.OfflineRequiresSandbox;
             if (create_options and verb != .create) return error.UnknownOption;
         },
         else => {},
     }
+}
+
+/// `journal start|show NAME`, `journal stop`, and `replay NAME` (explicit session).
+fn validate_journal(arguments: Args) !void {
+    const named = arguments.journal_name != null;
+    if (named and !valid_name(arguments.journal_name.?)) return error.InvalidJournalName;
+    if (arguments.command == .replay) {
+        if (!named) return error.MissingArgument;
+        if (!arguments.explicit_session) return error.SessionRequired;
+        return;
+    }
+    const verb = arguments.journal_verb orelse return error.MissingArgument;
+    if (verb != .stop and !named) return error.MissingArgument;
+    if (verb == .stop and named) return error.UnexpectedArgument;
+}
+
+/// `observe` captures one output (`--monitor`), one window (`--window`), or a
+/// box drawn on an earlier frame (`--frame` with `--x --y --to-x --to-y`).
+fn validate_observe_scope(arguments: Args) !void {
+    const corners = [_]?f64{ arguments.x, arguments.y, arguments.to_x, arguments.to_y };
+    var given: usize = 0;
+    for (corners) |corner| {
+        if (corner != null) given += 1;
+    }
+    const region = given != 0;
+    if (region and given != corners.len) return error.InvalidObserveRegion;
+    if (region and arguments.frame == null) return error.InvalidObserveRegion;
+    if (!region and arguments.frame != null) return error.InvalidObserveRegion;
+
+    // Marks come from the accessibility tree of exactly one window.
+    if (arguments.marks and arguments.window == null) return error.MarksRequireWindow;
+    var scopes: usize = 0;
+    if (arguments.monitor != null) scopes += 1;
+    if (arguments.window != null) scopes += 1;
+    if (region) scopes += 1;
+    if (scopes > 1) return error.ConflictingObserveScope;
 }
 
 test "strict options, sessions, and action arguments" {
@@ -707,4 +935,130 @@ test "enum options and positional arguments parse into typed fields" {
     const key = try parse(&.{ "key", "ctrl+s", "--session", "host", "--window", "0x1" });
     try std.testing.expectEqualStrings("ctrl+s", key.key_chord.?);
     try std.testing.expectEqualStrings("ctrl+s", key.target().?);
+}
+
+test "observe scopes, budgets and comparisons" {
+    const region = try parse(&.{
+        "observe", "--frame", "a", "--x", "10", "--y", "20", "--to-x", "300", "--to-y", "200",
+        "--scale", "2",
+    });
+    try std.testing.expectEqual(@as(?f64, 300), region.to_x);
+    const fitted = try parse(&.{ "observe", "--window", "0x1", "--max-edge", "1568" });
+    try std.testing.expectEqual(@as(?u32, 1568), fitted.max_edge);
+    const since = try parse(&.{ "observe", "--since", "abc" });
+    try std.testing.expectEqualStrings("abc", since.since.?);
+
+    try std.testing.expectError(
+        error.InvalidObserveRegion,
+        parse(&.{ "observe", "--frame", "a", "--x", "1", "--y", "2" }),
+    );
+    try std.testing.expectError(error.InvalidObserveRegion, parse(&.{ "observe", "--frame", "a" }));
+    try std.testing.expectError(error.InvalidObserveRegion, parse(&.{
+        "observe", "--x", "1", "--y", "2", "--to-x", "3", "--to-y", "4",
+    }));
+    try std.testing.expectError(
+        error.ConflictingObserveScope,
+        parse(&.{ "observe", "--window", "0x1", "--monitor", "DP-1" }),
+    );
+    try std.testing.expectError(
+        error.InvalidMaxEdge,
+        parse(&.{ "observe", "--max-edge", "10" }),
+    );
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "state", "--max-edge", "100" }));
+}
+
+test "click counts, held modifiers, key repeats and compact queries" {
+    const triple = try parse(&.{
+        "click",  "--session",  "host", "--frame", "a", "--x", "1", "--y", "2", "--count", "3",
+        "--mods", "ctrl+shift",
+    });
+    try std.testing.expectEqual(@as(u32, 3), triple.click_count);
+    try std.testing.expectEqualStrings("ctrl+shift", triple.mods.?);
+    try std.testing.expectError(error.InvalidClickCount, parse(&.{
+        "click", "--session", "host", "--frame", "a", "--x", "1", "--y", "2", "--count", "4",
+    }));
+    try std.testing.expectError(error.UnknownOption, parse(&.{
+        "doubleclick", "--session", "host", "--frame", "a", "--x", "1", "--y", "2",
+        "--count",     "2",
+    }));
+    try std.testing.expectError(error.UnknownOption, parse(&.{
+        "move", "--session", "host", "--frame", "a", "--x", "1", "--y", "2", "--mods", "ctrl",
+    }));
+
+    const repeated = try parse(&.{
+        "key", "Down", "--session", "host", "--window", "0x1", "--repeat", "5",
+    });
+    try std.testing.expectEqual(@as(u32, 5), repeated.key_repeat);
+    try std.testing.expectError(error.InvalidRepeat, parse(&.{
+        "key", "Down", "--session", "host", "--window", "0x1", "--repeat", "0",
+    }));
+
+    try std.testing.expect((try parse(&.{ "state", "--compact" })).compact);
+    try std.testing.expect((try parse(&.{ "windows", "--compact" })).compact);
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "monitors", "--compact" }));
+
+    const cursor = try parse(&.{ "cursor", "--frame", "a" });
+    try std.testing.expect(!cursor.mutates());
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "cursor", "--x", "1" }));
+}
+
+test "sandbox options belong to session create, offline only with sandbox" {
+    const boxed = try parse(&.{ "session", "create", "agent", "--sandbox", "--offline" });
+    try std.testing.expect(boxed.sandbox and boxed.offline);
+    try std.testing.expectError(
+        error.OfflineRequiresSandbox,
+        parse(&.{ "session", "create", "agent", "--offline" }),
+    );
+    try std.testing.expectError(
+        error.UnknownOption,
+        parse(&.{ "session", "inspect", "agent", "--sandbox" }),
+    );
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "launch", "--sandbox" }));
+}
+
+test "then and settle belong to input commands and sequences" {
+    const typed = try parse(&.{
+        "type",       "--session", "agent", "--window", "0x1", "--text", "a", "--then", "observe",
+        "--max-edge", "1568",
+    });
+    try std.testing.expectEqual(Then.observe, typed.then);
+    try std.testing.expectEqual(@as(u32, 250), typed.settle_ms);
+    try std.testing.expectError(error.InvalidMaxEdge, parse(&.{
+        "type", "--session", "agent", "--window", "0x1", "--text", "a", "--max-edge", "800",
+    }));
+    try std.testing.expectError(error.InvalidThen, parse(&.{
+        "key", "a", "--session", "agent", "--window", "0x1", "--then", "everything",
+    }));
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "state", "--then", "state" }));
+    try std.testing.expectError(error.SessionRequired, parse(&.{"sequence"}));
+    const sequence = try parse(&.{
+        "sequence", "--session", "agent", "--then", "state", "--dry-run",
+    });
+    try std.testing.expect(sequence.dry_run and !sequence.mutates());
+}
+
+test "marks are drawn per window and aimed at instead of coordinates" {
+    const marked = try parse(&.{ "observe", "--window", "0x1", "--marks" });
+    try std.testing.expect(marked.marks);
+    try std.testing.expectError(error.MarksRequireWindow, parse(&.{ "observe", "--marks" }));
+    const click = try parse(&.{ "click", "--session", "agent", "--frame", "f", "--mark", "3" });
+    try std.testing.expectEqual(@as(?u32, 3), click.mark);
+    try std.testing.expectError(error.ConflictingPointerTarget, parse(&.{
+        "click", "--session", "agent", "--frame", "f", "--mark", "3", "--x", "1", "--y", "1",
+    }));
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "key", "a", "--mark", "1" }));
+}
+
+test "journal verbs and replay names" {
+    const started = try parse(&.{ "journal", "start", "checkout", "--session", "agent" });
+    try std.testing.expectEqual(JournalVerb.start, started.journal_verb.?);
+    try std.testing.expectEqualStrings("checkout", started.journal_name.?);
+    _ = try parse(&.{ "journal", "stop", "--session", "agent" });
+    try std.testing.expectError(error.MissingArgument, parse(&.{ "journal", "start" }));
+    try std.testing.expectError(error.UnexpectedArgument, parse(&.{ "journal", "stop", "x" }));
+    try std.testing.expectError(error.InvalidJournalCommand, parse(&.{ "journal", "erase", "x" }));
+    try std.testing.expectError(error.InvalidJournalName, parse(&.{ "journal", "show", "../x" }));
+    const replay = try parse(&.{ "replay", "checkout", "--session", "agent", "--execute" });
+    try std.testing.expect(replay.execute and !replay.mutates());
+    try std.testing.expectError(error.SessionRequired, parse(&.{ "replay", "checkout" }));
 }
