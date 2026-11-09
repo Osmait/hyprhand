@@ -190,6 +190,16 @@ The optional `enable --indicator outline` requires the explicitly loaded
 [experimental cursor plugin](experimental-bridges.md). Activation failure leaves
 control disabled.
 
+Authentication prompts belong to the human. Every input command, `act`
+included, fails with `AuthenticationPrompt` (`err.detail` names it, nothing is
+sent) while one of these is focused, under the pointer, targeted by `act`, or
+drawn by the shell as a layer: window classes containing `polkit`, `pinentry`,
+`askpass`, `gcr-prompter`, `kwallet`, `hyprland-dialog`, `kdesu`, `gksu`,
+`keyring-prompt` or `authentication-agent`, and layer namespaces containing
+`polkit`, `pinentry`, `keyring` or `auth`. The focused class is checked again
+before every event, so a prompt that opens mid-action stops it. There is no
+override: ask the human to answer the prompt.
+
 `stop` revokes authorization without waiting for the action lock. It cancels
 guarded hyprhand input, leaving applications and external jobs open. It cannot
 undo events or text already sent. Never automatically re-enable after a human stop.

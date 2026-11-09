@@ -5,6 +5,8 @@ const ipc = @import("../platform/ipc.zig");
 const child_process = @import("../platform/child_process.zig");
 const text = @import("../core/text.zig");
 const eq = text.eq;
+const auth_guard = @import("auth_guard.zig");
+const delivery = @import("delivery.zig");
 
 /// The configuration languages hyprhand can drive. Hyprland 0.57 and later
 /// only read Lua; earlier releases read Hyprlang.
@@ -201,7 +203,30 @@ pub const Runtime = struct {
     }
 
     pub fn active_window(self: *Runtime) ![]const u8 {
-        return (try self.query_json(struct { address: []const u8 = "" }, "activewindow")).address;
+        return (try self.focused_window()).address;
+    }
+
+    pub const FocusedWindow = struct { address: []const u8 = "", class: []const u8 = "" };
+
+    pub fn focused_window(self: *Runtime) !FocusedWindow {
+        return self.query_json(FocusedWindow, "activewindow");
+    }
+
+    /// Fails with `AuthenticationPrompt`, naming the prompt in the error detail.
+    pub fn prompt_error(self: *Runtime, name: []const u8) anyerror {
+        delivery.set_detail(self.allocator.dupe(u8, name) catch null);
+        return error.AuthenticationPrompt;
+    }
+
+    /// Refuses input while an authentication prompt is focused or drawn by
+    /// the shell. Nothing has been sent when this fails.
+    pub fn refuse_prompts(self: *Runtime) !void {
+        const focused = try self.focused_window();
+        if (auth_guard.prompt_class(focused.class)) return self.prompt_error(focused.class);
+        const layers = try self.query_json(std.json.Value, "layers");
+        if (try auth_guard.find_prompt_layer(self.allocator, layers)) |namespace| {
+            return self.prompt_error(namespace);
+        }
     }
 
     pub fn emit(self: *Runtime, data: anytype) !void {
@@ -343,8 +368,11 @@ pub const Runtime = struct {
 
         if (!eq(action.control_token, try checker.token())) return error.ControlStopped;
         try checker.unlocked();
+        // A prompt that appears mid-action takes focus: stop before the next event.
+        const focused = try checker.focused_window();
+        if (auth_guard.prompt_class(focused.class)) return self.prompt_error(focused.class);
         if (action.target_window) |target| {
-            if (!eq(target, try checker.active_window())) return error.WindowNotFocused;
+            if (!eq(target, focused.address)) return error.WindowNotFocused;
         }
         if (action.frame_check) |frame_check| try frame_check.check(&checker, frame_check.context);
     }
