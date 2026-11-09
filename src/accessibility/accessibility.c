@@ -20,7 +20,9 @@ DeskNode *desk_a11y_child(DeskNode *node, int i) { return (DeskNode *)atspi_acce
 DeskNode *desk_a11y_parent(DeskNode *node) { return (DeskNode *)atspi_accessible_get_parent((AtspiAccessible *)node, NULL); }
 int desk_a11y_index_in_parent(DeskNode *node) { return atspi_accessible_get_index_in_parent((AtspiAccessible *)node, NULL); }
 unsigned int desk_a11y_pid(DeskNode *node) { return atspi_accessible_get_process_id((AtspiAccessible *)node, NULL); }
-void desk_a11y_refresh(DeskNode *node) { atspi_accessible_clear_cache_single((AtspiAccessible *)node); }
+/* clear_cache_single needs libatspi 2.52; clear_cache (this node and the
+ * children it has cached) works on every supported release. */
+void desk_a11y_refresh(DeskNode *node) { atspi_accessible_clear_cache((AtspiAccessible *)node); }
 
 static const struct { AtspiStateType state; unsigned int bit; } state_bits[] = {
     {ATSPI_STATE_ENABLED, DESK_STATE_ENABLED},
@@ -51,14 +53,22 @@ unsigned int desk_a11y_states(DeskNode *node) {
     return bits;
 }
 
+/* atspi_accessible_is_* needs libatspi 2.56; the get_*_iface accessors answer
+ * the same question from the same cached interface list on older releases. */
+#define DESK_HAS_IFACE(obj, getter, bit, bits)          \
+    do {                                                \
+        GObject *iface = (GObject *)getter(obj);        \
+        if (iface) { (bits) |= (bit); g_object_unref(iface); } \
+    } while (0)
+
 static unsigned int interfaces(AtspiAccessible *obj) {
     unsigned int bits = 0;
-    if (atspi_accessible_is_action(obj)) bits |= DESK_IFACE_ACTION;
-    if (atspi_accessible_is_component(obj)) bits |= DESK_IFACE_COMPONENT;
-    if (atspi_accessible_is_text(obj)) bits |= DESK_IFACE_TEXT;
-    if (atspi_accessible_is_editable_text(obj)) bits |= DESK_IFACE_EDITABLE_TEXT;
-    if (atspi_accessible_is_value(obj)) bits |= DESK_IFACE_VALUE;
-    if (atspi_accessible_is_selection(obj)) bits |= DESK_IFACE_SELECTION;
+    DESK_HAS_IFACE(obj, atspi_accessible_get_action_iface, DESK_IFACE_ACTION, bits);
+    DESK_HAS_IFACE(obj, atspi_accessible_get_component_iface, DESK_IFACE_COMPONENT, bits);
+    DESK_HAS_IFACE(obj, atspi_accessible_get_text_iface, DESK_IFACE_TEXT, bits);
+    DESK_HAS_IFACE(obj, atspi_accessible_get_editable_text_iface, DESK_IFACE_EDITABLE_TEXT, bits);
+    DESK_HAS_IFACE(obj, atspi_accessible_get_value_iface, DESK_IFACE_VALUE, bits);
+    DESK_HAS_IFACE(obj, atspi_accessible_get_selection_iface, DESK_IFACE_SELECTION, bits);
     return bits;
 }
 
