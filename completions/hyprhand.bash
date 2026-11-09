@@ -22,7 +22,7 @@ _hyprhand_complete() {
     elif [[ ${COMP_WORDS[COMP_CWORD-1]} == --headless-bridge ]]; then
         COMPREPLY=( $(compgen -f -- "$cur") )
     else
-        COMPREPLY=( $(compgen -W '--session --window --monitor --frame --x --y --to-x --to-y --duration-ms --scroll-mode --move-duration-ms --no-aura --indicator --headless-bridge --button --dx --dy --text --backend --dry-run --timeout-ms --stable-ms --pixels --class --workspace --limit --depth --older-than-ms --nested --lua --retry --max-edge --since --compact --count --mods --repeat --ref --interactive' -- "$cur") )
+        COMPREPLY=( $(compgen -W '--session --window --monitor --frame --x --y --to-x --to-y --duration-ms --scroll-mode --move-duration-ms --no-aura --indicator --headless-bridge --button --dx --dy --text --backend --dry-run --timeout-ms --stable-ms --pixels --class --workspace --limit --depth --older-than-ms --nested --lua --retry --max-edge --since --compact --count --mods --repeat --ref --interactive --sandbox --offline' -- "$cur") )
     fi
 }
 complete -F _hyprhand_complete hyprhand

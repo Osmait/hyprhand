@@ -136,6 +136,10 @@ pub const Args = struct {
     retry: u32 = 0,
     pixels: bool = false,
     nested: bool = false,
+    /// `session create`: run launched applications in a bubblewrap sandbox.
+    sandbox: bool = false,
+    /// `session create --sandbox`: and without network access.
+    offline: bool = false,
     headless_bridge: ?[]const u8 = null,
     lua: bool = false,
     backend: Backend = .auto,
@@ -334,6 +338,8 @@ const options = [_]Option{
     .{ .name = "--depth", .field = "depth", .allowed = accessibility_only },
     .{ .name = "--older-than-ms", .field = "older_than_ms", .allowed = only(&.{.gc}) },
     .{ .name = "--nested", .field = "nested", .allowed = only(&.{.session}) },
+    .{ .name = "--sandbox", .field = "sandbox", .allowed = only(&.{.session}) },
+    .{ .name = "--offline", .field = "offline", .allowed = only(&.{.session}) },
     .{ .name = "--lua", .field = "lua", .allowed = only(&.{.session}) },
     .{
         .name = "--backend",
@@ -580,7 +586,10 @@ fn validate_shape(arguments: Args) !void {
             if (eq(name, "host")) return error.InvalidSessionName;
             const create_options = arguments.nested or
                 arguments.lua or
+                arguments.sandbox or
+                arguments.offline or
                 arguments.headless_bridge != null;
+            if (arguments.offline and !arguments.sandbox) return error.OfflineRequiresSandbox;
             if (create_options and verb != .create) return error.UnknownOption;
         },
         else => {},
@@ -879,4 +888,18 @@ test "click counts, held modifiers, key repeats and compact queries" {
     const cursor = try parse(&.{ "cursor", "--frame", "a" });
     try std.testing.expect(!cursor.mutates());
     try std.testing.expectError(error.UnknownOption, parse(&.{ "cursor", "--x", "1" }));
+}
+
+test "sandbox options belong to session create, offline only with sandbox" {
+    const boxed = try parse(&.{ "session", "create", "agent", "--sandbox", "--offline" });
+    try std.testing.expect(boxed.sandbox and boxed.offline);
+    try std.testing.expectError(
+        error.OfflineRequiresSandbox,
+        parse(&.{ "session", "create", "agent", "--offline" }),
+    );
+    try std.testing.expectError(
+        error.UnknownOption,
+        parse(&.{ "session", "inspect", "agent", "--sandbox" }),
+    );
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "launch", "--sandbox" }));
 }

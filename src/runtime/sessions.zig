@@ -1,4 +1,5 @@
 const std = @import("std");
+const sandbox = @import("sandbox.zig");
 const native = @import("../platform/native.zig");
 const c = native.c;
 const Runtime = @import("runtime.zig").Runtime;
@@ -24,6 +25,9 @@ pub const Session = struct {
     destroyed: bool = false,
     registry: ?Process = null,
     headless_bridge: ?[]const u8 = null,
+    /// Launched applications run in a bubblewrap sandbox (see sandbox.zig).
+    sandbox: bool = false,
+    offline: bool = false,
 };
 
 const profile_kinds = [_][]const u8{ "CONFIG", "CACHE", "DATA", "STATE" };
@@ -676,6 +680,7 @@ fn create(runtime: *Runtime, arguments: Args) !void {
 
     try runtime.validate_display();
     if (arguments.headless_bridge) |path| try validate_headless_bridge(runtime, path);
+    if (arguments.sandbox) try sandbox_preflight(runtime, directory);
     // Hyprland 0.57+ only reads Lua configs. Follow the host's provider so the
     // child compositor (same installed binary) accepts its generated config.
     const lua = arguments.lua or try runtime.config_provider() == .lua;
@@ -720,15 +725,22 @@ fn create(runtime: *Runtime, arguments: Args) !void {
         .nested = arguments.nested,
         .registry = registry,
         .headless_bridge = arguments.headless_bridge,
+        .sandbox = arguments.sandbox,
+        .offline = arguments.offline,
     };
     if (!running(session)) return error.SessionStartupFailed;
     try save(runtime, session);
+    try create_report(runtime, session);
+}
 
+fn create_report(runtime: *Runtime, session: Session) !void {
     try runtime.emit(.{
         .ok = true,
         .session = session,
         .shared_cursor = false,
-        .filesystem_sandbox = false,
+        .filesystem_sandbox = session.sandbox,
+        .network = if (session.offline) "none" else "host",
+        .home = if (session.sandbox) try sandbox_home(runtime, session.directory) else null,
         .control_enabled = false,
     });
 }
@@ -1085,7 +1097,7 @@ pub fn launch(runtime: *Runtime, arguments: Args) !void {
         try copy.put("ACCESSIBILITY_ENABLED", "1");
         environment = copy;
     }
-    const process = try spawn(runtime, environment, argv.items, log_path);
+    const process = try launch_spawn(runtime, session, environment, argv.items, log_path);
     errdefer terminate(runtime, process) catch {};
     const record_path = try std.fmt.allocPrint(
         runtime.allocator,
@@ -1104,7 +1116,85 @@ pub fn launch(runtime: *Runtime, arguments: Args) !void {
         .action = "launch",
         .process = process,
         .status = "started",
+        .sandboxed = session.sandbox,
     });
+}
+
+fn launch_spawn(
+    runtime: *Runtime,
+    session: Session,
+    environment: *const std.process.Environ.Map,
+    program: []const []const u8,
+    log_path: []const u8,
+) !Process {
+    if (!session.sandbox) return spawn(runtime, environment, program, log_path);
+    const wrapped = try sandboxed_command(runtime, session, environment, program);
+    return spawn(runtime, environment, wrapped, log_path);
+}
+
+/// `<session>/home`: the private HOME of sandboxed applications.
+fn sandbox_home(runtime: *Runtime, directory: []const u8) ![]const u8 {
+    const home = try std.fmt.allocPrint(runtime.allocator, "{s}/home", .{directory});
+    try ensure_directory(runtime, home);
+    return home;
+}
+
+/// bubblewrap must exist and be able to create the sandbox before a
+/// `--sandbox` session is started, or every launch would fail later.
+fn sandbox_preflight(runtime: *Runtime, directory: []const u8) !void {
+    if (!try runtime.executable("bwrap")) return error.SandboxUnavailable;
+    const home = try sandbox_home(runtime, directory);
+    const probe = try sandbox.argv(runtime.allocator, .{
+        .user_runtime = runtime.env.get("XDG_RUNTIME_DIR").?,
+        .session_runtime = runtime.env.get("XDG_RUNTIME_DIR").?,
+        .runtime_entries = &.{},
+        .host_home = runtime.env.get("HOME") orelse return error.SandboxUnavailable,
+        .home = home,
+        .writable = &.{},
+        .offline = false,
+    }, &.{"true"});
+    runtime.run_helper(probe, null, false) catch return error.SandboxUnavailable;
+}
+
+/// The launch command wrapped in the session's sandbox. Browser profile
+/// directories are created first: bubblewrap mounts only existing ones.
+fn sandboxed_command(
+    runtime: *Runtime,
+    session: Session,
+    environment: *const std.process.Environ.Map,
+    program: []const []const u8,
+) ![]const []const u8 {
+    var writable: std.ArrayList([]const u8) = .empty;
+    for (profile_kinds) |kind| {
+        const path = try std.fmt.allocPrint(
+            runtime.allocator,
+            "{s}/profile-{s}",
+            .{ session.directory, kind },
+        );
+        try writable.append(runtime.allocator, path);
+    }
+    for ([_][]const u8{ "browser-profile", "firefox-profile" }) |name| {
+        const path = try std.fmt.allocPrint(
+            runtime.allocator,
+            "{s}/{s}",
+            .{ session.directory, name },
+        );
+        try ensure_directory(runtime, path);
+        try writable.append(runtime.allocator, path);
+    }
+    return sandbox.argv(runtime.allocator, .{
+        .user_runtime = std.fs.path.dirname(session.runtime) orelse return error.SandboxUnavailable,
+        .session_runtime = session.runtime,
+        .runtime_entries = &.{
+            environment.get("WAYLAND_DISPLAY") orelse return error.SandboxUnavailable,
+            "bus",
+            "dconf",
+        },
+        .host_home = environment.get("HOME") orelse return error.SandboxUnavailable,
+        .home = try sandbox_home(runtime, session.directory),
+        .writable = writable.items,
+        .offline = session.offline,
+    }, program);
 }
 
 /// Spawning a missing program surfaces as a generic FileNotFound. Resolve it

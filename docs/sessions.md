@@ -138,9 +138,41 @@ it. Then verify the file on disk: `status: sent` never proves a download finishe
 Earlier builds sent a `key Return` on the Escape key position, which this chooser
 treated as Cancel: the download was recorded as cancelled and no file appeared.
 
-**This is not a security sandbox.** Files, credentials, network, user permissions,
-and potentially other services remain accessible. Do not treat managed sessions
-as containment for untrusted applications or content. See [SECURITY.md](../SECURITY.md).
+**A plain session is not a security sandbox.** Files, credentials, network, user
+permissions, and potentially other services remain accessible. Do not treat it as
+containment for untrusted applications or content. See [SECURITY.md](../SECURITY.md).
+
+### Sandboxed sessions
+
+```sh
+hyprhand session create agent --sandbox            # files and credentials isolated
+hyprhand session create agent --sandbox --offline  # and no network at all
+```
+
+Every `launch` into such a session runs inside bubblewrap (`bwrap`), checked once
+when the session is created (`SandboxUnavailable` otherwise):
+
+| Inside the sandbox | Seen by the application |
+| --- | --- |
+| `/` | The host's root filesystem, read-only |
+| `$HOME` | The session's private home, `<session directory>/home`, persistent until the session directory is removed; `session create` reports it as `home` |
+| `/tmp` | An empty tmpfs |
+| `$XDG_RUNTIME_DIR`'s parent (`/run/user/UID`) | An empty tmpfs: no host Wayland or D-Bus socket, ssh-agent, gpg-agent, keyring or audio |
+| The session runtime | Only its Wayland socket, its session bus (also the accessibility bus) and `dconf` |
+| Session profile directories | `profile-*`, `browser-profile`, `firefox-profile`, read-write |
+| Network | The host's, or none with `--offline` |
+
+The compositor's IPC socket, whose `dispatch exec` would run commands outside the
+sandbox, and hyprhand's own control token, frames, snapshots and audit log are
+never mounted. `SSH_AUTH_SOCK`, `GPG_AGENT_INFO` and similar variables are
+removed, and each application starts in a new terminal session. To hand files to
+or from an application, use its private home on the host side. The compositor,
+its bus and the accessibility registry run outside the sandbox.
+
+Remaining exposure: everything readable under `/` outside your home (system
+files, other mounts), the system D-Bus, GPU devices, and, without `--offline`,
+the network. Applications still run as your user. Verified with GTK 4 and Brave
+(whose own sandbox keeps working) on bubblewrap 0.13.
 
 ## Stop, preview, and destroy
 
