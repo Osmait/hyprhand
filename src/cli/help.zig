@@ -9,7 +9,7 @@ pub const text = "hyprhand " ++ version.string ++
     \\Observe and inspect:
     \\  doctor | monitors | workspaces | sessions | state|windows [--compact]
     \\  observe [--monitor NAME | --window ADDRESS | --frame ID --x X --y Y --to-x X --to-y Y]
-    \\    [--scale 0.1..2] [--max-edge PX] [--since FRAME_ID] [--retry 0..10]
+    \\    [--scale 0.1..2] [--max-edge PX] [--since FRAME_ID] [--retry 0..10] [--marks]
     \\    [--backend auto|helper]
     \\  cursor [--frame ID]
     \\  accessibility [--window ADDRESS [--interactive] [--frame ID]] [--depth 5]
@@ -26,7 +26,7 @@ pub const text = "hyprhand " ++ version.string ++
     \\  enable [--indicator none|outline] | stop
     \\  focus ADDRESS | workspace NUMBER
     \\  move --frame ID --x X --y Y
-    \\  click|doubleclick --frame ID --x X --y Y [--button left|right|middle|back|forward]
+    \\  click|doubleclick --frame ID (--x X --y Y | --mark N) [--button left|right|...]
     \\    click --count 1..3 (3 = triple click); --mods ctrl+shift holds modifiers
     \\    during click/doubleclick/drag/scroll (not on XWayland)
     \\  drag --frame ID --x X --y Y --to-x X --to-y Y [--duration-ms 500]
@@ -79,7 +79,9 @@ pub const text = "hyprhand " ++ version.string ++
     \\observe --retry N retries timeouts and stale frames N times, 0.7s apart.
     \\Fewer image tokens: --window crops to one window, --frame with a box zooms into
     \\an earlier frame, --max-edge caps the long side, and --since FRAME_ID reports
-    \\changed:false when the pixels are identical (no need to view the image again).
+    \\changed:false when only a text cursor blinked, with a diff box otherwise.
+    \\observe --window W --marks numbers the operable elements on marked_image_path;
+    \\pointer commands accept --mark N of that frame instead of --x --y.
     \\state/windows --compact list windows in a fraction of the raw JSON.
     \\
 ;

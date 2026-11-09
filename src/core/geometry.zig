@@ -66,6 +66,10 @@ pub const Rect = struct {
     }
 };
 pub const Point = struct { x: i32, y: i32 };
+/// A box of whole image pixels inside a frame.
+pub const PixelBox = struct { x: u32, y: u32, width: u32, height: u32 };
+/// A numbered target drawn on a frame by `observe --marks`, in its pixels.
+pub const Mark = struct { index: u32, x: u32, y: u32, ref: ?[]const u8 = null };
 pub const Frame = struct {
     schema_version: u32 = 2,
     session_id: []const u8 = "host",
@@ -88,6 +92,35 @@ pub const Frame = struct {
     window: ?[]const u8 = null,
     /// SHA-256 of the image file, lowercase hex; compared by `observe --since`.
     image_sha256: []const u8 = "",
+    /// `observe --marks`: the numbered targets and the image they are drawn on.
+    marks: []const Mark = &.{},
+    marked_image_path: ?[]const u8 = null,
+
+    /// The image pixels covering a desktop rectangle, clipped to the frame;
+    /// null when nothing of it is inside.
+    pub fn pixel_box(frame: Frame, x: i32, y: i32, width: i32, height: i32) ?PixelBox {
+        if (width <= 0 or height <= 0) return null;
+        if (frame.logical.width <= 0 or frame.logical.height <= 0) return null;
+        const image_width: f64 = @floatFromInt(frame.image_width);
+        const image_height: f64 = @floatFromInt(frame.image_height);
+        const scale_x = image_width / frame.logical.width;
+        const scale_y = image_height / frame.logical.height;
+        const left_edge = @as(f64, @floatFromInt(x)) - frame.logical.x;
+        const top_edge = @as(f64, @floatFromInt(y)) - frame.logical.y;
+        const left = std.math.clamp(@floor(left_edge * scale_x), 0, image_width);
+        const top = std.math.clamp(@floor(top_edge * scale_y), 0, image_height);
+        const right_edge = left_edge + @as(f64, @floatFromInt(width));
+        const bottom_edge = top_edge + @as(f64, @floatFromInt(height));
+        const right = std.math.clamp(@ceil(right_edge * scale_x), 0, image_width);
+        const bottom = std.math.clamp(@ceil(bottom_edge * scale_y), 0, image_height);
+        if (right - left < 1 or bottom - top < 1) return null;
+        return .{
+            .x = @intFromFloat(left),
+            .y = @intFromFloat(top),
+            .width = @intFromFloat(right - left),
+            .height = @intFromFloat(bottom - top),
+        };
+    }
 
     pub fn point(frame: Frame, x: f64, y: f64) !Point {
         const image_width: f64 = @floatFromInt(frame.image_width);
@@ -303,4 +336,18 @@ test "rectangles intersect and widen to whole pixels" {
         Rect{ .x = 10, .y = 2, .width = 5, .height = 2 },
         fractional.whole_pixels(),
     );
+}
+
+test "pixel boxes scale desktop rectangles into the frame and clip them" {
+    const frame = fixture();
+    // 1.5 image pixels per logical pixel, frame origin (-1280, 100).
+    try std.testing.expectEqual(
+        PixelBox{ .x = 15, .y = 30, .width = 30, .height = 15 },
+        frame.pixel_box(-1270, 120, 20, 10).?,
+    );
+    try std.testing.expectEqual(
+        PixelBox{ .x = 0, .y = 0, .width = 15, .height = 15 },
+        frame.pixel_box(-1300, 80, 30, 30).?,
+    );
+    try std.testing.expectEqual(@as(?PixelBox, null), frame.pixel_box(0, 100, 10, 10));
 }

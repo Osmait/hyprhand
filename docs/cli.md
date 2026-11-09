@@ -143,12 +143,34 @@ earlier Claude models 1568. Anthropic suggests about 1920 × 1080 as a balance o
 accuracy and cost, and 1366 × 768 or 1280 × 720 for cost-sensitive work.
 
 `--since FRAME_ID` compares the new capture with an earlier frame of this
-session and adds `changed` to the response: `false` when the box, image size and
-PNG bytes are identical, so the agent can skip viewing the new image; `true`
-otherwise. Without `--since`, `changed` is `null`. The comparison is exact: a
-blinking text cursor or any animation inside the box reports `true`. The new frame is fresh and
+session and adds `changed` and `diff` to the response. When the box and image
+size match, both images are compared pixel by pixel (differences of up to 16
+per channel are ignored as rendering noise): `diff` reports `changed_pixels`,
+the `box` holding every change in the new image's pixels, and `cursor_like`.
+A change no thicker than 3 pixels and no longer than 64 (a blinking text cursor,
+a focus line) is `cursor_like` and leaves `changed` false, so the agent can skip
+viewing the image. Other changes, a different box or size, or images that cannot
+be decoded report `changed: true`. Without `--since`, both are `null`. The new frame is fresh and
 actionable either way. A missing comparison frame fails with `FrameNotFound`
 before anything is captured; `gc` removes frames older than five minutes.
+
+### Set-of-marks
+
+```sh
+hyprhand observe --session agent --window WINDOW_ADDRESS --marks
+hyprhand click --session agent --frame FRAME_ID --mark 7
+```
+
+`--marks` (with `--window`) reads the window's operable elements like
+`accessibility --interactive`, draws a numbered box over each one that is at
+least 4 pixels in the frame, and writes the result as `frame.marked_image_path`
+beside the clean `image_path`. The response adds `marks`, one entry per number:
+`mark`, `ref`, `role`, `name`, `states` and the target pixel `x`, `y`; and the
+accessibility `snapshot` its refs belong to. View the marked image, pick a
+number, and aim with `--mark N` instead of `--x --y` on any pointer command:
+the mark is stored in the frame, so it goes through the same frame expiry and
+layout validation as a coordinate (`MarkNotFound` for an unknown number).
+Marks also separate twins that `act` refuses as `AmbiguousTarget`.
 
 ### Coordinate contract
 

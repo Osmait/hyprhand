@@ -856,6 +856,7 @@ test {
     _ = @import("accessibility/refs.zig");
     _ = @import("accessibility/semantic.zig");
     _ = @import("cli/sequence.zig");
+    _ = @import("capture/png.zig");
 }
 
 test {

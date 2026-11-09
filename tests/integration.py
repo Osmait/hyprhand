@@ -59,9 +59,22 @@ elif pathlib.Path(sys.argv[0]).name == "grim":
     width, height = 1280, 720
     if "-g" in argv:
         width, height = (int(v) for v in argv[argv.index("-g") + 1].split(" ")[1].split("x"))
-    size = struct.pack(">II", round(width * scale), round(height * scale))
-    salt = os.environ.get("HYPRHAND_TEST_GRIM_SALT", "").encode()
-    pathlib.Path(sys.argv[-1]).write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + struct.pack(">I", 13) + b"IHDR" + size + salt)
+    import zlib
+    w, h = round(width * scale), round(height * scale)
+    pixels = bytearray(b"\\x80\\x80\\x80" * (w * h))
+    salt = os.environ.get("HYPRHAND_TEST_GRIM_SALT", "")
+    # "cursor": a 2 x 18 caret; "content": a 30 x 30 block; both at (10, 5).
+    box = {"cursor": (2, 18), "content": (30, 30)}.get(salt)
+    if box:
+        for y in range(5, min(h, 5 + box[1])):
+            for x in range(10, min(w, 10 + box[0])):
+                pixels[(y * w + x) * 3:(y * w + x) * 3 + 3] = b"\\x00\\x00\\x00"
+    raw = b"".join(b"\\x00" + bytes(pixels[y * w * 3:(y + 1) * w * 3]) for y in range(h))
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    header = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+    png = b"\\x89PNG\\r\\n\\x1a\\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 1)) + chunk(b"IEND", b"")
+    pathlib.Path(sys.argv[-1]).write_bytes(png)
 else:
     text = sys.stdin.read()
     (root / "input.json").write_text(__import__("json").dumps({"argv": sys.argv[1:], "text": text}))
@@ -208,8 +221,15 @@ else:
         self.assertIs(same["changed"], False)
         self.assertNotEqual(same["frame"]["frame_id"], first["frame_id"])
         self.assertEqual(len(same["frame"]["image_sha256"]), 64)
-        env = dict(self.env, HYPRHAND_TEST_GRIM_SALT="new pixels")
-        self.assertIs(self.cli("observe", "--since", first["frame_id"], env=env)["changed"], True)
+        env = dict(self.env, HYPRHAND_TEST_GRIM_SALT="content")
+        moved = self.cli("observe", "--since", first["frame_id"], env=env)
+        self.assertIs(moved["changed"], True)
+        self.assertEqual(moved["diff"]["box"], {"x": 10, "y": 5, "width": 30, "height": 30})
+        self.assertEqual(moved["diff"]["changed_pixels"], 900)
+        blink = self.cli("observe", "--since", first["frame_id"],
+                         env=dict(self.env, HYPRHAND_TEST_GRIM_SALT="cursor"))
+        self.assertIs(blink["changed"], False)
+        self.assertIs(blink["diff"]["cursor_like"], True)
         scaled = self.cli("observe", "--since", first["frame_id"], "--scale", "0.5")
         self.assertIs(scaled["changed"], True)
         self.assertIsNone(self.cli("observe")["changed"])
@@ -401,6 +421,24 @@ else:
         dry = self.run_sequence([["key", "Down", "--window", self.address]], "--dry-run")
         self.assertIs(dry["steps"][0]["result"]["dry_run"], True)
         self.assertFalse((self.root / "input.json").exists())
+
+    def test_marks_are_aimed_at_through_their_frame(self):
+        self.error("MarksRequireWindow", "observe", "--marks")
+        f = self.frame()
+        self.error("MarkNotFound", "click", "--frame", f["frame_id"], "--mark", "1",
+                   "--session", "host", "--dry-run")
+        self.error("ConflictingPointerTarget", "click", "--frame", f["frame_id"], "--mark", "1",
+                   "--x", "1", "--y", "1", "--session", "host", "--dry-run")
+        # A frame whose metadata lists marks: a mark resolves like its pixel.
+        metadata = Path(f["image_path"]).with_suffix(".json")
+        frame = json.loads(metadata.read_text())
+        frame["marks"] = [{"index": 4, "x": 960, "y": 540, "ref": None}]
+        metadata.write_text(json.dumps(frame))
+        by_mark = self.cli("click", "--frame", f["frame_id"], "--mark", "4", "--session", "host",
+                           "--dry-run")
+        by_pixel = self.cli("click", "--frame", f["frame_id"], "--x", "960", "--y", "540",
+                            "--session", "host", "--dry-run")
+        self.assertEqual(by_mark["desktop_point"], by_pixel["desktop_point"])
 
     def test_stale_geometry(self):
         f = self.frame()

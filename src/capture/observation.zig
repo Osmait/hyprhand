@@ -9,6 +9,8 @@ const Runtime = @import("../runtime/runtime.zig").Runtime;
 const operations = @import("../runtime/operations.zig");
 const sessions = @import("../runtime/sessions.zig");
 const aura = @import("../input/aura.zig");
+const png = @import("png.zig");
+const marks = @import("marks.zig");
 const eq = @import("../core/text.zig").eq;
 
 pub const Client = struct {
@@ -217,14 +219,54 @@ pub fn observe(runtime: *Runtime, arguments: args.Args) !void {
     else
         null;
     const started = native.now_ms();
-    const frame = try capture(runtime, arguments, try capture_scope(runtime, arguments));
+    var frame = try capture(runtime, arguments, try capture_scope(runtime, arguments));
+    var marked: ?marks.Marked = null;
+    if (arguments.marks) {
+        marked = try marks.apply(runtime, frame, frame.window.?);
+        frame.marks = marked.?.marks;
+        frame.marked_image_path = marked.?.image_path;
+    }
     try observe_write_metadata(runtime, frame);
+    const comparison: ?Comparison = if (previous) |earlier|
+        compare(runtime, earlier, frame)
+    else
+        null;
     try runtime.emit(.{
         .ok = true,
         .frame = frame,
         .capture_duration_ms = native.now_ms() - started,
-        .changed = if (previous) |earlier| !same_image(earlier, frame) else null,
+        .changed = if (comparison) |result| result.changed else null,
+        .diff = if (comparison) |result| result.diff else null,
+        .marks = if (marked) |result| result.legend else null,
+        .snapshot = if (marked) |result| result.snapshot else null,
     });
+}
+
+const Comparison = struct { changed: bool, diff: ?png.Diff };
+
+/// Whether the screen changed since `earlier`. Identical bytes are unchanged;
+/// otherwise both images are decoded and compared, and a change no bigger than
+/// a text cursor does not count. Images that cannot be compared are changed.
+fn compare(runtime: *Runtime, earlier: geometry.Frame, later: geometry.Frame) Comparison {
+    if (!same_box(earlier, later)) return .{ .changed = true, .diff = null };
+    const same_bytes = earlier.image_sha256.len != 0 and
+        eq(earlier.image_sha256, later.image_sha256);
+    const unchanged = png.Diff{ .changed_pixels = 0, .box = null, .cursor_like = false };
+    if (same_bytes) return .{ .changed = false, .diff = unchanged };
+    const unknown = Comparison{ .changed = true, .diff = null };
+    const result = pixel_diff(runtime, earlier, later) catch return unknown;
+    const difference = result orelse return unknown;
+    const changed = difference.changed_pixels > 0 and !difference.cursor_like;
+    return .{ .changed = changed, .diff = difference };
+}
+
+fn pixel_diff(runtime: *Runtime, earlier: geometry.Frame, later: geometry.Frame) !?png.Diff {
+    const limit = 256 * 1024 * 1024;
+    const before_bytes = try runtime.read_file(earlier.image_path, limit);
+    const after_bytes = try runtime.read_file(later.image_path, limit);
+    const before = try png.decode(runtime.allocator, before_bytes);
+    const after = try png.decode(runtime.allocator, after_bytes);
+    return png.diff(before, after);
 }
 
 /// The output an observation captures and, for `--frame`, the frame its
@@ -418,14 +460,12 @@ fn read_image(image_path: [:0]const u8) !Image {
     };
 }
 
-/// True when two frames hold the same pixels of the same desktop box.
-fn same_image(earlier: geometry.Frame, later: geometry.Frame) bool {
-    if (earlier.image_sha256.len == 0) return false;
+/// True when two frames show the same desktop box at the same image size.
+fn same_box(earlier: geometry.Frame, later: geometry.Frame) bool {
     if (!eq(earlier.monitor_id, later.monitor_id)) return false;
     if (!std.meta.eql(earlier.logical, later.logical)) return false;
     if (earlier.image_width != later.image_width) return false;
-    if (earlier.image_height != later.image_height) return false;
-    return eq(earlier.image_sha256, later.image_sha256);
+    return earlier.image_height == later.image_height;
 }
 
 /// `cursor`: the pointer position on the desktop and, with `--frame`, the
@@ -473,7 +513,8 @@ pub fn load_frame(runtime: *Runtime, frame_id: []const u8) !geometry.Frame {
 
     const metadata_name = try std.fmt.allocPrint(runtime.allocator, "{s}.json", .{frame_id});
     const metadata_path = try runtime.state_path(metadata_name);
-    const data = runtime.read_file(metadata_path, 16384) catch |err| switch (err) {
+    // Marks make metadata grow with the number of operable elements.
+    const data = runtime.read_file(metadata_path, 4 * 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => return error.FrameNotFound,
         else => return err,
     };

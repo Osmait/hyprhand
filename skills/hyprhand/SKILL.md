@@ -60,7 +60,7 @@ cheaper and steadier than the pointer.
    | The control has a `ref` | `act click\|check\|uncheck\|toggle\|expand\|collapse\|select\|focus\|scroll-to --ref REF --session S` |
    | Put text or a number in a field | `act set-value --ref REF --text 'VALUE' --session S` |
    | `set-value` says `ActionNotSupported` (Chromium inputs) | `act focus --ref REF`, then `key ctrl+a --window ADDR` and `type --window ADDR --text 'VALUE'` |
-   | No ref, `ActionNotSupported`, `ActionRefused`, `AmbiguousTarget`, canvas or games | Pointer at `frame_point`, or at a target you picked in the image (step 5) |
+   | No ref, `ActionNotSupported`, `ActionRefused`, `AmbiguousTarget`, canvas or games | Pointer at `--mark N` of a marked frame, at `frame_point`, or at a target you picked in the image (step 5) |
    | Shortcuts and navigation keys | `key ctrl+s --window ADDR`, `key Down --repeat 5 --window ADDR` |
 
    `act` does not move the pointer or take focus, so it also works on windows in
@@ -70,9 +70,15 @@ cheaper and steadier than the pointer.
    - `observe --frame ID --x X --y Y --to-x X2 --to-y Y2 --scale 2` zooms into a
      box of an earlier frame (its pixels) to read small text or hit a small target.
    - `--max-edge 1568` caps the long side (use your model's image limit).
-   - `--since PREVIOUS_ID` answers `"changed": false` when the pixels are
-     identical: skip viewing the image, but use the new frame ID. A blinking
-     text cursor or an animation always counts as a change.
+   - `--since PREVIOUS_ID` answers `"changed": false` when nothing but a
+     blinking text cursor changed: skip viewing the image, but use the new
+     frame ID. Otherwise `diff.box` says where the screen changed: zoom there
+     instead of viewing everything again.
+   - `--marks` (with `--window`) draws numbered boxes on the window's operable
+     controls in `frame.marked_image_path` and lists them in `marks` (number,
+     ref, role, name). View the marked image and aim with `--mark N` instead of
+     coordinates: `click --frame FRAME --mark 7`. Marks also tell apart
+     identical controls that `act` refuses as `AmbiguousTarget`.
    Then **view `image_path` with your image tool** before choosing coordinates.
    Every cropped, zoomed or scaled frame is actionable like a full one.
 6. **Pointer input** uses frame pixels and is guarded: it aborts if the frame
