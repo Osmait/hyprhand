@@ -57,6 +57,11 @@ pub const text = "hyprhand " ++ version.string ++
     \\Input accepts --dry-run. Coordinates are screenshot pixels, not desktop pixels.
     \\Errors and input results carry disposition {delivery, retry_safe}: retry only
     \\when retry_safe is true; otherwise observe first.
+    \\Input commands accept --then state|observe|accessibility [--settle-ms 250]:
+    \\the response adds what that command would print after the action.
+    \\sequence --session S [--then ...] [--dry-run] < steps.json  Runs a JSON array
+    \\of input/wait command lines (no --session) in order, validated first,
+    \\stopping at the first failure; reports each step's result and disposition.
     \\Pointer approach is smooth (auto 200..600ms); --move-duration-ms 50..10000
     \\overrides it for move/click/doubleclick/scroll/drag. Use 0 for instant approach.
     \\Drag --duration-ms controls the separate, smooth button-held segment.

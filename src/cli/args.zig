@@ -32,6 +32,7 @@ pub const Command = enum {
     gc,
     accessibility,
     act,
+    sequence,
     _a11y,
     _a11y_act,
     _cursor_probe,
@@ -47,6 +48,12 @@ pub const Backend = enum { auto, native, helper, clipboard };
 pub const Indicator = enum { none, outline };
 pub const SessionVerb = enum { create, inspect, destroy };
 pub const WaitCondition = enum { stable, window, focus, workspace };
+/// What an input command or `sequence` reports after acting, with `--then`.
+pub const Then = enum { none, state, observe, accessibility };
+
+/// The most steps one `sequence` runs.
+pub const sequence_steps_max = 50;
+
 /// Semantic accessibility actions of `act`.
 pub const ActVerb = enum {
     click,
@@ -122,6 +129,10 @@ pub const Args = struct {
     ref: ?[]const u8 = null,
     /// `accessibility`: report only elements that received a ref.
     interactive: bool = false,
+    /// Input commands and `sequence`: the state to report after acting.
+    then: Then = .none,
+    /// Input commands and `sequence`: the pause before the `--then` report.
+    settle_ms: u32 = 250,
     dry_run: bool = false,
     timeout_ms: u32 = 5000,
     stable_ms: u32 = 300,
@@ -219,7 +230,17 @@ fn pointer_only(arguments: Args) bool {
 }
 
 fn dry_runnable(arguments: Args) bool {
-    return arguments.mutates() or arguments.command == .gc;
+    return arguments.mutates() or only(&.{ .gc, .sequence })(arguments);
+}
+
+/// `--then`: input commands, and `sequence` for its last step.
+fn reporting(arguments: Args) bool {
+    return arguments.mutates() or arguments.command == .sequence;
+}
+
+/// `--max-edge`: observe, and the `--then observe` capture of an input command.
+fn edge_limited(arguments: Args) bool {
+    return arguments.command == .observe or reporting(arguments);
 }
 
 fn windowed(arguments: Args) bool {
@@ -293,7 +314,9 @@ const options = [_]Option{
         .allowed = only(&.{ ._preview_frame, ._preview_stop, ._preview_stream, ._preview_input }),
     },
     .{ .name = "--scale", .field = "scale", .allowed = only(&.{.observe}) },
-    .{ .name = "--max-edge", .field = "max_edge", .allowed = only(&.{.observe}) },
+    .{ .name = "--max-edge", .field = "max_edge", .allowed = edge_limited },
+    .{ .name = "--then", .field = "then", .allowed = reporting, .invalid = error.InvalidThen },
+    .{ .name = "--settle-ms", .field = "settle_ms", .allowed = reporting },
     .{ .name = "--since", .field = "since", .allowed = only(&.{.observe}) },
     .{ .name = "--compact", .field = "compact", .allowed = only(&.{ .state, .windows }) },
     .{ .name = "--window", .field = "window", .allowed = windowed },
@@ -507,6 +530,7 @@ fn validate_values(arguments: Args) !void {
         if (max_edge < max_edge_min) return error.InvalidMaxEdge;
         if (max_edge > max_edge_max) return error.InvalidMaxEdge;
     }
+    if (arguments.settle_ms > 10_000) return error.InvalidDuration;
     if (arguments.click_count < 1) return error.InvalidClickCount;
     if (arguments.click_count > click_count_max) return error.InvalidClickCount;
     if (arguments.key_repeat < 1) return error.InvalidRepeat;
@@ -560,6 +584,11 @@ fn validate_shape(arguments: Args) !void {
         if (arguments.to_y == null) return error.DragDestinationRequired;
     }
     if (arguments.command == .observe) try validate_observe_scope(arguments);
+    const capture_follows = arguments.command == .observe or arguments.then == .observe;
+    if (arguments.max_edge != null and !capture_follows) return error.InvalidMaxEdge;
+    if (arguments.command == .sequence and !arguments.explicit_session) {
+        return error.SessionRequired;
+    }
     const requires_window = arguments.command == .type or arguments.command == .key;
     if (requires_window and arguments.window == null) return error.WindowRequired;
     if (arguments.backend == .clipboard) {
@@ -902,4 +931,25 @@ test "sandbox options belong to session create, offline only with sandbox" {
         parse(&.{ "session", "inspect", "agent", "--sandbox" }),
     );
     try std.testing.expectError(error.UnknownOption, parse(&.{ "launch", "--sandbox" }));
+}
+
+test "then and settle belong to input commands and sequences" {
+    const typed = try parse(&.{
+        "type",       "--session", "agent", "--window", "0x1", "--text", "a", "--then", "observe",
+        "--max-edge", "1568",
+    });
+    try std.testing.expectEqual(Then.observe, typed.then);
+    try std.testing.expectEqual(@as(u32, 250), typed.settle_ms);
+    try std.testing.expectError(error.InvalidMaxEdge, parse(&.{
+        "type", "--session", "agent", "--window", "0x1", "--text", "a", "--max-edge", "800",
+    }));
+    try std.testing.expectError(error.InvalidThen, parse(&.{
+        "key", "a", "--session", "agent", "--window", "0x1", "--then", "everything",
+    }));
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "state", "--then", "state" }));
+    try std.testing.expectError(error.SessionRequired, parse(&.{"sequence"}));
+    const sequence = try parse(&.{
+        "sequence", "--session", "agent", "--then", "state", "--dry-run",
+    });
+    try std.testing.expect(sequence.dry_run and !sequence.mutates());
 }

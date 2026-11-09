@@ -475,6 +475,49 @@ Chromium exposes its tree only when started with `--force-renderer-accessibility
 Qt needs `QT_ACCESSIBILITY=1`. An empty tree does not establish that no controls
 exist.
 
+## Composing: `--then` and `sequence`
+
+```sh
+hyprhand act toggle --ref @1a2b3c4d:e5 --session agent --then accessibility
+hyprhand click --session agent --frame FRAME --x 300 --y 200 --then observe --max-edge 1568
+printf '%s' '[["act","set-value","--ref","@1a2b3c4d:e2","--text","Ada"],
+              ["act","check","--ref","@1a2b3c4d:e4"],
+              ["key","Return","--window","0x55d0c0"]]' |
+  hyprhand sequence --session agent --then state
+```
+
+Every input command accepts `--then state|observe|accessibility` and
+`--settle-ms 0..10000` (default 250). After the action succeeds and the pause
+passes, the response gains a `then` object holding what that command would print:
+
+| `--then` | Reports |
+| --- | --- |
+| `state` | `state --compact` |
+| `observe` | A capture of the action's frame scope (same window or output) with `--since` that frame, so `changed` tells whether the screen moved; otherwise the action's `--window`, `act` window or focused window; otherwise the focused output. `--max-edge` applies to it |
+| `accessibility` | `accessibility --window W --interactive` of the action's window, or the focused one |
+
+A failed report (`{"ok":false,"err":…}` inside `then`) never turns the action's
+success into a failure. Dry runs and failed actions report no `then`.
+
+`sequence --session S` reads a JSON array of steps from stdin, at most 50. Each
+step is a command line without `--session`: input commands (`act`, `click`,
+`type`, `key`, `focus`, `launch`…) or `wait`. All steps are parsed and validated
+before the first runs, so a malformed request (`InvalidSequence`,
+`InvalidSequenceStep`) sends nothing. Steps run in order with their own guards,
+budgets and audit entries, and the first failure stops the rest:
+
+| Field | Meaning |
+| --- | --- |
+| `steps` | Each executed step: `index`, `command`, `ok`, its `result` or `err`, and its `disposition` |
+| `completed`, `failed_step`, `not_executed` | How far it got |
+| `disposition` | The least certain delivery of all steps |
+| `then` | With `--then`, the report after the last executed step |
+
+A failed sequence exits 1 with this report, not a bare error. Use it for steps
+whose targets are known in advance: several refs of one snapshot, or several
+points of one frame while the layout stays put. `--dry-run` validates every step
+and dry-runs each input step.
+
 ## Logs, cleanup, and cancellation
 
 ```sh
