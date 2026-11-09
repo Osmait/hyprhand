@@ -139,8 +139,11 @@ Each error and each input or `act` result has
 
 Never type passwords, one-time codes or other secrets the human has not given you
 for that purpose, and never try to solve a captcha or bypass a security challenge.
-`act set-value` refuses password fields (`ProtectedField`). When a site needs a
-sign-in, a captcha or a second factor, hand that step to the human:
+`act set-value` refuses password fields (`ProtectedField`), and every input
+command refuses polkit, keyring, pinentry and Hyprland permission prompts
+(`AuthenticationPrompt`; `err.detail` names it): ask the human to answer those.
+When a site needs a sign-in, a captcha or a second factor, hand that step to the
+human:
 
 1. Ask the owner to open `preview --session NAME` (or use their open viewer) and
    press **Take over**. Say exactly which page is waiting and what they need to do.

@@ -454,6 +454,9 @@ fn hint_semantic(err: anyerror) ?[]const u8 {
         error.SnapshotNotFound, error.SnapshotExpired, error.StaleRef => "The element " ++
             "changed or disappeared, or its snapshot is gone or older than 5 minutes. " ++
             "Run accessibility --window ADDRESS again and use a new ref. Nothing was sent.",
+        error.AuthenticationPrompt => "A sign-in, polkit, keyring or permission prompt " ++
+            "is in front (err.detail names it). Never answer it: ask the human to handle " ++
+            "it, through the preview's Take over in a managed session. Nothing was sent.",
         error.AmbiguousTarget => "Several elements share this identity. Use the pointer " ++
             "on the element's frame_point (accessibility --frame ID) instead. Nothing was sent.",
         error.ActionNotSupported => "The element offers no semantic call for this verb. " ++
@@ -649,6 +652,7 @@ test {
     _ = @import("input/actions.zig");
     _ = @import("capture/observation.zig");
     _ = @import("runtime/delivery.zig");
+    _ = @import("runtime/auth_guard.zig");
     _ = @import("accessibility/refs.zig");
     _ = @import("accessibility/semantic.zig");
 }

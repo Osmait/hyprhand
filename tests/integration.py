@@ -26,6 +26,7 @@ class CLI(unittest.TestCase):
                         PATH=f"{self.root}:{os.environ['PATH']}", HYPRHAND_TEST_ROOT=str(self.root))
         self.address = "0x123"
         self.active = self.address
+        self.active_class = "test"
         self.locked = False
         self.hold_locked = threading.Event()
         self.locked_requested = threading.Event()
@@ -102,7 +103,7 @@ else:
                                "title": "Test window", "mapped": True,
                                "xwayland": self.xwayland, "pid": 123}] + self.extra_clients
                 elif command == "activewindow":
-                    result = {"address": self.active}
+                    result = {"address": self.active, "class": self.active_class}
                 elif command == "cursorpos":
                     result = {"x": self.x + 10, "y": 110}
                 elif command == "layers":
@@ -299,6 +300,31 @@ else:
         self.error("UnknownOption", "observe", "--interactive")
         self.error("UnknownOption", "act", "click", "--ref", "@1a2b3c4d:e1", "--session", "host",
                    "--interactive")
+
+    def test_authentication_prompts_are_refused_before_any_input(self):
+        self.cli("enable")
+        self.active_class = "hyprpolkitagent"
+        result = self.cli("type", "--window", self.address, "--text", "secret",
+                          "--session", "host", ok=False)
+        self.assertEqual(result["err"]["code"], "AuthenticationPrompt")
+        self.assertEqual(result["err"]["detail"], "hyprpolkitagent")
+        self.assertIs(result["disposition"]["retry_safe"], True)
+        self.error("AuthenticationPrompt", "key", "Return", "--window", self.address,
+                   "--session", "host", "--dry-run")
+        self.active_class = "test"
+        self.layers = {"DP-test": {"levels": {"3": [{"namespace": "quickshell:polkit"}]}}}
+        self.error("AuthenticationPrompt", "key", "Return", "--window", self.address,
+                   "--session", "host")
+        self.layers = {}
+        self.extra_clients = [{"address": "0x999", "at": [-1280, 100], "size": [400, 300],
+                               "workspace": {"id": 1}, "monitor": 0, "mapped": True,
+                               "class": "gcr-prompter", "pid": 9}]
+        f = self.frame()
+        self.error("AuthenticationPrompt", "click", "--frame", f["frame_id"], "--x", "10",
+                   "--y", "10", "--session", "host", "--dry-run")
+        self.cli("click", "--frame", f["frame_id"], "--x", "1000", "--y", "10",
+                 "--session", "host", "--dry-run")
+        self.assertFalse((self.root / "input.json").exists())
 
     def test_stale_geometry(self):
         f = self.frame()

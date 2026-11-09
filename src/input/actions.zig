@@ -21,6 +21,7 @@ const scroll_pacing = @import("scroll.zig");
 const Aura = @import("aura.zig").Aura;
 const delivery = @import("../runtime/delivery.zig");
 const semantic = @import("../accessibility/semantic.zig");
+const auth_guard = @import("../runtime/auth_guard.zig");
 
 fn validate_address(address: []const u8) !void {
     if (address.len < 3) return error.InvalidWindowAddress;
@@ -343,6 +344,11 @@ fn resolve_pointer_target(
         }
     }
     if (arguments.command == .drag) _ = try frame.point(arguments.to_x.?, arguments.to_y.?);
+    // A prompt that is not focused can still lie under the pointer.
+    for (snapshot.clients) |client| {
+        const prompt = auth_guard.prompt_class(client.class);
+        if (prompt and client.contains(point)) return runtime.prompt_error(client.class);
+    }
 
     return .{
         .frame = frame,
@@ -565,6 +571,7 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
     defer if (action) |*guard| guard.deinit();
     runtime.action = if (action) |*guard| guard else null;
     defer runtime.action = null;
+    try runtime.refuse_prompts();
     // Semantic actions resolve their own target and report their own dry run.
     if (arguments.command == .act) return semantic.run(runtime, arguments);
 

@@ -13,6 +13,7 @@ const delivery = @import("../runtime/delivery.zig");
 const atspi = @import("atspi.zig");
 const refs = @import("refs.zig");
 const tree = @import("tree.zig");
+const auth_guard = @import("../runtime/auth_guard.zig");
 const c = atspi.c;
 
 pub const Verb = @import("../cli/args.zig").ActVerb;
@@ -67,6 +68,9 @@ pub fn run(runtime: *Runtime, arguments: Args) !void {
     const verb = arguments.act_verb.?;
     const snapshot = try tree.load_snapshot(runtime, ref);
     const entry = snapshot.entry(ref.index) orelse return error.StaleRef;
+    // act reaches windows that are not focused: check the target itself.
+    const client = try tree.find_client(runtime, snapshot.window);
+    if (auth_guard.prompt_class(client.class)) return runtime.prompt_error(client.class);
     try check_request(verb, entry, arguments);
 
     const request = Request{
