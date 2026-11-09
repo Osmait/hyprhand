@@ -22,6 +22,7 @@ const Aura = @import("aura.zig").Aura;
 const delivery = @import("../runtime/delivery.zig");
 const semantic = @import("../accessibility/semantic.zig");
 const auth_guard = @import("../runtime/auth_guard.zig");
+const marks = @import("../capture/marks.zig");
 
 fn validate_address(address: []const u8) !void {
     if (address.len < 3) return error.InvalidWindowAddress;
@@ -323,7 +324,11 @@ fn resolve_pointer_target(
     const frame = try observation.load_frame(runtime, frame_id);
     const snapshot = try observation.snapshot(runtime, frame.monitor_id);
     try frame.validate(runtime.instance, runtime.display, snapshot.revision, native.now_ms());
-    const point = try frame.point(arguments.x.?, arguments.y.?);
+    const aim = if (arguments.mark) |index|
+        try marks.point_of(frame, index)
+    else
+        [2]f64{ arguments.x.?, arguments.y.? };
+    const point = try frame.point(aim[0], aim[1]);
 
     if (arguments.window) |window| {
         try check_window(runtime, window, true);

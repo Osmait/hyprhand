@@ -335,7 +335,7 @@ pub fn find_client(runtime: *Runtime, address: []const u8) !observation.Client {
 }
 
 /// One element as `accessibility` reports it to the agent.
-const OutputNode = struct {
+pub const OutputNode = struct {
     id: usize,
     parent: ?usize,
     depth: u32,
@@ -352,14 +352,18 @@ const OutputNode = struct {
     frame_point: ?geometry.Point,
 };
 
-pub fn tree(runtime: *Runtime, arguments: Args) !void {
-    try native.check_cancelled();
-    const frame: ?geometry.Frame = if (arguments.frame) |frame_id|
-        try observation.load_frame(runtime, frame_id)
-    else
-        null;
-    const report = try run_worker(runtime, arguments);
+/// One `accessibility` reading, ready to report or to draw marks from.
+pub const Reading = struct {
+    nodes: []const OutputNode,
+    truncated: bool,
+    coordinate_space: []const u8,
+    snapshot: ?[]const u8,
+};
 
+/// Walks the tree in a worker, stores the snapshot of a `--window` walk, and
+/// maps bounds into `frame` when one is given.
+pub fn read(runtime: *Runtime, arguments: Args, frame: ?geometry.Frame) !Reading {
+    const report = try run_worker(runtime, arguments);
     const snapshot_id: ?[]const u8 = if (report.entries.len > 0)
         try store_snapshot(runtime, report)
     else
@@ -369,14 +373,29 @@ pub fn tree(runtime: *Runtime, arguments: Args) !void {
         if (arguments.interactive and node.ref_index == null) continue;
         try nodes.append(runtime.allocator, try output_node(runtime, node, snapshot_id, frame));
     }
+    return .{
+        .nodes = nodes.items,
+        .truncated = report.truncated,
+        .coordinate_space = report.coordinate_space,
+        .snapshot = snapshot_id,
+    };
+}
+
+pub fn tree(runtime: *Runtime, arguments: Args) !void {
+    try native.check_cancelled();
+    const frame: ?geometry.Frame = if (arguments.frame) |frame_id|
+        try observation.load_frame(runtime, frame_id)
+    else
+        null;
+    const reading = try read(runtime, arguments, frame);
     try runtime.emit(.{
         .ok = true,
         .session_id = runtime.session_id,
         .accessibility = .{
-            .nodes = nodes.items,
-            .truncated = report.truncated,
-            .coordinate_space = report.coordinate_space,
-            .snapshot = snapshot_id,
+            .nodes = reading.nodes,
+            .truncated = reading.truncated,
+            .coordinate_space = reading.coordinate_space,
+            .snapshot = reading.snapshot,
             .read_only = true,
         },
     });

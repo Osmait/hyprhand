@@ -117,6 +117,10 @@ pub const Args = struct {
     max_edge: ?u32 = null,
     /// `observe`: a frame to compare the new capture with.
     since: ?[]const u8 = null,
+    /// `observe --window`: draw numbered marks on the window's operable elements.
+    marks: bool = false,
+    /// Pointer commands: aim at a mark of `--frame` instead of `--x --y`.
+    mark: ?u32 = null,
     button: u32 = buttons.left,
     click_count: u32 = 1,
     /// Modifiers held during a pointer action, e.g. "ctrl+shift".
@@ -318,6 +322,8 @@ const options = [_]Option{
     .{ .name = "--then", .field = "then", .allowed = reporting, .invalid = error.InvalidThen },
     .{ .name = "--settle-ms", .field = "settle_ms", .allowed = reporting },
     .{ .name = "--since", .field = "since", .allowed = only(&.{.observe}) },
+    .{ .name = "--marks", .field = "marks", .allowed = only(&.{.observe}) },
+    .{ .name = "--mark", .field = "mark", .allowed = pointer_only },
     .{ .name = "--compact", .field = "compact", .allowed = only(&.{ .state, .windows }) },
     .{ .name = "--window", .field = "window", .allowed = windowed },
     .{
@@ -576,8 +582,10 @@ fn validate_shape(arguments: Args) !void {
     }
     if (arguments.pointer()) {
         if (arguments.frame == null) return error.FrameCoordinatesRequired;
-        if (arguments.x == null) return error.FrameCoordinatesRequired;
-        if (arguments.y == null) return error.FrameCoordinatesRequired;
+        const coordinates = arguments.x != null or arguments.y != null;
+        if (arguments.mark != null and coordinates) return error.ConflictingPointerTarget;
+        if (arguments.mark == null and arguments.x == null) return error.FrameCoordinatesRequired;
+        if (arguments.mark == null and arguments.y == null) return error.FrameCoordinatesRequired;
     }
     if (arguments.command == .drag) {
         if (arguments.to_x == null) return error.DragDestinationRequired;
@@ -638,6 +646,8 @@ fn validate_observe_scope(arguments: Args) !void {
     if (region and arguments.frame == null) return error.InvalidObserveRegion;
     if (!region and arguments.frame != null) return error.InvalidObserveRegion;
 
+    // Marks come from the accessibility tree of exactly one window.
+    if (arguments.marks and arguments.window == null) return error.MarksRequireWindow;
     var scopes: usize = 0;
     if (arguments.monitor != null) scopes += 1;
     if (arguments.window != null) scopes += 1;
@@ -952,4 +962,16 @@ test "then and settle belong to input commands and sequences" {
         "sequence", "--session", "agent", "--then", "state", "--dry-run",
     });
     try std.testing.expect(sequence.dry_run and !sequence.mutates());
+}
+
+test "marks are drawn per window and aimed at instead of coordinates" {
+    const marked = try parse(&.{ "observe", "--window", "0x1", "--marks" });
+    try std.testing.expect(marked.marks);
+    try std.testing.expectError(error.MarksRequireWindow, parse(&.{ "observe", "--marks" }));
+    const click = try parse(&.{ "click", "--session", "agent", "--frame", "f", "--mark", "3" });
+    try std.testing.expectEqual(@as(?u32, 3), click.mark);
+    try std.testing.expectError(error.ConflictingPointerTarget, parse(&.{
+        "click", "--session", "agent", "--frame", "f", "--mark", "3", "--x", "1", "--y", "1",
+    }));
+    try std.testing.expectError(error.UnknownOption, parse(&.{ "key", "a", "--mark", "1" }));
 }
