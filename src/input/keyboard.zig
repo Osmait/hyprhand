@@ -71,6 +71,32 @@ pub fn modifier_index(name: []const u8) ?usize {
     return null;
 }
 
+/// Modifier indices, in order and each once, from "ctrl+shift" spellings.
+pub const ModifierSet = struct {
+    indices: [modifiers.len]usize = undefined,
+    count: usize = 0,
+
+    pub fn parse(value: []const u8) !ModifierSet {
+        var result = ModifierSet{};
+        var parts = std.mem.splitScalar(u8, value, '+');
+        while (parts.next()) |part| {
+            const index = modifier_index(part) orelse return error.InvalidModifiers;
+            for (result.slice()) |existing| {
+                if (existing == index) return error.InvalidModifiers;
+            }
+            assert(result.count < result.indices.len);
+            result.indices[result.count] = index;
+            result.count += 1;
+        }
+        assert(result.count > 0);
+        return result;
+    }
+
+    pub fn slice(self: *const ModifierSet) []const usize {
+        return self.indices[0..self.count];
+    }
+};
+
 // Applications do not only read the keysym of a key event. Chromium derives
 // its key code (accelerators, editing commands) from the evdev keycode for
 // anything that is not a letter or digit, and GTK 3 matches bindings by keycode
@@ -752,7 +778,15 @@ pub const Keyboard = struct {
         }
     }
 
-    pub fn chord(self: *Keyboard, runtime: *Runtime, value: []const u8) !void {
+    /// Taps `value` `repeat` times, `gap_ms` apart, on one uploaded keymap.
+    pub fn chord(
+        self: *Keyboard,
+        runtime: *Runtime,
+        value: []const u8,
+        repeat: u32,
+        gap_ms: u32,
+    ) !void {
+        assert(repeat >= 1);
         const parsed = try Chord.parse(runtime.allocator, value);
         var map = try Keymap.init_chord(runtime.allocator, parsed.symbol);
         defer map.deinit();
@@ -766,7 +800,32 @@ pub const Keyboard = struct {
 
         try self.upload(runtime, &map);
         var driver = Driver{ .keyboard = self, .runtime = runtime };
-        try self.held.chord(&driver, keys[0 .. parsed.count + 1]);
+        for (0..repeat) |tap| {
+            if (tap > 0) try runtime.pause(gap_ms);
+            try self.held.chord(&driver, keys[0 .. parsed.count + 1]);
+        }
+    }
+
+    /// Presses the modifiers and keeps them held until `release` or `deinit`,
+    /// for pointer actions such as ctrl+click and shift+drag.
+    pub fn hold_modifiers(self: *Keyboard, runtime: *Runtime, set: ModifierSet) !void {
+        assert(set.count > 0);
+        // Every chord keymap carries all modifier keys; the symbol is unused.
+        var map = try Keymap.init_chord(runtime.allocator, c.XKB_KEY_space);
+        defer map.deinit();
+        var keys: [modifiers.len]Key = undefined;
+        for (set.slice(), 0..) |index, i| {
+            const modifier = modifiers[index];
+            keys[i] = .{ .code = modifier.key, .mask = try map.mask(modifier.name) };
+        }
+
+        try self.upload(runtime, &map);
+        errdefer self.release();
+        for (keys[0..set.count]) |key| {
+            try runtime.guard();
+            try self.held.press(self, key);
+            try self.sync_checked(runtime, true);
+        }
     }
 };
 

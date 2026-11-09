@@ -51,10 +51,21 @@ root = pathlib.Path(os.environ["HYPRHAND_TEST_ROOT"])
 if pathlib.Path(sys.argv[0]).name == "xdotool" and sys.argv[1] == "getwindowfocus":
     print(os.environ.get("HYPRHAND_TEST_X11_PID", "123"))
 elif pathlib.Path(sys.argv[0]).name == "grim":
-    pathlib.Path(sys.argv[-1]).write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 1920, 1080))
+    # Like grim: the image is the logical box (-g) or output (1280x720) times -s.
+    argv = sys.argv[1:]
+    (root / "grim.json").write_text(__import__("json").dumps(argv))
+    scale = float(argv[argv.index("-s") + 1]) if "-s" in argv else 1.0
+    width, height = 1280, 720
+    if "-g" in argv:
+        width, height = (int(v) for v in argv[argv.index("-g") + 1].split(" ")[1].split("x"))
+    size = struct.pack(">II", round(width * scale), round(height * scale))
+    salt = os.environ.get("HYPRHAND_TEST_GRIM_SALT", "").encode()
+    pathlib.Path(sys.argv[-1]).write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + struct.pack(">I", 13) + b"IHDR" + size + salt)
 else:
     text = sys.stdin.read()
     (root / "input.json").write_text(__import__("json").dumps({"argv": sys.argv[1:], "text": text}))
+    with open(root / "calls.jsonl", "a") as calls:
+        calls.write(__import__("json").dumps(sys.argv) + "\\n")
     if text == "SLOW":
         time.sleep(20)
 '''
@@ -87,9 +98,13 @@ else:
                                "activeWorkspace": {"id": 1, "name": "1"}, "focused": True}]
                 elif command == "clients":
                     result = [{"address": self.address, "at": [self.x, 100], "size": self.client_size,
-                               "workspace": {"id": 1, "name": "1"}, "xwayland": self.xwayland, "pid": 123}] + self.extra_clients
+                               "workspace": {"id": 1, "name": "1"}, "monitor": 0, "class": "test",
+                               "title": "Test window", "mapped": True,
+                               "xwayland": self.xwayland, "pid": 123}] + self.extra_clients
                 elif command == "activewindow":
                     result = {"address": self.active}
+                elif command == "cursorpos":
+                    result = {"x": self.x + 10, "y": 110}
                 elif command == "layers":
                     result = self.layers
                 elif command == "locked":
@@ -129,14 +144,127 @@ else:
     def frame(self):
         return self.cli("observe")["frame"]
 
+    def grim_argv(self):
+        return json.loads((self.root / "grim.json").read_text())
+
     def test_observe_mapping_and_private_files(self):
-        f = self.frame()
+        f = self.cli("observe", "--scale", "1.5")["frame"]
+        self.assertEqual((f["image_width"], f["image_height"]), (1920, 1080))
         self.assertEqual(f["logical"], {"x": -1280, "y": 100, "width": 1280, "height": 720})
         result = self.cli("click", "--frame", f["frame_id"], "--x", "960", "--y", "540", "--session", "host", "--dry-run")
         self.assertEqual(result["desktop_point"], {"x": -640, "y": 460})
         self.assertEqual(Path(f["image_path"]).stat().st_mode & 0o777, 0o600)
         self.assertEqual(Path(f["image_path"]).parent.stat().st_mode & 0o777, 0o700)
         self.assertFalse(any("dispatch" in cmd for cmd in self.commands))
+
+    def test_observe_window_crop_and_max_edge(self):
+        self.client_size = [400, 300]
+        f = self.cli("observe", "--window", self.address, "--max-edge", "200")["frame"]
+        argv = self.grim_argv()
+        self.assertEqual(argv[argv.index("-g") + 1], "-1280,100 400x300")
+        self.assertNotIn("-o", argv)
+        self.assertEqual(f["logical"], {"x": -1280, "y": 100, "width": 400, "height": 300})
+        self.assertEqual(f["window"], self.address)
+        self.assertLessEqual(max(f["image_width"], f["image_height"]), 200)
+        self.assertLess(f["capture_scale"], 0.5)
+        result = self.cli("click", "--frame", f["frame_id"], "--x", "100", "--y", "75",
+                          "--session", "host", "--dry-run")
+        self.assertEqual(result["desktop_point"], {"x": -1080, "y": 250})
+
+    def test_observe_window_is_clipped_to_its_output_and_must_be_shown(self):
+        base = {"size": [400, 300], "monitor": 0, "mapped": True, "pid": 7}
+        self.extra_clients = [
+            dict(base, address="0x456", at=[-1380, 100], workspace={"id": 1}),
+            dict(base, address="0x789", at=[-1280, 100], workspace={"id": 2}),
+        ]
+        f = self.cli("observe", "--window", "0x456")["frame"]
+        self.assertEqual(f["logical"], {"x": -1280, "y": 100, "width": 300, "height": 300})
+        self.error("WindowNotVisible", "observe", "--window", "0x789")
+        self.error("WindowNotFound", "observe", "--window", "0xabc")
+        self.error("ConflictingObserveScope", "observe", "--window", "0x456", "--monitor", "DP-test")
+
+    def test_observe_region_zooms_into_an_earlier_frame(self):
+        f = self.cli("observe", "--scale", "1.5")["frame"]
+        zoom = self.cli("observe", "--frame", f["frame_id"], "--x", "1919", "--y", "1079",
+                        "--to-x", "960", "--to-y", "540", "--scale", "2")["frame"]
+        argv = self.grim_argv()
+        self.assertEqual(argv[argv.index("-g") + 1], "-640,460 640x360")
+        self.assertEqual(zoom["logical"], {"x": -640, "y": 460, "width": 640, "height": 360})
+        self.assertEqual((zoom["image_width"], zoom["image_height"]), (1280, 720))
+        result = self.cli("click", "--frame", zoom["frame_id"], "--x", "0", "--y", "0",
+                          "--session", "host", "--dry-run")
+        self.assertEqual(result["desktop_point"], {"x": -640, "y": 460})
+        self.error("InvalidObserveRegion", "observe", "--frame", f["frame_id"], "--x", "1")
+        self.error("CoordinatesOutOfBounds", "observe", "--frame", f["frame_id"], "--x", "0",
+                   "--y", "0", "--to-x", "1920", "--to-y", "10")
+        self.x = -1000
+        self.error("StaleObservation", "observe", "--frame", f["frame_id"], "--x", "0",
+                   "--y", "0", "--to-x", "10", "--to-y", "10")
+
+    def test_observe_since_reports_unchanged_pixels(self):
+        first = self.frame()
+        same = self.cli("observe", "--since", first["frame_id"])
+        self.assertIs(same["changed"], False)
+        self.assertNotEqual(same["frame"]["frame_id"], first["frame_id"])
+        self.assertEqual(len(same["frame"]["image_sha256"]), 64)
+        env = dict(self.env, HYPRHAND_TEST_GRIM_SALT="new pixels")
+        self.assertIs(self.cli("observe", "--since", first["frame_id"], env=env)["changed"], True)
+        scaled = self.cli("observe", "--since", first["frame_id"], "--scale", "0.5")
+        self.assertIs(scaled["changed"], True)
+        self.assertIsNone(self.cli("observe")["changed"])
+        self.error("FrameNotFound", "observe", "--since", "0" * 32)
+
+    def test_cursor_maps_into_a_frame(self):
+        f = self.cli("observe", "--scale", "1.5")["frame"]
+        result = self.cli("cursor", "--frame", f["frame_id"])
+        self.assertEqual(result["cursor"], {"x": -1270, "y": 110})
+        self.assertEqual(result["frame_pixel"], {"x": 15, "y": 15})
+        self.assertIs(result["frame_current"], True)
+        self.assertIsNone(self.cli("cursor")["frame_pixel"])
+        self.x = -1000
+        self.assertIs(self.cli("cursor", "--frame", f["frame_id"])["frame_current"], False)
+
+    def test_compact_state_and_windows(self):
+        state = self.cli("state", "--compact")
+        window = state["windows"][0]
+        self.assertEqual(window["address"], self.address)
+        self.assertEqual(window["title"], "Test window")
+        self.assertEqual(window["workspace"], 1)
+        self.assertIs(window["visible"], True)
+        self.assertEqual(state["monitors"][0]["logical"],
+                         {"x": -1280, "y": 100, "width": 1280, "height": 720})
+        self.assertEqual(state["active_window"], self.address)
+        self.assertNotIn("workspaces", state)
+        self.assertEqual(self.cli("windows", "--compact")["data"], state["windows"])
+        raw = json.dumps(self.cli("state"))
+        self.assertLess(len(json.dumps(state["windows"])), len(raw))
+
+    def test_click_counts_buttons_and_held_modifiers(self):
+        f = self.frame()
+        click = ("click", "--frame", f["frame_id"], "--x", "10", "--y", "10", "--session", "host")
+        result = self.cli(*click, "--count", "3", "--mods", "ctrl+shift", "--button", "back",
+                          "--dry-run")
+        self.assertEqual(result["modifiers"], "ctrl+shift")
+        self.error("InvalidModifiers", *click, "--mods", "ctrl+hyper", "--dry-run")
+        self.error("InvalidModifiers", *click, "--mods", "ctrl+ctrl", "--dry-run")
+        self.error("InvalidClickCount", *click, "--count", "4", "--dry-run")
+        self.xwayland = True  # A different client list: observe again.
+        f = self.frame()
+        click = ("click", "--frame", f["frame_id"], "--x", "10", "--y", "10", "--session", "host")
+        self.error("ModifiersUnavailableForX11", *click, "--mods", "ctrl", "--dry-run")
+
+    def test_key_repeat_reaches_every_keyboard_route(self):
+        self.cli("enable")
+        self.cli("key", "Down", "--window", self.address, "--repeat", "3", "--session", "host")
+        calls = (self.root / "calls.jsonl").read_text().splitlines()
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all(json.loads(call)[1:] == ["-k", "Down"] for call in calls))
+        self.xwayland = True
+        self.cli("key", "Down", "--window", self.address, "--repeat", "4", "--session", "host")
+        captured = json.loads((self.root / "input.json").read_text())
+        self.assertEqual(captured["argv"], ["key", "--repeat", "4", "--delay", "25", "Down"])
+        self.error("InvalidRepeat", "key", "Down", "--window", self.address, "--repeat", "101",
+                   "--session", "host")
 
     def test_stale_geometry(self):
         f = self.frame()

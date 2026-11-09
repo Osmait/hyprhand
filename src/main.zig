@@ -14,6 +14,7 @@ const actions = @import("input/actions.zig");
 const Pointer = @import("input/pointer.zig").Pointer;
 const Keyboard = @import("input/keyboard.zig").Keyboard;
 const observation = @import("capture/observation.zig");
+const geometry = @import("core/geometry.zig");
 const cursor_capture = @import("capture/cursor_capture.zig");
 const accessibility = @import("accessibility/tree.zig");
 const preview = @import("preview/controller.zig");
@@ -192,7 +193,8 @@ fn doctor(runtime: *Runtime) !void {
     });
 }
 
-fn state(runtime: *Runtime) !void {
+fn state(runtime: *Runtime, arguments: args.Args) !void {
+    if (arguments.compact) return state_compact(runtime);
     try runtime.emit(.{
         .ok = true,
         .session_id = runtime.session_id,
@@ -201,6 +203,82 @@ fn state(runtime: *Runtime) !void {
         .workspaces = try runtime.query_json(std.json.Value, "workspaces"),
         .active_window = try runtime.query_json(std.json.Value, "activewindow"),
         .cursor = try runtime.query_json(std.json.Value, "cursorpos"),
+        .control_enabled = try state_control_enabled(runtime),
+        .human_takeover = try runtime.takeover_active(),
+    });
+}
+
+/// One window in `--compact` output: what an agent needs to pick a target.
+const CompactWindow = struct {
+    address: []const u8,
+    class: []const u8,
+    title: []const u8,
+    workspace: i64,
+    monitor: i64,
+    at: [2]i32,
+    size: [2]i32,
+    floating: bool,
+    fullscreen: bool,
+    xwayland: bool,
+    visible: bool,
+};
+
+/// One output in `--compact` output, in logical desktop coordinates.
+const CompactMonitor = struct {
+    id: i64,
+    name: []const u8,
+    logical: geometry.Rect,
+    scale: f64,
+    focused: bool,
+    workspace: i64,
+};
+
+fn compact_windows(runtime: *Runtime) ![]CompactWindow {
+    const clients = try runtime.query_json([]observation.Client, "clients");
+    const windows = try runtime.allocator.alloc(CompactWindow, clients.len);
+    for (clients, windows) |client, *window| {
+        window.* = .{
+            .address = client.address,
+            .class = client.class,
+            .title = client.title,
+            .workspace = client.workspace.id,
+            .monitor = client.monitor,
+            .at = client.at,
+            .size = client.size,
+            .floating = client.floating,
+            .fullscreen = client.fullscreen != 0,
+            .xwayland = client.xwayland,
+            .visible = client.mapped and !client.hidden,
+        };
+    }
+    return windows;
+}
+
+fn compact_monitors(runtime: *Runtime) ![]CompactMonitor {
+    const monitors = try runtime.query_json([]geometry.Monitor, "monitors");
+    const compact = try runtime.allocator.alloc(CompactMonitor, monitors.len);
+    for (monitors, compact) |monitor, *entry| {
+        entry.* = .{
+            .id = monitor.id,
+            .name = monitor.name,
+            .logical = try monitor.rect(),
+            .scale = monitor.scale,
+            .focused = monitor.focused,
+            .workspace = monitor.activeWorkspace.id,
+        };
+    }
+    return compact;
+}
+
+/// `state --compact`: the same facts as `state`, a fraction of the tokens.
+fn state_compact(runtime: *Runtime) !void {
+    try runtime.emit(.{
+        .ok = true,
+        .session_id = runtime.session_id,
+        .monitors = try compact_monitors(runtime),
+        .windows = try compact_windows(runtime),
+        .active_window = try runtime.active_window(),
+        .cursor = try runtime.query_json(geometry.Point, "cursorpos"),
         .control_enabled = try state_control_enabled(runtime),
         .human_takeover = try runtime.takeover_active(),
     });
@@ -252,11 +330,19 @@ fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
 
     switch (arguments.command) {
         .doctor => try doctor(runtime),
-        .state => try state(runtime),
+        .state => try state(runtime, arguments),
         .monitors => try execute_query(runtime, "monitors"),
-        .windows => try execute_query(runtime, "clients"),
+        .windows => if (arguments.compact)
+            try runtime.emit(.{
+                .ok = true,
+                .session_id = runtime.session_id,
+                .data = try compact_windows(runtime),
+            })
+        else
+            try execute_query(runtime, "clients"),
         .workspaces => try execute_query(runtime, "workspaces"),
         .observe => try observation.observe_with_retry(runtime, arguments),
+        .cursor => try observation.cursor(runtime, arguments),
         .enable => try runtime.enable(arguments.indicator == .outline),
         .stop => try runtime.stop(),
         .wait => try wait.run(runtime, arguments),
@@ -282,6 +368,7 @@ fn execute_limit_command(arguments: args.Args) void {
         .windows,
         .workspaces,
         .observe,
+        .cursor,
         => native.limit_command(10_000, error.CommandTimeout),
         .type => native.limit_command(300_000, error.CommandTimeout),
         .focus,

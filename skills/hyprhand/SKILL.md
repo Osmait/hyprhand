@@ -65,8 +65,9 @@ The human's keys are never shown to you: neither `logs` nor any output contains 
 
 ## Observe → act → verify
 
-1. Read `state --session SESSION`. Discover the exact window address, class,
-   active focus, monitor and workspace. Do not guess addresses.
+1. Read `state --session SESSION --compact`. Discover the exact window address,
+   class, title, active focus, monitor and workspace. Do not guess addresses.
+   Use plain `state` only when a field you need is missing.
 2. Before authorized input, `enable --session SESSION`. Never re-enable after
    a human stop or a `ControlStopped` error without renewed authorization.
 3. Focus the intended window with `focus ADDRESS --session SESSION`.
@@ -74,10 +75,21 @@ The human's keys are never shown to you: neither `logs` nor any output contains 
 4. Capture `observe --session SESSION [--monitor NAME] [--retry 2]`. Read its JSON and
    **view the actual image_path with the agent's image-viewing tool** before
    choosing a pointer target. Coordinates are pixels in that image.
+   Images cost tokens by pixel area, so capture no more than the step needs:
+   - `--window ADDRESS` captures only the window you work in.
+   - `--frame ID --x X --y Y --to-x X2 --to-y Y2 [--scale 2]` zooms into a box of
+     an earlier frame (its pixels) to read small text or pick a small target.
+   - `--max-edge 1568` (or your model's limit) caps the image size.
+   - `--since PREVIOUS_FRAME_ID` reports `"changed": false` when the pixels are
+     identical: then skip viewing the new image, but use its new frame ID.
+   Every such frame is actionable exactly like a full one.
 5. Send one small action. Examples:
    ```sh
    hyprhand click --session SESSION --frame FRAME_ID --x 100 --y 200
+   hyprhand click --session SESSION --frame FRAME_ID --x 100 --y 200 --count 3
+   hyprhand click --session SESSION --frame FRAME_ID --x 100 --y 200 --mods ctrl
    hyprhand key ctrl+a --session SESSION --window ADDRESS
+   hyprhand key Down --repeat 3 --session SESSION --window ADDRESS
    hyprhand type --session SESSION --window ADDRESS --text 'Hello, Unicode: ñ ✓'
    hyprhand scroll --session SESSION --frame FRAME_ID --x 500 --y 400 --dy 2
    hyprhand drag --session SESSION --frame FRAME_ID --x 100 --y 200 --to-x 300 --to-y 200
@@ -90,6 +102,10 @@ The human's keys are never shown to you: neither `logs` nor any output contains 
    very long text. It never touches the host clipboard, the field must accept
    `ctrl+v` (not terminals), and the text stays on the session clipboard, so
    avoid it for secrets.
+   `--count 3` triple-clicks (select a line); `--mods ctrl+shift` holds
+   modifiers during a click, drag or scroll (not on XWayland windows);
+   `--button back|forward` navigates history. `cursor --frame ID` returns the
+   pointer's pixel in a frame, to check a hover without a new capture.
 6. Observe again and verify the application's result. `status: sent` proves
    dispatch only, not successful editing, navigation, saving, or calculation.
    `wait stable --pixels --session SESSION` can reduce paint races but does not

@@ -52,7 +52,23 @@ hyprhand monitors --session host
 hyprhand workspaces --session host
 hyprhand sessions
 hyprhand observe --session host --monitor MONITOR_NAME --scale 1
+hyprhand state --session host --compact
+hyprhand cursor --session host --frame FRAME_ID
 ```
+
+`state --compact` and `windows --compact` replace the raw Hyprland JSON with a
+short summary. Each window has `address`, `class`, `title`, `workspace`, `monitor`,
+`at`, `size`, `floating`, `fullscreen`, `xwayland` and `visible` (mapped and not
+hidden); each monitor has `id`, `name`, its `logical` desktop rectangle, `scale`,
+`focused` and active `workspace`. `state --compact` keeps `active_window` (an
+address), `cursor`, `control_enabled` and `human_takeover`, and omits the
+workspace list. Use the raw commands when a field is missing.
+
+`cursor` reports the pointer position in desktop coordinates. With `--frame ID`
+it also returns `frame_pixel`, the image pixel of that frame that shows the
+pointer (`null` outside the frame), and `frame_current`, whether the frame still
+matches the layout and has not expired. It confirms where a `move` landed
+without another capture.
 
 `doctor` checks prerequisites, display routing, and protocol availability. It does
 not capture an image, inject input, discover accessibility nodes, or start a
@@ -61,7 +77,7 @@ compositor. `operation_verified: false` means untested, not necessarily broken.
 `observe` uses `grim`; `--backend auto` and `helper` select that implementation.
 `--backend native` returns `NativeCaptureUnavailable`. If `--monitor` is omitted,
 the focused monitor is selected. Capture scale accepts `0.1..2` independently of
-the monitor's scale. `--retry 0..10` (default 0) retries `CommandTimeout`,
+the monitor's scale; the image is the captured logical size times the scale. `--retry 0..10` (default 0) retries `CommandTimeout`,
 `HelperTimeout` and `StaleObservation` up to that many extra times, 0.7 s apart,
 each attempt with a fresh 10 s budget; other errors are returned at once.
 
@@ -79,6 +95,45 @@ The response contains `ok`, `capture_duration_ms`, and `frame`:
 | `captured_at_unix_ms`, `captured_at_monotonic_ms` | Wall-clock and monotonic capture timestamps |
 | `max_age_ms` | 30000; frames expire after 30 seconds |
 | `layout_revision` | Hash of relevant compositor state |
+| `capture_scale` | Image pixels per logical pixel, after `--max-edge` |
+| `window` | The `--window` address the capture was cropped to, otherwise `null` |
+| `image_sha256` | SHA-256 of the PNG file, compared by `--since` |
+
+### Crops, zoom and image budget
+
+A vision model pays for an image by its pixel area, not by its file size. These
+options capture fewer pixels; every resulting frame keeps the coordinate
+contract below, so pointer commands use it like a full capture.
+
+| Option | Captures |
+| --- | --- |
+| `--monitor NAME` (default: focused) | The whole output |
+| `--window ADDRESS` | The screen inside that window's rectangle, clipped to its output |
+| `--frame ID --x X --y Y --to-x X --to-y Y` | A box drawn on an earlier frame, in that frame's pixels |
+| `--max-edge PX` (64..16384) | Lowers the scale so the longer image side is at most `PX` |
+
+The three scopes exclude one another (`ConflictingObserveScope`). `--window`
+captures what the screen shows inside the window, including anything that
+overlaps it. The window must be mapped and on its output's active (or special)
+workspace (`WindowNotVisible`). A box needs all four corners and its frame
+(`InvalidObserveRegion`); both corner pixels are inside the box, given in any
+order. The box frame must still be current (`StaleObservation`); the new frame
+covers whole logical pixels around the box. Combine a box with `--scale 2` to
+zoom into small text.
+
+`--max-edge` never raises `--scale`. It leaves half a pixel of headroom for
+rounding and fails with `CaptureExceedsMaxEdge` rather than return a larger
+image. Set it to the model's limit when the agent's API does not downscale for
+you: Claude Opus 4.7 and Sonnet 5 and newer accept 2576 pixels on the long side,
+earlier Claude models 1568. Anthropic suggests about 1920 × 1080 as a balance of
+accuracy and cost, and 1366 × 768 or 1280 × 720 for cost-sensitive work.
+
+`--since FRAME_ID` compares the new capture with an earlier frame of this
+session and adds `changed` to the response: `false` when the box, image size and
+PNG bytes are identical, so the agent can skip viewing the new image; `true`
+otherwise. Without `--since`, `changed` is `null`. The new frame is fresh and
+actionable either way. A missing comparison frame fails with `FrameNotFound`
+before anything is captured; `gc` removes frames older than five minutes.
 
 ### Coordinate contract
 
@@ -141,8 +196,27 @@ hyprhand scroll --session agent --frame FRAME_ID --x 500 --y 400 --dy 2
 All pointer commands accept `--window WINDOW_ADDRESS`, `--dry-run`,
 `--move-duration-ms`, and `--no-aura`. With `--window`, the initial/click point
 must be inside that focused window. Without it, the initially observed focus is
-still protected. Click, double click, and drag support `left`, `right`, and
-`middle` buttons, defaulting to `left`.
+still protected. Click, double click, and drag support `left`, `right`,
+`middle`, `back` and `forward` buttons, defaulting to `left`. `back` and
+`forward` are the thumb buttons (BTN_SIDE, BTN_EXTRA) that browsers and file
+managers use for history navigation.
+
+`click --count 1..3` sends that many clicks 80 ms apart, well inside the
+double-click interval: `--count 3` selects a line or paragraph in most editors.
+`doubleclick` remains an alias for `--count 2`.
+
+`--mods ctrl+shift` holds modifier keys (`ctrl`, `shift`, `alt`, `super`/`logo`,
+`altgr`) on a virtual keyboard while `click`, `doubleclick`, `drag` or `scroll`
+acts: they are pressed after the approach, immediately before the button or
+wheel, and released after it, in reverse order, also on failure or
+cancellation. Use it for ctrl+click (open in a new tab, multi-select),
+shift+click (range select) or ctrl+scroll (zoom). XWayland windows take
+keyboard input through XTEST instead, so a target or click point on an XWayland
+window fails with `ModifiersUnavailableForX11` before any input.
+
+Holding a button or key *across* commands (separate `mouse down` and `mouse up`)
+is not available: each command owns its virtual devices and releases everything
+it pressed when it exits.
 
 A focus or geometry change during approach can abort before input. Hover-to-focus
 settings can trigger this. Moving or resizing a compositor window by dragging
@@ -199,7 +273,11 @@ no subpixel wheel behavior and weaker cleanup guarantees.
 hyprhand type --session agent --window WINDOW_ADDRESS --text 'Hello, Unicode: ñ ✓'
 hyprhand key ctrl+shift+Return --session agent --window WINDOW_ADDRESS
 hyprhand key alt+Left --session agent --window WINDOW_ADDRESS
+hyprhand key Down --repeat 5 --session agent --window WINDOW_ADDRESS
 ```
+
+`key --repeat 1..100` taps the chord that many times, 25 ms apart, with one
+focus guard per tap; the native keyboard uploads its map once.
 
 Both commands require the exact target to remain focused. UTF-8 text supports up
 to 64 KiB, including tabs and newlines; a `\r\n` pair is sent as one Return, the

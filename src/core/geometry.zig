@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
 pub const Workspace = struct { id: i64 = 0, name: []const u8 = "" };
 pub const Monitor = struct {
@@ -35,7 +36,35 @@ pub const Monitor = struct {
     }
 };
 
-pub const Rect = struct { x: f64, y: f64, width: f64, height: f64 };
+pub const Rect = struct {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+
+    /// The overlap of two rectangles, or null when they do not overlap.
+    pub fn intersection(a: Rect, b: Rect) ?Rect {
+        const left = @max(a.x, b.x);
+        const top = @max(a.y, b.y);
+        const right = @min(a.x + a.width, b.x + b.width);
+        const bottom = @min(a.y + a.height, b.y + b.height);
+        if (right <= left) return null;
+        if (bottom <= top) return null;
+        return .{ .x = left, .y = top, .width = right - left, .height = bottom - top };
+    }
+
+    /// The smallest rectangle of whole logical pixels that covers `rect`.
+    pub fn whole_pixels(rect: Rect) Rect {
+        const left = @floor(rect.x);
+        const top = @floor(rect.y);
+        return .{
+            .x = left,
+            .y = top,
+            .width = @ceil(rect.x + rect.width) - left,
+            .height = @ceil(rect.y + rect.height) - top,
+        };
+    }
+};
 pub const Point = struct { x: i32, y: i32 };
 pub const Frame = struct {
     schema_version: u32 = 2,
@@ -53,6 +82,12 @@ pub const Frame = struct {
     image_height: u32,
     logical: Rect,
     layout_revision: []const u8,
+    /// The grim scale factor: image pixels per logical pixel.
+    capture_scale: f64 = 1,
+    /// The window `observe --window` cropped to, if any.
+    window: ?[]const u8 = null,
+    /// SHA-256 of the image file, lowercase hex; compared by `observe --since`.
+    image_sha256: []const u8 = "",
 
     pub fn point(frame: Frame, x: f64, y: f64) !Point {
         const image_width: f64 = @floatFromInt(frame.image_width);
@@ -78,6 +113,52 @@ pub const Frame = struct {
         if (global_y > std.math.maxInt(i32)) return error.CoordinatesOutOfBounds;
 
         return .{ .x = @intFromFloat(global_x), .y = @intFromFloat(global_y) };
+    }
+
+    /// The logical desktop box covering the frame pixels between two corners,
+    /// given in either order. Both corner pixels are inside the box.
+    pub fn box(frame: Frame, x0: f64, y0: f64, x1: f64, y1: f64) !Rect {
+        const first = try frame.point(@min(x0, x1), @min(y0, y1));
+        const last = try frame.point(@max(x0, x1), @max(y0, y1));
+        assert(last.x >= first.x);
+        assert(last.y >= first.y);
+
+        return .{
+            .x = @floatFromInt(first.x),
+            .y = @floatFromInt(first.y),
+            .width = @floatFromInt(@as(i64, last.x) - first.x + 1),
+            .height = @floatFromInt(@as(i64, last.y) - first.y + 1),
+        };
+    }
+
+    /// The frame pixel that shows the desktop point, or null outside the frame.
+    /// At a capture scale of 1 or more it inverts `point`: `point(pixel(p))`
+    /// is `p`. A downscaled frame returns the pixel that contains `p`.
+    pub fn pixel(frame: Frame, desktop: Point) ?Point {
+        if (frame.image_width == 0) return null;
+        if (frame.image_height == 0) return null;
+        if (frame.logical.width <= 0) return null;
+        if (frame.logical.height <= 0) return null;
+
+        const image_width: f64 = @floatFromInt(frame.image_width);
+        const image_height: f64 = @floatFromInt(frame.image_height);
+        const offset_x = @as(f64, @floatFromInt(desktop.x)) - frame.logical.x;
+        const offset_y = @as(f64, @floatFromInt(desktop.y)) - frame.logical.y;
+        const x = pixel_axis(offset_x, image_width / frame.logical.width);
+        const y = pixel_axis(offset_y, image_height / frame.logical.height);
+        if (x < 0) return null;
+        if (y < 0) return null;
+        if (x >= image_width) return null;
+        if (y >= image_height) return null;
+        return .{ .x = @intFromFloat(x), .y = @intFromFloat(y) };
+    }
+
+    /// One axis of `pixel`. When a logical pixel spans several image pixels,
+    /// the first of them is the one `point` maps back (it floors); otherwise
+    /// the image pixel containing the offset is the only candidate.
+    fn pixel_axis(offset: f64, pixels_per_logical: f64) f64 {
+        if (pixels_per_logical >= 1) return @ceil(offset * pixels_per_logical);
+        return @floor(offset * pixels_per_logical);
     }
 
     pub fn validate(
@@ -180,5 +261,46 @@ test "frames expire and reject different layouts and sessions" {
     try std.testing.expectError(
         error.StaleObservation,
         invalid.validate("abc", "wayland-1", "one", 1100),
+    );
+}
+test "frame boxes cover both corner pixels in either order" {
+    const frame = fixture();
+    const box = try frame.box(1919, 1079, 960, 540);
+    try std.testing.expectEqual(Rect{ .x = -640, .y = 460, .width = 640, .height = 360 }, box);
+    try std.testing.expectEqual(box, try frame.box(960, 540, 1919, 1079));
+    try std.testing.expectError(error.CoordinatesOutOfBounds, frame.box(0, 0, 1920, 10));
+}
+test "pixel inverts point at every capture scale" {
+    var frame = fixture();
+    for ([_]u32{ 1280, 1600, 1920, 2560 }) |image_width| {
+        frame.image_width = image_width;
+        frame.image_height = image_width * 9 / 16;
+        var desktop_x: i32 = -1280;
+        while (desktop_x < 0) : (desktop_x += 37) {
+            const desktop = Point{ .x = desktop_x, .y = 101 };
+            const image = frame.pixel(desktop).?;
+            const mapped = try frame.point(@floatFromInt(image.x), @floatFromInt(image.y));
+            try std.testing.expectEqual(desktop, mapped);
+        }
+    }
+    frame.image_width = 640;
+    frame.image_height = 360;
+    try std.testing.expectEqual(Point{ .x = 1, .y = 0 }, frame.pixel(.{ .x = -1277, .y = 100 }).?);
+    try std.testing.expectEqual(@as(?Point, null), frame.pixel(.{ .x = 0, .y = 100 }));
+    try std.testing.expectEqual(@as(?Point, null), frame.pixel(.{ .x = -1281, .y = 100 }));
+}
+test "rectangles intersect and widen to whole pixels" {
+    const output = Rect{ .x = 0, .y = 0, .width = 1920, .height = 1080 };
+    const window = Rect{ .x = 1800, .y = -20, .width = 400, .height = 300 };
+    try std.testing.expectEqual(
+        Rect{ .x = 1800, .y = 0, .width = 120, .height = 280 },
+        Rect.intersection(window, output).?,
+    );
+    const outside = Rect{ .x = 1920, .y = 0, .width = 10, .height = 10 };
+    try std.testing.expectEqual(@as(?Rect, null), Rect.intersection(outside, output));
+    const fractional = Rect{ .x = 10.5, .y = 2.25, .width = 4, .height = 1 };
+    try std.testing.expectEqual(
+        Rect{ .x = 10, .y = 2, .width = 5, .height = 2 },
+        fractional.whole_pixels(),
     );
 }

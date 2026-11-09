@@ -268,6 +268,47 @@ const PointerTarget = struct {
     /// `--window` when given, otherwise the window focused when resolved.
     window: []const u8,
     guard: PointerGuard,
+    /// `--mods`: modifier keys held while the button or wheel acts.
+    modifiers: ?keyboard.ModifierSet = null,
+};
+
+/// Parses `--mods` and refuses targets the virtual keyboard cannot reach:
+/// XWayland clients take keyboard input through XTEST, not this device.
+fn resolve_modifiers(
+    arguments: args.Args,
+    clients: []const Client,
+    window: []const u8,
+    point: geometry.Point,
+) !?keyboard.ModifierSet {
+    const value = arguments.mods orelse return null;
+    const set = try keyboard.ModifierSet.parse(value);
+    for (clients) |client| {
+        if (!client.xwayland) continue;
+        const targeted = eq(client.address, window) or client.contains(point);
+        if (targeted) return error.ModifiersUnavailableForX11;
+    }
+    return set;
+}
+
+/// Modifier keys held down for the duration of one pointer action.
+const HeldModifiers = struct {
+    device: Keyboard = undefined,
+    active: bool = false,
+
+    fn press(self: *HeldModifiers, runtime: *Runtime, set: keyboard.ModifierSet) !void {
+        assert(!self.active);
+        try self.device.init(try runtime.display_path());
+        self.active = true;
+        try self.device.create();
+        try self.device.hold_modifiers(runtime, set);
+    }
+
+    /// Releases every held modifier; safe to call when nothing was pressed.
+    fn release(self: *HeldModifiers) void {
+        if (!self.active) return;
+        self.device.deinit();
+        self.active = false;
+    }
 };
 
 fn resolve_pointer_target(
@@ -305,6 +346,7 @@ fn resolve_pointer_target(
         .point = point,
         .window = target_window,
         .guard = .{ .frame = frame },
+        .modifiers = try resolve_modifiers(arguments, snapshot.clients, target_window, point),
     };
 }
 
@@ -344,13 +386,12 @@ fn run_pointer_action(runtime: *Runtime, arguments: args.Args, target: *PointerT
     try motion.run(&driver, start, target.point, approach_ms);
     try runtime.guard();
     try runtime.unlocked();
+    var held = HeldModifiers{};
+    defer held.release();
+    if (target.modifiers) |set| try held.press(runtime, set);
     switch (arguments.command) {
-        .click => try pointer.click(arguments.button),
-        .doubleclick => {
-            try pointer.click(arguments.button);
-            try runtime.pause(80);
-            try pointer.click(arguments.button);
-        },
+        .click => try click_repeated(runtime, &pointer, arguments.button, arguments.click_count),
+        .doubleclick => try click_repeated(runtime, &pointer, arguments.button, 2),
         .drag => {
             const destination = try target.frame.point(arguments.to_x.?, arguments.to_y.?);
             try pointer.press(arguments.button);
@@ -376,6 +417,21 @@ fn run_pointer_action(runtime: *Runtime, arguments: args.Args, target: *PointerT
     const hold_feedback = arguments.command == .move and driver.aura != null and aura_elapsed < 100;
     if (hold_feedback) try runtime.pause(@intCast(100 - aura_elapsed));
 }
+
+/// Clicks `count` times, close enough together for a double or triple click.
+fn click_repeated(runtime: *Runtime, pointer: *Pointer, button: u32, count: u32) !void {
+    assert(count >= 1);
+    assert(count <= args.click_count_max);
+    for (0..count) |index| {
+        if (index > 0) try runtime.pause(click_gap_ms);
+        try pointer.click(button);
+    }
+}
+
+/// Well inside every toolkit's double-click interval (GTK and Qt: 400 ms).
+const click_gap_ms = 80;
+/// Between repeated key taps: fast, yet each tap is a separate key event.
+const key_repeat_gap_ms = 25;
 
 /// How keyboard input reaches the target window.
 const KeyboardRoute = enum {
@@ -439,7 +495,7 @@ fn paste_text(runtime: *Runtime, arguments: args.Args) !void {
     errdefer helper.run_helper_stderr(&clipboard_clear_argv, null, false, .ignore) catch {};
 
     const chord = "ctrl+v";
-    try press_chord(runtime, arguments, chord, try key_args(runtime.allocator, chord));
+    try press_chord(runtime, arguments, chord, try key_args(runtime.allocator, chord), 1);
 }
 
 /// A runtime for wl-copy that can only reach the session display: an inherited
@@ -454,24 +510,39 @@ fn paste_text_runtime(runtime: *Runtime) !Runtime {
     return helper;
 }
 
+/// Taps the chord `repeat` times on the target window's keyboard route.
 fn press_chord(
     runtime: *Runtime,
     arguments: args.Args,
     chord: []const u8,
     wtype_argv: []const []const u8,
+    repeat: u32,
 ) !void {
+    assert(repeat >= 1);
     switch (try keyboard_route(runtime, arguments)) {
         .native => {
             var device: Keyboard = undefined;
             try device.init(try runtime.display_path());
             defer device.deinit();
             try device.create();
-            try device.chord(runtime, chord);
+            try device.chord(runtime, chord, repeat, key_repeat_gap_ms);
         },
-        .wtype => try runtime.run_helper(wtype_argv, null, true),
+        .wtype => for (0..repeat) |tap| {
+            if (tap > 0) try runtime.pause(key_repeat_gap_ms);
+            try runtime.run_helper(wtype_argv, null, true);
+        },
         .xdotool => {
             const x11_spelling = try x11_chord(runtime.allocator, chord);
-            const argv = &.{ "xdotool", "key", "--delay", "0", x11_spelling };
+            const repeat_text = try std.fmt.allocPrint(runtime.allocator, "{d}", .{repeat});
+            const delay_text = try std.fmt.allocPrint(
+                runtime.allocator,
+                "{d}",
+                .{key_repeat_gap_ms},
+            );
+            const argv = &.{
+                "xdotool", "key",      "--repeat",   repeat_text,
+                "--delay", delay_text, x11_spelling,
+            };
             try runtime.run_helper(argv, null, true);
         },
     }
@@ -509,6 +580,7 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
             .desktop_point = point,
             .window = arguments.window,
             .target = arguments.target(),
+            .modifiers = arguments.mods,
         });
         return;
     }
@@ -521,7 +593,7 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         .type => try type_text(runtime, arguments),
         .key => {
             const chord = arguments.key_chord.?;
-            try press_chord(runtime, arguments, chord, validated.key_argv.?);
+            try press_chord(runtime, arguments, chord, validated.key_argv.?, arguments.key_repeat);
         },
         .launch => return sessions.launch(runtime, arguments),
         else => unreachable,
@@ -534,6 +606,9 @@ pub fn run(runtime: *Runtime, arguments: args.Args) !void {
         .status = "sent",
         .desktop_point = point,
         .scroll_mode_requested = if (arguments.command == .scroll) arguments.scroll_mode else null,
+        .modifiers = arguments.mods,
+        .click_count = if (arguments.command == .click) arguments.click_count else null,
+        .repeat = if (arguments.command == .key) arguments.key_repeat else null,
     });
 }
 
