@@ -15,8 +15,10 @@ const Pointer = @import("input/pointer.zig").Pointer;
 const Keyboard = @import("input/keyboard.zig").Keyboard;
 const observation = @import("capture/observation.zig");
 const geometry = @import("core/geometry.zig");
+const delivery = @import("runtime/delivery.zig");
 const cursor_capture = @import("capture/cursor_capture.zig");
 const accessibility = @import("accessibility/tree.zig");
+const semantic = @import("accessibility/semantic.zig");
 const preview = @import("preview/controller.zig");
 const takeover = @import("preview/takeover.zig");
 
@@ -351,6 +353,7 @@ fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
         .gc => try operations.collect(runtime, arguments, true),
         .accessibility => try accessibility.tree(runtime, arguments),
         ._a11y => try accessibility.worker(runtime, arguments),
+        ._a11y_act => try semantic.worker(runtime),
         ._cursor_probe => try cursor_capture.probe(runtime),
         ._preview_frame, ._preview_stop => try preview.worker(runtime, arguments),
         else => return error.CommandNotImplemented,
@@ -371,6 +374,8 @@ fn execute_limit_command(arguments: args.Args) void {
         .cursor,
         => native.limit_command(10_000, error.CommandTimeout),
         .type => native.limit_command(300_000, error.CommandTimeout),
+        .act => native.limit_command(30_000, error.CommandTimeout),
+        ._a11y_act => native.limit_command(20_000, error.CommandTimeout),
         .focus,
         .workspace,
         .key,
@@ -441,9 +446,66 @@ fn hint_session(err: anyerror) ?[]const u8 {
     };
 }
 
+/// Hints for accessibility refs and semantic actions.
+fn hint_semantic(err: anyerror) ?[]const u8 {
+    return switch (err) {
+        error.InvalidRef, error.RefRequired => "Use a ref such as @1a2b3c4d:e3 from " ++
+            "accessibility --window ADDRESS; bare e3 names no snapshot.",
+        error.SnapshotNotFound, error.SnapshotExpired, error.StaleRef => "The element " ++
+            "changed or disappeared, or its snapshot is gone or older than 5 minutes. " ++
+            "Run accessibility --window ADDRESS again and use a new ref. Nothing was sent.",
+        error.AmbiguousTarget => "Several elements share this identity. Use the pointer " ++
+            "on the element's frame_point (accessibility --frame ID) instead. Nothing was sent.",
+        error.ActionNotSupported => "The element offers no semantic call for this verb. " ++
+            "Use the pointer or keyboard instead, e.g. click at its frame_point.",
+        error.ActionRefused => "The application refused the semantic call. " ++
+            "Use the pointer or keyboard instead.",
+        error.ProtectedField => "Password fields are never written semantically. " ++
+            "Hand the step to the human (preview Take over).",
+        error.WriteIgnored => "The application accepted the write but its text did not " ++
+            "change. Use focus + type instead.",
+        error.ValueMismatch => "The value changed but does not match the request: " ++
+            "inspect the element before retrying.",
+        error.IndeterminateState => "The control is in a mixed state; inspect it and " ++
+            "use the pointer.",
+        error.AccessibilityTimeout => "The application did not answer in time; the call " ++
+            "may have taken effect. Inspect the element before retrying.",
+        error.InvalidActVerb => "Verbs: click, focus, set-value, toggle, check, uncheck, " ++
+            "expand, collapse, select, scroll-to.",
+        error.UnexpectedText => "--text is only for act set-value.",
+        error.AccessibilityWindowNotFound, error.AccessibilityWindowAmbiguous => "The " ++
+            "window's application exposes no matching accessibility window. Start " ++
+            "Chromium with --force-renderer-accessibility and Qt with QT_ACCESSIBILITY=1.",
+        else => null,
+    };
+}
+
+/// Hints for observation scopes and the newer input options.
+fn hint_options(err: anyerror) ?[]const u8 {
+    return switch (err) {
+        error.InvalidObserveRegion => "A region needs --frame ID and all of --x --y " ++
+            "--to-x --to-y, in that frame's pixels.",
+        error.ConflictingObserveScope => "Use one of --monitor, --window or a --frame region.",
+        error.WindowNotVisible => "The window is hidden, unmapped or on a workspace that " ++
+            "is not shown. Focus or show it, then observe again.",
+        error.CaptureExceedsMaxEdge => "The image would exceed --max-edge; nothing was " ++
+            "returned. Report this: the scale is chosen to fit.",
+        error.InvalidMaxEdge => "--max-edge accepts 64..16384 pixels.",
+        error.InvalidModifiers => "Use modifiers ctrl, shift, alt, super/logo and altgr, " ++
+            "joined by + and each once.",
+        error.ModifiersUnavailableForX11 => "XWayland windows cannot receive held " ++
+            "modifiers from the virtual keyboard. Use key chords instead.",
+        error.InvalidClickCount => "--count accepts 1..3.",
+        error.InvalidRepeat => "--repeat accepts 1..100.",
+        else => null,
+    };
+}
+
 fn hint(err: anyerror) []const u8 {
     if (hint_takeover(err)) |text| return text;
     if (hint_session(err)) |text| return text;
+    if (hint_semantic(err)) |text| return text;
+    if (hint_options(err)) |text| return text;
     return switch (err) {
         error.PreviewHelperMissing => "Build the optional viewer with zig build pip; " ++
             "keep hyprhand-pip beside hyprhand.",
@@ -530,8 +592,16 @@ fn hint_setup(err: anyerror) []const u8 {
 fn report(init: std.process.Init, err: anyerror) void {
     const message = std.json.Stringify.valueAlloc(
         init.arena.allocator(),
-        .{ .ok = false, .err = .{ .code = @errorName(err), .message = hint(err) } },
-        .{},
+        .{
+            .ok = false,
+            .err = .{
+                .code = @errorName(err),
+                .message = hint(err),
+                .detail = delivery.detail(),
+            },
+            .disposition = delivery.disposition(),
+        },
+        .{ .emit_null_optional_fields = false },
     ) catch return;
     std.Io.File.stdout().writeStreamingAll(init.io, message) catch {};
     std.Io.File.stdout().writeStreamingAll(init.io, "\n") catch {};
@@ -578,6 +648,9 @@ test {
     _ = @import("preview/cadence.zig");
     _ = @import("input/actions.zig");
     _ = @import("capture/observation.zig");
+    _ = @import("runtime/delivery.zig");
+    _ = @import("accessibility/refs.zig");
+    _ = @import("accessibility/semantic.zig");
 }
 
 test {

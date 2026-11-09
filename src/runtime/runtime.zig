@@ -596,6 +596,71 @@ pub const Runtime = struct {
         return fd;
     }
 
+    /// A worker's exit status and everything it wrote to stdout.
+    pub const Captured = struct { succeeded: bool, stdout: []const u8 };
+
+    /// Runs a hyprhand worker with `input` on stdin and returns its stdout.
+    /// Stdout goes to a memory file, so a worker never blocks on a full pipe.
+    /// `controlled` workers are killed as soon as the action guard fails.
+    pub fn run_capture(
+        self: *Runtime,
+        argv: []const []const u8,
+        input: []const u8,
+        controlled: bool,
+        budget_ms: u32,
+    ) !Captured {
+        const stdin_fd = try input_buffer(input);
+        defer _ = c.close(stdin_fd);
+        const stdout_fd = c.memfd_create("hyprhand-output", c.MFD_CLOEXEC);
+        if (stdout_fd < 0) return error.InputBufferFailed;
+        defer _ = c.close(stdout_fd);
+        if (controlled) try self.guard();
+
+        var child = try std.process.spawn(self.io, .{
+            .argv = argv,
+            .environ_map = self.env,
+            .stdin = .{ .file = .{ .handle = stdin_fd, .flags = .{ .nonblocking = false } } },
+            .stdout = .{ .file = .{ .handle = stdout_fd, .flags = .{ .nonblocking = false } } },
+            .stderr = .ignore,
+        });
+        defer child_process.terminate(&child, self.io);
+        const pidfd: c_int = @intCast(c.syscall(c.SYS_pidfd_open, child.id.?, @as(c_uint, 0)));
+        if (pidfd < 0) return error.ProcessMonitorFailed;
+        defer _ = c.close(pidfd);
+
+        const deadline = native.now_ms() + budget_ms;
+        while (true) {
+            try native.check_cancelled();
+            if (controlled) try self.guard();
+            if (native.now_ms() >= deadline) return error.HelperTimeout;
+            var poll_fd = c.struct_pollfd{ .fd = pidfd, .events = c.POLLIN, .revents = 0 };
+            const ready = c.poll(&poll_fd, 1, 25);
+            if (ready < 0 and native.errno() != c.EINTR) return error.ProcessMonitorFailed;
+            if (ready > 0) break;
+        }
+        const termination = try child.wait(self.io);
+        const succeeded = switch (termination) {
+            .exited => |code| code == 0,
+            else => false,
+        };
+        return .{ .succeeded = succeeded, .stdout = try read_fd(self.allocator, stdout_fd) };
+    }
+
+    /// Everything in a rewound memory file, up to 16 MiB.
+    fn read_fd(allocator: std.mem.Allocator, fd: c_int) ![]const u8 {
+        if (c.lseek(fd, 0, c.SEEK_SET) < 0) return error.InputBufferFailed;
+        var output: std.ArrayList(u8) = .empty;
+        var buffer: [16 * 1024]u8 = undefined;
+        while (output.items.len < 16 * 1024 * 1024) {
+            const count = c.read(fd, &buffer, buffer.len);
+            if (count < 0 and native.errno() == c.EINTR) continue;
+            if (count < 0) return error.InputBufferFailed;
+            if (count == 0) break;
+            try output.appendSlice(allocator, buffer[0..@intCast(count)]);
+        }
+        return output.toOwnedSlice(allocator);
+    }
+
     /// Run a bounded helper, with no shell and no text in its argv.
     pub fn run_helper(
         self: *Runtime,

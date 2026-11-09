@@ -266,6 +266,40 @@ else:
         self.error("InvalidRepeat", "key", "Down", "--window", self.address, "--repeat", "101",
                    "--session", "host")
 
+    def test_disposition_says_whether_input_was_delivered(self):
+        bad = subprocess.run([str(BIN), "click", "--frame", "x"], env=self.env,
+                             capture_output=True, text=True, timeout=15)
+        self.assertEqual(json.loads(bad.stdout)["disposition"],
+                         {"delivery": "not_delivered", "retry_safe": True})
+        refused = self.cli("type", "--window", self.address, "--text", "hola", "--session", "host",
+                           ok=False)
+        self.assertEqual(refused["err"]["code"], "ControlStopped")
+        self.assertIs(refused["disposition"]["retry_safe"], True)
+        self.cli("enable")
+        sent = self.cli("key", "Down", "--window", self.address, "--session", "host")
+        self.assertEqual(sent["disposition"], {"delivery": "delivered_unverified",
+                                               "retry_safe": False})
+
+    def test_act_arguments_and_refs_fail_closed_before_any_worker(self):
+        act = ("act", "--session", "host")
+        self.error("RefRequired", *act[:1], "click", *act[1:])
+        self.error("InvalidActVerb", "act", "poke", "--ref", "@1a2b3c4d:e1", "--session", "host")
+        self.error("SessionRequired", "act", "click", "--ref", "@1a2b3c4d:e1")
+        self.error("UnknownOption", "act", "click", "--ref", "@1a2b3c4d:e1", "--session", "host",
+                   "--window", self.address)
+        self.cli("enable")
+        for ref in ("e1", "@e1", "@1A2B3C4D:e1", "@1a2b3c4d:e0"):
+            self.error("InvalidRef", "act", "click", "--ref", ref, "--session", "host")
+        self.error("SnapshotNotFound", "act", "click", "--ref", "@1a2b3c4d:e1",
+                   "--session", "host")
+        self.error("SnapshotNotFound", "act", "click", "--ref", "@1a2b3c4d:e1",
+                   "--session", "host", "--dry-run")
+
+    def test_accessibility_options_are_scoped(self):
+        self.error("UnknownOption", "observe", "--interactive")
+        self.error("UnknownOption", "act", "click", "--ref", "@1a2b3c4d:e1", "--session", "host",
+                   "--interactive")
+
     def test_stale_geometry(self):
         f = self.frame()
         self.x += 10

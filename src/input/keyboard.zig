@@ -5,6 +5,7 @@ const c = native.c;
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const Connection = @import("../platform/wayland.zig").Connection;
 const eq = @import("../core/text.zig").eq;
+const delivery = @import("../runtime/delivery.zig");
 
 pub const Modifier = struct {
     /// XKB virtual modifier name used in the generated keymap.
@@ -637,6 +638,7 @@ pub const Keyboard = struct {
     }
 
     fn send_key(self: *Keyboard, key: u32, state: u32) void {
+        delivery.mark_sent();
         c.zwp_virtual_keyboard_v1_key(self.device, native.timestamp_ms(), key, state);
     }
 
