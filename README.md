@@ -57,7 +57,7 @@ verification, full recording, and edit timeline.
 | Isolate input | Create, inspect, list, launch into, and destroy managed nested or headless sessions |
 | Monitor | Optional GTK4 preview with source cursor, an input-stop control and human takeover for logins and captchas |
 | Accessibility | Bounded, read-only AT-SPI tree; password values and children are omitted |
-| Integrate | JSON errors, Bash/Fish completions, an agent skill, offline tests, checksummed local packages |
+| Integrate | JSON errors, Bash/Fish completions, an agent skill, `dialect` for Anthropic, OpenAI and Gemini computer-use calls, offline tests, checksummed local packages |
 
 A second workspace in the same compositor does **not** isolate keyboard or mouse
 input. Targeted shortcuts can briefly steal foreground keyboard focus even when

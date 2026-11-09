@@ -35,6 +35,7 @@ pub const Command = enum {
     sequence,
     journal,
     replay,
+    dialect,
     _a11y,
     _a11y_act,
     _a11y_probe,
@@ -52,6 +53,8 @@ pub const Indicator = enum { none, outline };
 pub const SessionVerb = enum { create, inspect, destroy };
 pub const WaitCondition = enum { stable, window, focus, workspace };
 pub const JournalVerb = enum { start, stop, show };
+/// Computer-use model dialects `hyprhand dialect` speaks.
+pub const DialectName = enum { anthropic, openai, gemini };
 
 /// How the confirmation gate treats consequential actions (see gate.zig).
 pub const GateMode = enum { ask, human, off };
@@ -146,6 +149,10 @@ pub const Args = struct {
     journal_name: ?[]const u8 = null,
     /// `replay`: send input; without it, replay only plans.
     execute: bool = false,
+    /// `dialect NAME`: the model's action format.
+    dialect_name: ?DialectName = null,
+    /// `dialect gemini`: the human confirmed the calls the model flagged.
+    confirmed: bool = false,
     /// `enable`: the confirmation gate's mode.
     gate: ?GateMode = null,
     /// Input commands: a confirmation ID the human agreed to.
@@ -259,15 +266,20 @@ fn reporting(arguments: Args) bool {
     return arguments.mutates() or arguments.command == .sequence;
 }
 
+/// `--settle-ms`: the pause before a `--then` report or a dialect's screenshot.
+fn settled(arguments: Args) bool {
+    return arguments.command == .dialect or reporting(arguments);
+}
+
 /// `--max-edge`: observe, and the `--then observe` capture of an input command.
 fn edge_limited(arguments: Args) bool {
-    return arguments.command == .observe or reporting(arguments);
+    return only(&.{ .observe, .dialect })(arguments) or reporting(arguments);
 }
 
 fn windowed(arguments: Args) bool {
     return arguments.pointer() or
         arguments.is_accessibility() or
-        only(&.{ .type, .key, .wait, .observe, ._a11y_probe })(arguments);
+        only(&.{ .type, .key, .wait, .observe, ._a11y_probe, .dialect })(arguments);
 }
 
 /// `--frame`: the frame a pointer acts on, an observe region is drawn on, or
@@ -337,7 +349,7 @@ const options = [_]Option{
     .{ .name = "--scale", .field = "scale", .allowed = only(&.{.observe}) },
     .{ .name = "--max-edge", .field = "max_edge", .allowed = edge_limited },
     .{ .name = "--then", .field = "then", .allowed = reporting, .invalid = error.InvalidThen },
-    .{ .name = "--settle-ms", .field = "settle_ms", .allowed = reporting },
+    .{ .name = "--settle-ms", .field = "settle_ms", .allowed = settled },
     .{ .name = "--since", .field = "since", .allowed = only(&.{.observe}) },
     .{ .name = "--marks", .field = "marks", .allowed = only(&.{.observe}) },
     .{ .name = "--mark", .field = "mark", .allowed = pointer_only },
@@ -362,13 +374,18 @@ const options = [_]Option{
     .{ .name = "--text", .field = "text", .allowed = only(&.{ .type, .act }) },
     .{ .name = "--ref", .field = "ref", .allowed = only(&.{.act}) },
     .{ .name = "--execute", .field = "execute", .allowed = only(&.{.replay}) },
+    .{ .name = "--confirmed", .field = "confirmed", .allowed = only(&.{.dialect}) },
     .{
         .name = "--gate",
         .field = "gate",
         .allowed = only(&.{.enable}),
         .invalid = error.InvalidGateMode,
     },
-    .{ .name = "--ack", .field = "ack", .allowed = only(&.{ .act, .click, .doubleclick, .key }) },
+    .{
+        .name = "--ack",
+        .field = "ack",
+        .allowed = only(&.{ .act, .click, .doubleclick, .key, .dialect }),
+    },
     .{ .name = "--interactive", .field = "interactive", .allowed = accessibility_only },
     .{
         .name = "--button",
@@ -398,7 +415,7 @@ const options = [_]Option{
     .{
         .name = "--backend",
         .field = "backend",
-        .allowed = only(&.{ .observe, .type, .key }),
+        .allowed = only(&.{ .observe, .type, .key, .dialect }),
         .invalid = error.InvalidBackend,
     },
 };
@@ -463,6 +480,11 @@ fn positional(arguments: *Args, argument: []const u8) !void {
             }
         },
         .replay => try positional_store([]const u8, &arguments.journal_name, argument),
+        .dialect => {
+            const name = std.meta.stringToEnum(DialectName, argument) orelse
+                return error.InvalidDialect;
+            try positional_store(DialectName, &arguments.dialect_name, name);
+        },
         .wait => {
             const condition = std.meta.stringToEnum(WaitCondition, argument) orelse
                 return error.InvalidWaitCondition;
@@ -627,11 +649,11 @@ fn validate_shape(arguments: Args) !void {
         if (arguments.to_y == null) return error.DragDestinationRequired;
     }
     if (arguments.command == .observe) try validate_observe_scope(arguments);
-    const capture_follows = arguments.command == .observe or arguments.then == .observe;
+    const capture_follows = arguments.command == .observe or arguments.then == .observe or
+        arguments.command == .dialect;
     if (arguments.max_edge != null and !capture_follows) return error.InvalidMaxEdge;
-    if (arguments.command == .sequence and !arguments.explicit_session) {
-        return error.SessionRequired;
-    }
+    const composite = arguments.command == .sequence or arguments.command == .dialect;
+    if (composite and !arguments.explicit_session) return error.SessionRequired;
     const requires_window = arguments.command == .type or arguments.command == .key;
     if (requires_window and arguments.window == null) return error.WindowRequired;
     if (arguments.backend == .clipboard) {
@@ -651,6 +673,7 @@ fn validate_shape(arguments: Args) !void {
             if (arguments.ref == null) return error.RefRequired;
         },
         .journal, .replay => try validate_journal(arguments),
+        .dialect => if (arguments.dialect_name == null) return error.MissingArgument,
         .launch => if (arguments.program.len == 0) return error.MissingProgram,
         .session => {
             const verb = arguments.session_verb orelse return error.MissingArgument;

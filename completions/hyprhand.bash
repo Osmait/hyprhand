@@ -1,10 +1,12 @@
 _hyprhand_complete() {
     local cur=${COMP_WORDS[COMP_CWORD]}
-    local commands='doctor state monitors windows workspaces sessions session launch observe cursor preview focus workspace move click doubleclick drag scroll type key act sequence journal replay stop enable wait events logs gc accessibility'
+    local commands='doctor state monitors windows workspaces sessions session launch observe cursor preview focus workspace move click doubleclick drag scroll type key act sequence journal replay dialect stop enable wait events logs gc accessibility'
     if (( COMP_CWORD == 1 )); then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
     elif [[ ${COMP_WORDS[1]} == session && $COMP_CWORD == 2 ]]; then
         COMPREPLY=( $(compgen -W 'create inspect destroy' -- "$cur") )
+    elif [[ ${COMP_WORDS[1]} == dialect && $COMP_CWORD == 2 ]]; then
+        COMPREPLY=( $(compgen -W 'anthropic openai gemini' -- "$cur") )
     elif [[ ${COMP_WORDS[1]} == journal && $COMP_CWORD == 2 ]]; then
         COMPREPLY=( $(compgen -W 'start stop show' -- "$cur") )
     elif [[ ${COMP_WORDS[1]} == act && $COMP_CWORD == 2 ]]; then
@@ -28,7 +30,7 @@ _hyprhand_complete() {
     elif [[ ${COMP_WORDS[COMP_CWORD-1]} == --headless-bridge ]]; then
         COMPREPLY=( $(compgen -f -- "$cur") )
     else
-        COMPREPLY=( $(compgen -W '--session --window --monitor --frame --x --y --to-x --to-y --duration-ms --scroll-mode --move-duration-ms --no-aura --indicator --headless-bridge --button --dx --dy --text --backend --dry-run --timeout-ms --stable-ms --pixels --class --workspace --limit --depth --older-than-ms --nested --lua --retry --max-edge --since --compact --count --mods --repeat --ref --interactive --sandbox --offline --then --settle-ms --marks --mark --gate --ack --execute' -- "$cur") )
+        COMPREPLY=( $(compgen -W '--session --window --monitor --frame --x --y --to-x --to-y --duration-ms --scroll-mode --move-duration-ms --no-aura --indicator --headless-bridge --button --dx --dy --text --backend --dry-run --timeout-ms --stable-ms --pixels --class --workspace --limit --depth --older-than-ms --nested --lua --retry --max-edge --since --compact --count --mods --repeat --ref --interactive --sandbox --offline --then --settle-ms --marks --mark --gate --ack --execute --confirmed' -- "$cur") )
     fi
 }
 complete -F _hyprhand_complete hyprhand

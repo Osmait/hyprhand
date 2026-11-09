@@ -25,6 +25,7 @@ const refs = @import("accessibility/refs.zig");
 const gate = @import("runtime/gate.zig");
 const journal = @import("runtime/journal.zig");
 const replay_steps = @import("runtime/replay.zig");
+const dialect = @import("cli/dialect.zig");
 const control_probe = @import("accessibility/probe.zig");
 const preview = @import("preview/controller.zig");
 const takeover = @import("preview/takeover.zig");
@@ -544,6 +545,330 @@ fn journal_command(runtime: *Runtime, arguments: args.Args) !void {
     }
 }
 
+/// Image limits by dialect when `--max-edge` is not given: older Claude
+/// models accept 1568 pixels on the long side and the API no longer downscales.
+fn dialect_max_edge(arguments: args.Args) ?u32 {
+    if (arguments.max_edge) |edge| return edge;
+    return if (arguments.dialect_name.? == .anthropic) 1568 else null;
+}
+
+/// `dialect NAME`: a model turn's native calls in, native results out.
+fn dialect_command(runtime: *Runtime, arguments: args.Args) !void {
+    const which = arguments.dialect_name.?;
+    const input = try native.read_stdin(runtime.allocator, 8 * 1024 * 1024);
+    const calls = try dialect.parse(runtime.allocator, which, input);
+    const outcomes = try runtime.allocator.alloc(dialect.Outcome, calls.len);
+    var overall: delivery.Delivery = .not_delivered;
+    var failed: ?usize = null;
+    for (calls, outcomes, 0..) |call, *outcome, index| {
+        if (failed != null) {
+            outcome.* = .{ .ok = false, .text = dialect.not_executed_text, .executed = false };
+            continue;
+        }
+        outcome.* = try dialect_call(runtime, arguments, call, index);
+        overall = worse(overall, delivery.get());
+        if (!outcome.ok) failed = index;
+    }
+    delivery.set(overall);
+
+    // OpenAI and Gemini expect the screen after the turn.
+    var screenshot: ?[]const u8 = null;
+    if (which != .anthropic) {
+        try settle(arguments.settle_ms);
+        screenshot = try dialect_screenshot(runtime, arguments);
+    }
+    const results = switch (which) {
+        .anthropic => try dialect.anthropic_results(runtime.allocator, calls, outcomes),
+        .openai => try dialect.openai_results(runtime.allocator, calls, screenshot.?),
+        .gemini => try dialect.gemini_results(
+            runtime.allocator,
+            calls,
+            outcomes,
+            screenshot,
+            arguments.confirmed,
+        ),
+    };
+    try runtime.emit(.{
+        .ok = failed == null,
+        .session_id = runtime.session_id,
+        .dialect = which,
+        .results = results,
+        .failed_call = failed,
+        .disposition = delivery.disposition(),
+        .frame_id = try dialect_frame_id(runtime),
+    });
+    // The native results are printed either way; the exit status says a call failed.
+    if (failed != null) return error.AlreadyReported;
+}
+
+fn settle(duration_ms: u32) !void {
+    const until = native.now_ms() + duration_ms;
+    while (native.now_ms() < until) {
+        try native.check_cancelled();
+        native.sleep_ms(@intCast(@min(20, until - native.now_ms())));
+    }
+}
+
+/// The frame of the last screenshot this session's dialect returned.
+fn dialect_frame_id(runtime: *Runtime) !?[]const u8 {
+    const text = runtime.read_file(try runtime.state_path("dialect-frame"), 64) catch |err|
+        switch (err) {
+            error.FileNotFound => return null,
+            else => return err,
+        };
+    return std.mem.trim(u8, text, " \n");
+}
+
+fn dialect_frame(runtime: *Runtime) !geometry.Frame {
+    const frame_id = try dialect_frame_id(runtime) orelse return error.ScreenshotRequired;
+    return observation.load_frame(runtime, frame_id);
+}
+
+/// A new screenshot: becomes the coordinate space of the next calls.
+fn dialect_screenshot(runtime: *Runtime, arguments: args.Args) ![]const u8 {
+    const frame = try observation.observe_frame(runtime, .{
+        .command = .observe,
+        .session = arguments.session,
+        .explicit_session = true,
+        .window = arguments.window,
+        .max_edge = dialect_max_edge(arguments),
+    });
+    try std.Io.Dir.cwd().writeFile(runtime.io, .{
+        .sub_path = try runtime.state_path("dialect-frame"),
+        .data = frame.frame_id,
+    });
+    return encode_image(runtime, frame.image_path);
+}
+
+fn encode_image(runtime: *Runtime, path: []const u8) ![]const u8 {
+    const bytes = try runtime.read_file(path, 64 * 1024 * 1024);
+    const encoder = std.base64.standard.Encoder;
+    const buffer = try runtime.allocator.alloc(u8, encoder.calcSize(bytes.len));
+    return encoder.encode(buffer, bytes);
+}
+
+/// A call's coordinates in pixels of the dialect's current frame.
+fn dialect_pixels(which: args.DialectName, frame: geometry.Frame, at: [2]f64) ![2]f64 {
+    const pixels = switch (dialect.space(which)) {
+        .pixels => at,
+        .normalized => [2]f64{
+            at[0] / 1000 * @as(f64, @floatFromInt(frame.image_width)),
+            at[1] / 1000 * @as(f64, @floatFromInt(frame.image_height)),
+        },
+    };
+    const inside_x = pixels[0] >= 0 and pixels[0] < @as(f64, @floatFromInt(frame.image_width));
+    const inside_y = pixels[1] >= 0 and pixels[1] < @as(f64, @floatFromInt(frame.image_height));
+    if (!inside_x or !inside_y) return error.CoordinatesOutOfBounds;
+    return .{ @floor(pixels[0]), @floor(pixels[1]) };
+}
+
+/// A call's point in frame pixels; without one, the cursor's.
+fn dialect_aim(
+    runtime: *Runtime,
+    which: args.DialectName,
+    frame: geometry.Frame,
+    at: ?[2]f64,
+) ![2]f64 {
+    if (at) |point| return dialect_pixels(which, frame, point);
+    return dialect_cursor(runtime, frame);
+}
+
+/// Where a call without coordinates acts: the cursor, in frame pixels.
+fn dialect_cursor(runtime: *Runtime, frame: geometry.Frame) ![2]f64 {
+    const cursor = try runtime.query_json(geometry.Point, "cursorpos");
+    const pixel = frame.pixel(cursor) orelse return error.CursorOutsideScreenshot;
+    return .{ @floatFromInt(pixel.x), @floatFromInt(pixel.y) };
+}
+
+/// Runs one call and describes the outcome for the model.
+fn dialect_call(
+    runtime: *Runtime,
+    arguments: args.Args,
+    call: dialect.Call,
+    index: usize,
+) !dialect.Outcome {
+    delivery.set(.not_delivered);
+    if (call.needs_confirmation and !arguments.confirmed) {
+        return .{ .ok = false, .text = "The model asked for the user's confirmation. Ask " ++
+            "the user; if they agree, send this turn again with --confirmed." };
+    }
+    const step = dialect_step(runtime, arguments, call) catch |err| {
+        return .{ .ok = false, .text = try dialect_error_text(runtime, err, null) };
+    };
+    const action = step orelse return dialect_local(runtime, arguments, call);
+    const report_item = try sequence_step(runtime, action, index);
+    if (!report_item.ok) {
+        const err = report_item.err.?;
+        return .{ .ok = false, .text = try dialect_error_text(runtime, null, err) };
+    }
+    return .{ .ok = true, .text = "OK" };
+}
+
+/// Calls that need no input command: screenshots, zoom, waits, the cursor.
+fn dialect_local(runtime: *Runtime, arguments: args.Args, call: dialect.Call) !dialect.Outcome {
+    switch (call.operation) {
+        .screenshot => {
+            const image = try dialect_screenshot(runtime, arguments);
+            return .{ .ok = true, .text = "", .image = image };
+        },
+        .zoom => |box| return dialect_zoom(runtime, arguments, box) catch |err| .{
+            .ok = false,
+            .text = try dialect_error_text(runtime, err, null),
+        },
+        .wait_ms => |duration| {
+            try settle(duration);
+            return .{ .ok = true, .text = "OK" };
+        },
+        .cursor_position => {
+            const frame = dialect_frame(runtime) catch |err| return .{
+                .ok = false,
+                .text = try dialect_error_text(runtime, err, null),
+            };
+            const at = dialect_cursor(runtime, frame) catch |err| return .{
+                .ok = false,
+                .text = try dialect_error_text(runtime, err, null),
+            };
+            const scale: f64 = if (dialect.space(arguments.dialect_name.?) == .normalized)
+                1000 / @as(f64, @floatFromInt(frame.image_width))
+            else
+                1;
+            const text = try std.fmt.allocPrint(runtime.allocator, "X={d}, Y={d}", .{
+                @as(i64, @intFromFloat(at[0] * scale)),
+                @as(i64, @intFromFloat(at[1] * scale)),
+            });
+            return .{ .ok = true, .text = text };
+        },
+        .unsupported => |reason| return .{ .ok = false, .text = reason },
+        else => unreachable,
+    }
+}
+
+/// A box of the current screenshot at higher resolution; the coordinate
+/// space stays the full screenshot's.
+fn dialect_zoom(runtime: *Runtime, arguments: args.Args, box: [4]f64) !dialect.Outcome {
+    const frame = try dialect_frame(runtime);
+    const which = arguments.dialect_name.?;
+    const first = try dialect_pixels(which, frame, .{ box[0], box[1] });
+    const last = try dialect_pixels(which, frame, .{ box[2] - 1, box[3] - 1 });
+    const zoomed = try observation.observe_frame(runtime, .{
+        .command = .observe,
+        .session = arguments.session,
+        .explicit_session = true,
+        .frame = frame.frame_id,
+        .x = first[0],
+        .y = first[1],
+        .to_x = last[0],
+        .to_y = last[1],
+        .scale = 2,
+        .max_edge = dialect_max_edge(arguments),
+    });
+    return .{ .ok = true, .text = "", .image = try encode_image(runtime, zoomed.image_path) };
+}
+
+/// Keyboard calls go to `--window`, or to the focused window.
+fn dialect_keyboard(
+    runtime: *Runtime,
+    arguments: args.Args,
+    step: *args.Args,
+    command: args.Command,
+) !void {
+    step.command = command;
+    step.backend = arguments.backend;
+    step.window = arguments.window orelse try runtime.active_window();
+}
+
+/// The input command a call becomes, or null for calls handled locally.
+fn dialect_step(runtime: *Runtime, arguments: args.Args, call: dialect.Call) !?args.Args {
+    var step = args.Args{
+        .command = .click,
+        .session = arguments.session,
+        .explicit_session = true,
+        .ack = arguments.ack,
+    };
+    const which = arguments.dialect_name.?;
+    switch (call.operation) {
+        .click => |click| {
+            const frame = try dialect_frame(runtime);
+            const at = try dialect_aim(runtime, which, frame, click.at);
+            step.frame = frame.frame_id;
+            step.x = at[0];
+            step.y = at[1];
+            step.button = click.button;
+            step.click_count = click.count;
+            step.mods = click.mods;
+        },
+        .move => |point| {
+            const frame = try dialect_frame(runtime);
+            const at = try dialect_pixels(which, frame, point);
+            step.command = .move;
+            step.frame = frame.frame_id;
+            step.x = at[0];
+            step.y = at[1];
+        },
+        .drag => |drag| {
+            const frame = try dialect_frame(runtime);
+            const from = try dialect_pixels(which, frame, drag.from);
+            const to = try dialect_pixels(which, frame, drag.to);
+            step.command = .drag;
+            step.frame = frame.frame_id;
+            step.x = from[0];
+            step.y = from[1];
+            step.to_x = to[0];
+            step.to_y = to[1];
+            step.mods = drag.mods;
+        },
+        .scroll => |scroll| {
+            const frame = try dialect_frame(runtime);
+            const at = try dialect_aim(runtime, which, frame, scroll.at);
+            step.command = .scroll;
+            step.frame = frame.frame_id;
+            step.x = at[0];
+            step.y = at[1];
+            step.dx = scroll.dx;
+            step.dy = scroll.dy;
+            step.scroll_mode = .wheel;
+            step.duration_ms = 0;
+            step.mods = scroll.mods;
+        },
+        .type_text => |typed| {
+            try dialect_keyboard(runtime, arguments, &step, .type);
+            step.text = if (typed.enter)
+                try std.fmt.allocPrint(runtime.allocator, "{s}\n", .{typed.text})
+            else
+                typed.text;
+        },
+        .key => |key| {
+            try dialect_keyboard(runtime, arguments, &step, .key);
+            step.key_chord = key.chord;
+            step.key_repeat = key.repeat;
+        },
+        else => return null,
+    }
+    return step;
+}
+
+/// The message a model reads for a failed call: the code, what to do, and
+/// for the confirmation gate the ID the human's agreement unlocks.
+fn dialect_error_text(
+    runtime: *Runtime,
+    err: ?anyerror,
+    reported: ?@FieldType(StepReport, "err"),
+) ![]const u8 {
+    const code = if (err) |value| @errorName(value) else reported.?.?.code;
+    const message = if (err) |value| hint(value) else reported.?.?.message;
+    if (std.mem.eql(u8, code, "ScreenshotRequired")) {
+        return "Error: take a screenshot first; coordinates refer to the last screenshot.";
+    }
+    if (gate.reported_pending()) |pending| {
+        return std.fmt.allocPrint(
+            runtime.allocator,
+            "Error: {s} ({s} '{s}', confirmation {s}). {s}",
+            .{ code, @tagName(pending.category), pending.name, pending.id, message },
+        );
+    }
+    return std.fmt.allocPrint(runtime.allocator, "Error: {s}. {s}", .{ code, message });
+}
+
 /// One journal step as `replay` reports it.
 const ReplayReport = struct {
     index: usize,
@@ -683,6 +1008,7 @@ fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
         .sequence => try sequence(runtime, arguments),
         .journal => try journal_command(runtime, arguments),
         .replay => try replay(runtime, arguments),
+        .dialect => try dialect_command(runtime, arguments),
         .cursor => try observation.cursor(runtime, arguments),
         .enable => {
             if (arguments.gate) |mode| try gate.write_mode(runtime, mode);
@@ -1037,6 +1363,7 @@ test {
     _ = @import("runtime/gate.zig");
     _ = @import("runtime/journal.zig");
     _ = @import("runtime/replay.zig");
+    _ = @import("cli/dialect.zig");
 }
 
 test {

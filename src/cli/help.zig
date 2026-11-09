@@ -61,6 +61,9 @@ pub const text = "hyprhand " ++ version.string ++
     \\when retry_safe is true; otherwise observe first.
     \\Input commands accept --then state|observe|accessibility [--settle-ms 250]:
     \\the response adds what that command would print after the action.
+    \\dialect anthropic|openai|gemini --session S [--window W] [--max-edge PX]
+    \\  [--ack ID] [--confirmed] < turn.json   A model's native computer-use calls
+    \\  in, native results out, through every guard and the confirmation gate
     \\journal start NAME | stop | show NAME   Record input steps by window class,
     \\  element role/name and relative points (password text never stored)
     \\replay NAME --session S [--execute]    Plan, or re-resolve and run the steps

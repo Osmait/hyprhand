@@ -1,4 +1,5 @@
 """CLI contract tests using a fake compositor and helpers; never inject input."""
+import base64
 import json
 import resource
 import os
@@ -502,6 +503,72 @@ else:
                                 env=self.env, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 1, result.stdout)
         return json.loads(result.stdout)
+
+    def run_dialect(self, name, calls, *extra, ok=True):
+        result = subprocess.run([str(BIN), "dialect", name, "--session", "host",
+                                 "--backend", "helper", *extra],
+                                input=json.dumps(calls), env=self.env, capture_output=True,
+                                text=True, timeout=30)
+        payload = json.loads(result.stdout)
+        self.assertEqual(result.returncode == 0, ok, (result.stdout[:400], result.stderr))
+        return payload
+
+    def test_anthropic_dialect_answers_in_tool_results(self):
+        self.cli("enable")
+        def block(id, name, **input):
+            return {"type": "tool_use", "id": id, "name": name, "toolset_name": "computer",
+                    "input": input}
+        early = self.run_dialect("anthropic", [block("a", "left_click", coordinate=[5, 5])],
+                                 ok=False)["results"][0]
+        self.assertIs(early["is_error"], True)
+        self.assertIn("screenshot first", early["content"])
+        shot = self.run_dialect("anthropic", [{"type": "text", "text": "Looking"},
+                                              block("s", "screenshot")])
+        image = shot["results"][0]
+        self.assertEqual((image["tool_use_id"], image["toolset_name"]), ("s", "computer"))
+        self.assertEqual(image["content"][0]["source"]["media_type"], "image/png")
+        self.assertEqual(base64.b64decode(image["content"][0]["source"]["data"])[:4], b"\x89PNG")
+        self.assertIsNotNone(shot["frame_id"])
+        turn = self.run_dialect("anthropic", [
+            block("k", "key", text="ctrl+s"),
+            block("t", "type", text="hola"),
+            block("c", "left_click", coordinate=[10, 10]),
+            block("n", "key", text="Return")], ok=False)
+        k, t, c, n = turn["results"]
+        self.assertEqual((k["content"], t["content"]), ("OK", "OK"))
+        self.assertIs(c["is_error"], True)
+        self.assertIn("WaylandUnavailable", c["content"])
+        self.assertEqual(n["content"], "Not executed: an earlier computer action in this turn failed.")
+        self.assertEqual(turn["failed_call"], 2)
+        self.assertEqual(json.loads((self.root / "input.json").read_text())["text"], "hola")
+        hold = self.run_dialect("anthropic", [block("h", "hold_key", text="shift", duration=1)],
+                                ok=False)
+        self.assertIn("use key", hold["results"][0]["content"])
+
+    def test_openai_and_gemini_dialects_answer_with_a_screenshot(self):
+        self.cli("enable")
+        openai = self.run_dialect("openai", {"type": "computer_call", "call_id": "c1", "actions": [
+            {"type": "keypress", "keys": ["CTRL", "A"]}, {"type": "type", "text": "x"}]})
+        output = openai["results"]
+        self.assertEqual(len(output), 1)
+        self.assertEqual(output[0]["type"], "computer_call_output")
+        self.assertEqual(output[0]["call_id"], "c1")
+        self.assertTrue(output[0]["output"]["image_url"].startswith("data:image/png;base64,"))
+        gemini = self.run_dialect("gemini", [{"name": "type", "args": {"text": "hola",
+                                                                        "press_enter": True}}])
+        result = gemini["results"][0]
+        self.assertEqual(result["type"], "function_result")
+        self.assertEqual(result["result"][1]["mime_type"], "image/png")
+        self.assertEqual(json.loads((self.root / "input.json").read_text())["text"], "hola\n")
+        flagged = [{"name": "type", "args": {"text": "buy",
+                    "safety_decision": {"decision": "require_confirmation", "explanation": "x"}}}]
+        refused = self.run_dialect("gemini", flagged, ok=False)
+        self.assertIn("confirmation", json.loads(refused["results"][0]["result"][0]["text"])["error"])
+        confirmed = self.run_dialect("gemini", flagged, "--confirmed")
+        payload = json.loads(confirmed["results"][0]["result"][0]["text"])
+        self.assertIs(payload["safety_acknowledgement"], True)
+        self.error("SessionRequired", "dialect", "anthropic")
+        self.error("InvalidDialect", "dialect", "llama", "--session", "host")
 
     def test_stale_geometry(self):
         f = self.frame()
