@@ -579,6 +579,59 @@ whose targets are known in advance: several refs of one snapshot, or several
 points of one frame while the layout stays put. `--dry-run` validates every step
 and dry-runs each input step.
 
+## Model dialects
+
+```sh
+hyprhand dialect anthropic --session agent [--window ADDR] [--max-edge PX] [--ack ID] < calls.json
+hyprhand dialect openai    --session agent [--window ADDR] < computer_call.json
+hyprhand dialect gemini    --session agent [--window ADDR] [--confirmed] < function_calls.json
+```
+
+`dialect` lets an agent loop pass a computer-use model's own calls straight to
+hyprhand and its own result format straight back. It reads one model turn on
+stdin, runs each call through the normal input path (control, guards, the
+authentication guard, the confirmation gate, the audit log and an active
+journal), and prints `results` in the provider's format, ready to append to the
+next request, plus `failed_call`, `disposition` and `frame_id`.
+
+| Dialect | Reads | Answers | Coordinates |
+| --- | --- | --- | --- |
+| `anthropic` | `tool_use` blocks of `computer_toolset_20260801` (action in `name`; other blocks ignored) | One `tool_result` per call, echoing `toolset_name: "computer"`; images for `screenshot` and `zoom`, `"OK"` or text otherwise | Screenshot pixels |
+| `openai` | `computer_call` items with an `actions` array | One `computer_call_output` per call, with the screenshot taken after the turn as a PNG data URL | Screenshot pixels |
+| `gemini` | `computer_use` function calls (`name`, `args`) | One `function_result` per call; the last carries the screenshot taken after the turn | 0-999 of the screenshot |
+
+Coordinates refer to the **last screenshot the dialect returned** in this
+session: its frame is remembered and every pointer call is validated against it
+like any frame (expiry, layout). Without a screenshot first, pointer calls fail
+asking for one. `--window` crops screenshots to that window and types into it;
+otherwise screenshots show the focused output and keys go to the focused window.
+`anthropic` screenshots default to `--max-edge 1568`, the limit of the older
+Claude models (current ones accept 2576; the API rejects larger images).
+
+Calls run in order and the first failure stops the rest: Anthropic's later
+blocks get exactly `Not executed: an earlier computer action in this turn
+failed.`; the exit status is 1 and the results are still printed. A failure's
+text tells the model what to do, including the confirmation ID when the gate
+stops a call: after the human agrees, send the same turn again with `--ack ID`.
+For Gemini calls carrying `safety_decision: require_confirmation`, ask the human
+and resend with `--confirmed`, which adds `safety_acknowledgement` to the result.
+
+| Provider action | hyprhand |
+| --- | --- |
+| `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click` (Anthropic), `click` with `button` and `keys` (OpenAI), `click`, `double_click`, `triple_click`, `right_click`, `middle_click` (Gemini) | `click --count` with `--button` and `--mods`; no coordinate means the cursor |
+| `left_click_drag`, `drag` (first and last point of `path`), `drag_and_drop` | `drag` |
+| `mouse_move`, `move` | `move` |
+| `scroll` | wheel steps: Anthropic `scroll_amount`; OpenAI `scroll_x`/`scroll_y` and Gemini `magnitude_in_pixels` at 100 pixels per step |
+| `type`, Gemini `press_enter` | `type` (a trailing newline for Enter) |
+| `key` (`text`, `repeat`), `keypress` (`keys`), `press_key`, `hotkey` | `key`, with names such as `CTRL`, `Enter`, `ArrowUp`, `cmd` mapped to `ctrl`, `Return`, `Up`, `super` |
+| `screenshot`, `take_screenshot`; Anthropic `zoom` | `observe` (`zoom` keeps the full screenshot's coordinate space) |
+| `cursor_position`, `wait` | read locally; waits are cancellable |
+| `left_mouse_down`/`up`, `hold_key`, Gemini `mouse_down`/`up`, `key_down`/`up` | Refused: hyprhand releases everything a command presses. With Anthropic, disable them through the toolset's `configs` |
+
+OpenAI's public guide shows `computer_call`, `click` and `type` but not every
+action's fields; `drag.path`, `scroll_x`/`scroll_y` in pixels and `keypress.keys`
+follow its sample implementation.
+
 ## Journals and replay
 
 ```sh

@@ -186,6 +186,18 @@ on their desktop; wait for the result (`ConfirmationDenied` means no). The gate
 only sees named, accessible controls: still ask before any consequential step
 it does not stop, such as a purchase button drawn as an image.
 
+## Pass a computer-use model's calls through
+
+When a separate computer-use model (Anthropic's computer toolset, OpenAI's
+`computer` tool, Gemini's `computer_use`) is choosing the actions, hand its turn
+to `hyprhand dialect anthropic|openai|gemini --session S [--window W] < turn.json`
+and send the printed `results` back to the model unchanged. Its coordinates refer
+to the last screenshot `dialect` returned, so the first call is a screenshot. All
+guards still apply: when a result says `ConfirmationRequired ... confirmation ID`,
+ask the human as above and resend the same turn with `--ack ID`; for Gemini calls
+the model flagged `require_confirmation`, ask and resend with `--confirmed`.
+Calls that hold a button or key are refused; the model has alternatives.
+
 ## Hand logins and captchas to the human
 
 Never type passwords, one-time codes or other secrets the human has not given you

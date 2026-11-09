@@ -1,5 +1,5 @@
 complete -c hyprhand -f
-complete -c hyprhand -n '__fish_use_subcommand' -a 'doctor state monitors windows workspaces sessions session launch observe cursor preview focus workspace move click doubleclick drag scroll type key act sequence journal replay stop enable wait events logs gc accessibility'
+complete -c hyprhand -n '__fish_use_subcommand' -a 'doctor state monitors windows workspaces sessions session launch observe cursor preview focus workspace move click doubleclick drag scroll type key act sequence journal replay dialect stop enable wait events logs gc accessibility'
 complete -c hyprhand -n '__fish_seen_subcommand_from preview' -l fps -r -a '1 5 10 15' -d 'PiP maximum capture frequency'
 complete -c hyprhand -n '__fish_seen_subcommand_from preview' -l host-monitor -r -d 'Host monitor for the PiP window'
 complete -c hyprhand -n '__fish_seen_subcommand_from observe' -l retry -r -a '0 1 2 3' -d 'Retry timeouts and stale frames'
@@ -22,6 +22,8 @@ complete -c hyprhand -n '__fish_seen_subcommand_from accessibility' -l interacti
 complete -c hyprhand -n '__fish_seen_subcommand_from session' -l sandbox -d 'Run apps in bubblewrap with a private home'
 complete -c hyprhand -n '__fish_seen_subcommand_from session' -l offline -d 'Sandbox without network'
 complete -c hyprhand -n '__fish_seen_subcommand_from journal' -a 'start stop show'
+complete -c hyprhand -n '__fish_seen_subcommand_from dialect' -a 'anthropic openai gemini'
+complete -c hyprhand -n '__fish_seen_subcommand_from dialect' -l confirmed -d 'The human confirmed flagged calls'
 complete -c hyprhand -n '__fish_seen_subcommand_from replay' -l execute -d 'Run the steps instead of planning'
 complete -c hyprhand -n '__fish_seen_subcommand_from session' -a 'create inspect destroy'
 complete -c hyprhand -n '__fish_seen_subcommand_from wait' -a 'stable window focus workspace'
