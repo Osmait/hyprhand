@@ -61,6 +61,10 @@ pub const text = "hyprhand " ++ version.string ++
     \\when retry_safe is true; otherwise observe first.
     \\Input commands accept --then state|observe|accessibility [--settle-ms 250]:
     \\the response adds what that command would print after the action.
+    \\journal start NAME | stop | show NAME   Record input steps by window class,
+    \\  element role/name and relative points (password text never stored)
+    \\replay NAME --session S [--execute]    Plan, or re-resolve and run the steps
+    \\  through the normal guards and gate, stopping at the first that fails
     \\sequence --session S [--then ...] [--dry-run] < steps.json  Runs a JSON array
     \\of input/wait command lines (no --session) in order, validated first,
     \\stopping at the first failure; reports each step's result and disposition.

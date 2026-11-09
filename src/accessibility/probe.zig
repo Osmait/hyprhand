@@ -102,24 +102,26 @@ fn focused(top: atspi.Node) ?atspi.Node {
     return null;
 }
 
-/// The node itself or its nearest ancestor that the gate would classify;
-/// otherwise the node's own role and name.
+/// The control a person would say they activated: the nearest ancestor the
+/// gate classifies, otherwise the nearest operable one (a click usually lands
+/// on a button's label), otherwise the node itself.
 fn activating_ancestor(allocator: std.mem.Allocator, start: atspi.Node) !Answer {
-    const first = try atspi.info(allocator, start);
+    var operable: ?Answer = null;
     var current: atspi.Node = c.desk_a11y_ref(start).?;
     defer c.desk_a11y_unref(current);
+    var own: ?Answer = null;
     for (0..ancestors_max) |_| {
         const details = try atspi.info(allocator, current);
         const identity = try atspi.stable_identity(allocator, current, details);
-        const name = identity.name orelse "";
-        if (gate.classify(details.role, name) != null) {
-            return .{ .role = details.role, .name = name };
-        }
+        const answer = Answer{ .role = details.role, .name = identity.name orelse "" };
+        if (own == null) own = answer;
+        if (gate.classify(details.role, answer.name.?) != null) return answer;
+        if (operable == null and details.operable()) operable = answer;
         const parent = c.desk_a11y_parent(current) orelse break;
         c.desk_a11y_unref(current);
         current = parent;
     }
-    return .{ .role = first.role, .name = first.name };
+    return operable orelse own orelse .{};
 }
 
 /// Runs the worker for a window and returns its answer; failures to read the

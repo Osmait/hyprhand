@@ -269,6 +269,17 @@ fn pixel_diff(runtime: *Runtime, earlier: geometry.Frame, later: geometry.Frame)
     return png.diff(before, after);
 }
 
+/// A capture of `arguments`' scope, saved like `observe` saves it, without a
+/// report: replay aims its pointer steps at a fresh frame.
+pub fn observe_frame(runtime: *Runtime, arguments: args.Args) !geometry.Frame {
+    try runtime.prepare();
+    try runtime.validate_display();
+    try runtime.unlocked();
+    const frame = try capture(runtime, arguments, try capture_scope(runtime, arguments));
+    try observe_write_metadata(runtime, frame);
+    return frame;
+}
+
 /// The output an observation captures and, for `--frame`, the frame its
 /// region is drawn on. The crop box itself is resolved from the snapshot taken
 /// around the capture, so it always matches the captured layout.

@@ -579,6 +579,54 @@ whose targets are known in advance: several refs of one snapshot, or several
 points of one frame while the layout stays put. `--dry-run` validates every step
 and dry-runs each input step.
 
+## Journals and replay
+
+```sh
+hyprhand journal start checkout --session agent
+# ... act, click, type, key as usual ...
+hyprhand journal stop --session agent
+hyprhand journal show checkout --session agent
+hyprhand replay checkout --session agent             # plan only
+hyprhand replay checkout --session agent --execute   # repeat it
+```
+
+While a journal records, every input command (`act`, pointer commands, `type`,
+`key`, `focus`, `workspace`, `launch`, also inside `sequence`) appends one step
+with its outcome and `disposition`. Steps name their target by what survives a
+new run, never by frames or refs, which expire:
+
+| Field | Recorded |
+| --- | --- |
+| `window` | The target window's `class` and `title`, and its size |
+| `element` | Role and name: the ref's element for `act`, the mark's for `--mark`, and for coordinate clicks the nearest operable control under the point |
+| `point`, `to_point` | The pointer target and drag destination, relative to the window |
+| Parameters | Verb, chord, repeat, text, button, click count, modifiers, scroll, program |
+
+Text typed with `type` into a focused password field is never stored: the step
+keeps only `text_length` and `text_sha256` and is marked `secret`. Other text is
+stored in the journal, a private file in the session's state directory. Dry runs
+and commands whose target cannot be learned are not recorded.
+
+`replay NAME` plans: it resolves every recorded step on the live desktop and
+reports its status, window, ref and point. `--execute` resolves and runs the
+steps in order through the normal input path, with every guard, the
+authentication guard and the confirmation gate, and stops at the first step
+that cannot be resolved or fails:
+
+| Resolution | Rule | Error |
+| --- | --- | --- |
+| Window | The only mapped window of the recorded class, or the only one also matching the title | `ReplayWindowNotFound`, `ReplayWindowAmbiguous` |
+| Element | The window's only operable element with the recorded role and name | `ReplayElementNotFound`, `ReplayElementAmbiguous` |
+| Pointer | A fresh frame of the window, aimed at the element's centre, or at the recorded relative point only while the window keeps its recorded size | `ReplayLayoutChanged` |
+| Keyboard | The window is focused first if it is not | `ReplaySecretStep` for secret text |
+
+Steps that failed when recorded are `skipped`. The report has the same shape as
+`sequence`: per-step `status` (`planned`, `done`, `skipped`, `unresolved`,
+`failed`), result or error and disposition, `failed_step`, `not_executed` and an
+overall `disposition`; a failed replay exits 1. A replay is as safe as its
+targets are distinctive: two buttons with the same name stop it rather than
+guess.
+
 ## Logs, cleanup, and cancellation
 
 ```sh
