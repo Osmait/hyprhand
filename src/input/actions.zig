@@ -23,6 +23,10 @@ const delivery = @import("../runtime/delivery.zig");
 const semantic = @import("../accessibility/semantic.zig");
 const auth_guard = @import("../runtime/auth_guard.zig");
 const marks = @import("../capture/marks.zig");
+const gate = @import("../runtime/gate.zig");
+const probe = @import("../accessibility/probe.zig");
+const refs = @import("../accessibility/refs.zig");
+const tree = @import("../accessibility/tree.zig");
 
 fn validate_address(address: []const u8) !void {
     if (address.len < 3) return error.InvalidWindowAddress;
@@ -295,6 +299,61 @@ fn resolve_modifiers(
     return set;
 }
 
+/// Asks the gate about the control a click would activate: the mark's element
+/// when aimed by mark, otherwise whatever the accessibility tree has there.
+fn gate_click(
+    runtime: *Runtime,
+    arguments: args.Args,
+    frame: geometry.Frame,
+    clients: []const Client,
+    focused_window: []const u8,
+    point: geometry.Point,
+) !void {
+    if (try gate.read_mode(runtime) == .off) return;
+    if (arguments.mark) |index| {
+        for (frame.marks) |mark| {
+            if (mark.index != index) continue;
+            const ref_text = mark.ref orelse break;
+            const ref = try refs.Ref.parse(ref_text);
+            const snapshot = try tree.load_snapshot(runtime, ref);
+            const entry = snapshot.entry(ref.index) orelse break;
+            return gate.check(runtime, .{
+                .role = entry.identity.role,
+                .name = entry.identity.name orelse "",
+                .window = snapshot.window,
+            }, arguments.ack);
+        }
+    }
+    // The window under the point: the focused one when it contains it.
+    var window: ?[]const u8 = null;
+    for (clients) |client| {
+        if (!client.contains(point)) continue;
+        if (window == null or eq(client.address, focused_window)) window = client.address;
+    }
+    const address = window orelse return;
+    const answer = try probe.probe(runtime, address, .{ point.x, point.y });
+    const role = answer.role orelse return;
+    const target = gate.Target{ .role = role, .name = answer.name orelse "", .window = address };
+    try gate.check(runtime, target, arguments.ack);
+}
+
+/// Return and space activate the focused control: ask the gate about it.
+fn gate_key(runtime: *Runtime, arguments: args.Args) !void {
+    if (try gate.read_mode(runtime) == .off) return;
+    const chord = arguments.key_chord.?;
+    const separator = std.mem.lastIndexOfScalar(u8, chord, '+');
+    const key = if (separator) |index| chord[index + 1 ..] else chord;
+    const activating = [_][]const u8{ "Return", "KP_Enter", "space" };
+    var activates = false;
+    for (activating) |name| activates = activates or std.ascii.eqlIgnoreCase(name, key);
+    if (!activates) return;
+    const window = arguments.window.?;
+    const answer = try probe.probe(runtime, window, null);
+    const role = answer.role orelse return;
+    const target = gate.Target{ .role = role, .name = answer.name orelse "", .window = window };
+    try gate.check(runtime, target, arguments.ack);
+}
+
 /// Modifier keys held down for the duration of one pointer action.
 const HeldModifiers = struct {
     device: Keyboard = undefined,
@@ -353,6 +412,10 @@ fn resolve_pointer_target(
     for (snapshot.clients) |client| {
         const prompt = auth_guard.prompt_class(client.class);
         if (prompt and client.contains(point)) return runtime.prompt_error(client.class);
+    }
+    const clicks = arguments.command == .click or arguments.command == .doubleclick;
+    if (clicks) {
+        try gate_click(runtime, arguments, frame, snapshot.clients, target_window, point);
     }
 
     return .{
@@ -673,7 +736,9 @@ fn run_validate(
         .key => {
             run_guard_target(runtime, arguments.window.?);
             try check_window(runtime, arguments.window.?, true);
-            return .{ .key_argv = try key_args(runtime.allocator, arguments.key_chord.?) };
+            const key_argv = try key_args(runtime.allocator, arguments.key_chord.?);
+            try gate_key(runtime, arguments);
+            return .{ .key_argv = key_argv };
         },
         else => {},
     }

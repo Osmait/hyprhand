@@ -440,6 +440,20 @@ else:
                             "--session", "host", "--dry-run")
         self.assertEqual(by_mark["desktop_point"], by_pixel["desktop_point"])
 
+    def test_confirmation_gate_modes(self):
+        self.assertEqual(self.cli("state", "--compact")["confirmation_gate"], "ask")
+        self.cli("enable", "--gate", "off")
+        self.assertEqual(self.cli("state", "--compact")["confirmation_gate"], "off")
+        self.error("GateHumanNeedsManagedSession", "enable", "--gate", "human")
+        self.error("InvalidGateMode", "enable", "--gate", "maybe")
+        self.error("UnknownOption", "type", "--window", self.address, "--text", "a",
+                   "--session", "host", "--ack", "12345678")
+        # Without an accessibility tree nothing is classified, so clicks pass.
+        self.cli("enable", "--gate", "ask")
+        f = self.frame()
+        self.cli("click", "--frame", f["frame_id"], "--x", "10", "--y", "10",
+                 "--session", "host", "--dry-run")
+
     def test_stale_geometry(self):
         f = self.frame()
         self.x += 10

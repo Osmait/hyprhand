@@ -222,6 +222,45 @@ drawn by the shell as a layer: window classes containing `polkit`, `pinentry`,
 before every event, so a prompt that opens mid-action stops it. There is no
 override: ask the human to answer the prompt.
 
+### Confirmation gate
+
+Before an input command activates a control whose accessible name says it pays,
+sends, publishes, creates an account, deletes or accepts terms, the gate stops
+it. Categories: `payment` (pay, buy, purchase, checkout, place order, subscribe,
+pagar, comprar…), `communication` (send, post, publish, share, reply, enviar,
+publicar…), `account_creation` (sign up, create account, register, crear
+cuenta…), `deletion` (delete, erase, discard, empty trash, eliminar, borrar…)
+and `consent` (I agree, accept, consent, acepto…). Phrases match at the start
+of a word of the name of a button, link, menu item, check box or tab; fields
+and labels are never gated.
+
+| Input | Control examined |
+| --- | --- |
+| `act click`, `select`, `check`, `toggle` | The ref's element |
+| `click`, `doubleclick` with `--mark N` | The mark's element |
+| `click`, `doubleclick` at coordinates | The element under the point (AT-SPI hit test), or its nearest activating ancestor |
+| `key Return`, `KP_Enter`, `space` | The focused element of `--window` |
+
+```sh
+hyprhand enable --session agent --gate ask     # default
+hyprhand enable --session agent --gate human   # managed sessions only
+hyprhand enable --session agent --gate off
+```
+
+| Mode | When a control is consequential |
+| --- | --- |
+| `ask` (default) | Fails with `ConfirmationRequired`, nothing sent, and `confirmation`: `id`, `category`, `role`, `name`, `window`. Ask the human; only if they agree, repeat the same command with `--ack ID` (`act`, `click`, `doubleclick`, `key`). An ID works once, for the same control and window, within 2 minutes (`ConfirmationMismatch`, `ConfirmationExpired`, `ConfirmationNotFound`) |
+| `human` | hyprhand shows a host desktop notification with Approve and Deny and waits up to 2 minutes; Deny or no answer is `ConfirmationDenied`. Needs `notify-send` and a notification daemon (`ConfirmationUnavailable`); refused on `host`, where the agent could answer it itself |
+| `off` | No gate |
+
+`state` reports `confirmation_gate`. The audit log records every
+acknowledgement and every notification answer by category, never the control's
+name. The gate only knows what the application exposes: an unnamed or
+inaccessible control, a canvas, or a site that labels its purchase button with
+an image is not gated, so `ask` reduces but does not remove the need for the
+agent to ask before consequential steps. `--ack` is a convention the agent is
+told to respect; `human` mode is the one the agent cannot answer.
+
 `stop` revokes authorization without waiting for the action lock. It cancels
 guarded hyprhand input, leaving applications and external jobs open. It cannot
 undo events or text already sent. Never automatically re-enable after a human stop.

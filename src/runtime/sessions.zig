@@ -480,6 +480,7 @@ pub fn route(runtime: *Runtime, name: []const u8) !void {
     try env.put("MOZ_ENABLE_WAYLAND", "1");
     try export_profiles(runtime, env, session.directory);
 
+    runtime.host_env = runtime.env;
     runtime.env = env;
     runtime.session_id = name;
     runtime.session_directory = session.directory;

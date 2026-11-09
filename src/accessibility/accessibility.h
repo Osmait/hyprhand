@@ -82,6 +82,9 @@ int desk_a11y_text_length(DeskNode *);
 int desk_a11y_value(DeskNode *, double *current, double *minimum, double *maximum,
                     double *increment);
 
+/* The child of `node` at window coordinates (x, y), or NULL. */
+DeskNode *desk_a11y_child_at_point(DeskNode *node, int x, int y);
+
 int desk_a11y_do_action(DeskNode *, int index);
 int desk_a11y_grab_focus(DeskNode *);
 int desk_a11y_scroll_to(DeskNode *);

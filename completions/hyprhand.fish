@@ -12,6 +12,8 @@ complete -c hyprhand -n '__fish_seen_subcommand_from click' -l count -r -a '1 2 
 complete -c hyprhand -n '__fish_seen_subcommand_from click doubleclick drag scroll' -l mods -r -a 'ctrl shift alt super ctrl+shift' -d 'Modifiers held during the action'
 complete -c hyprhand -n '__fish_seen_subcommand_from key' -l repeat -r -d 'Tap the chord N times'
 complete -c hyprhand -l button -r -a 'left right middle back forward'
+complete -c hyprhand -n '__fish_seen_subcommand_from enable' -l gate -r -a 'ask human off' -d 'Confirmation gate'
+complete -c hyprhand -n '__fish_seen_subcommand_from act click doubleclick key' -l ack -r -d 'Confirmation ID the human agreed to'
 complete -c hyprhand -l then -r -a 'state observe accessibility' -d 'Report after the action'
 complete -c hyprhand -l settle-ms -r -d 'Pause before the --then report'
 complete -c hyprhand -n '__fish_seen_subcommand_from act' -a 'click focus set-value toggle check uncheck expand collapse select scroll-to'
