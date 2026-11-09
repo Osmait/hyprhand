@@ -6,9 +6,8 @@ the [testing guide](testing.md) describes offline and optional live verification
 
 ## Before the first public release
 
-- Have the repository owner select a project license. Include it in the source,
-  installed documentation and package payload, and update the README and package
-  metadata. **A project license has not yet been selected.** Preserve the separate
+- The project is MIT-licensed ([LICENSE](../LICENSE)). The package payload and
+  manifest include it; preserve the separate
   [third-party notices](../THIRD_PARTY_NOTICES.md).
 - Review tracked files, example metadata and Git history for private information.
   The September 2026 preparation review found personal paths in two historical
