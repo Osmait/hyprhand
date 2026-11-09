@@ -160,6 +160,25 @@ Each error and each input or `act` result has
 
 `err.detail`, when present, is what the application or library said.
 
+## Confirm consequential actions with the human
+
+Clicking or pressing Return on a control that pays, sends, publishes, creates an
+account, deletes or accepts terms fails with `ConfirmationRequired` and
+`err.confirmation` (`id`, `category`, `name`). Nothing was sent. Then:
+
+1. Stop and ask the human, quoting the category and the control's name, and
+   what it will do (for example: "Click **Pay $20.00** to complete the order?").
+2. Only after they explicitly agree, repeat the exact same command with
+   `--ack ID`. Never acknowledge on your own, never reuse an ID for another
+   control, and never look for another way to press the same control (a
+   different button, coordinates, a keyboard shortcut) to avoid the question.
+3. If they decline, do not perform the action. An ID expires after 2 minutes.
+
+With `enable --gate human` hyprhand asks the human itself through a notification
+on their desktop; wait for the result (`ConfirmationDenied` means no). The gate
+only sees named, accessible controls: still ask before any consequential step
+it does not stop, such as a purchase button drawn as an image.
+
 ## Hand logins and captchas to the human
 
 Never type passwords, one-time codes or other secrets the human has not given you

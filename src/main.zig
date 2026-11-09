@@ -22,6 +22,8 @@ const accessibility = @import("accessibility/tree.zig");
 const semantic = @import("accessibility/semantic.zig");
 const sequence_steps = @import("cli/sequence.zig");
 const refs = @import("accessibility/refs.zig");
+const gate = @import("runtime/gate.zig");
+const control_probe = @import("accessibility/probe.zig");
 const preview = @import("preview/controller.zig");
 const takeover = @import("preview/takeover.zig");
 
@@ -286,6 +288,7 @@ fn state_compact(runtime: *Runtime) !void {
         .cursor = try runtime.query_json(geometry.Point, "cursorpos"),
         .control_enabled = try state_control_enabled(runtime),
         .human_takeover = try runtime.takeover_active(),
+        .confirmation_gate = try gate.read_mode(runtime),
     });
 }
 
@@ -539,7 +542,10 @@ fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
         .observe => try observation.observe_with_retry(runtime, arguments),
         .sequence => try sequence(runtime, arguments),
         .cursor => try observation.cursor(runtime, arguments),
-        .enable => try runtime.enable(arguments.indicator == .outline),
+        .enable => {
+            if (arguments.gate) |mode| try gate.write_mode(runtime, mode);
+            try runtime.enable(arguments.indicator == .outline);
+        },
         .stop => try runtime.stop(),
         .wait => try wait.run(runtime, arguments),
         .events => try operations.events(runtime, arguments),
@@ -548,6 +554,7 @@ fn execute_routed(runtime: *Runtime, arguments: args.Args) !void {
         .accessibility => try accessibility.tree(runtime, arguments),
         ._a11y => try accessibility.worker(runtime, arguments),
         ._a11y_act => try semantic.worker(runtime),
+        ._a11y_probe => try control_probe.worker(runtime, arguments),
         ._cursor_probe => try cursor_capture.probe(runtime),
         ._preview_frame, ._preview_stop => try preview.worker(runtime, arguments),
         else => return error.CommandNotImplemented,
@@ -570,6 +577,7 @@ fn execute_limit_command(arguments: args.Args) void {
         .type => native.limit_command(300_000, error.CommandTimeout),
         .act => native.limit_command(30_000, error.CommandTimeout),
         ._a11y_act => native.limit_command(20_000, error.CommandTimeout),
+        ._a11y_probe => native.limit_command(4_000, error.CommandTimeout),
         .focus,
         .workspace,
         .key,
@@ -651,6 +659,19 @@ fn hint_semantic(err: anyerror) ?[]const u8 {
         error.AuthenticationPrompt => "A sign-in, polkit, keyring or permission prompt " ++
             "is in front (err.detail names it). Never answer it: ask the human to handle " ++
             "it, through the preview's Take over in a managed session. Nothing was sent.",
+        error.ConfirmationRequired => "This control pays, sends, publishes, creates an " ++
+            "account, deletes or accepts terms (err.confirmation). Ask the human; only if " ++
+            "they agree, repeat the same command with --ack ID. Nothing was sent.",
+        error.ConfirmationNotFound, error.ConfirmationExpired => "That confirmation is " ++
+            "unknown, used or older than 2 minutes. Run the command again for a new one.",
+        error.ConfirmationMismatch => "--ack belongs to a different control or window. " ++
+            "Nothing was sent; run the command again without --ack.",
+        error.ConfirmationDenied => "The human denied the action or did not answer in " ++
+            "time. Nothing was sent; do not retry without asking them.",
+        error.ConfirmationUnavailable => "No host notification could ask the human " ++
+            "(notify-send and a notification daemon are needed). Nothing was sent.",
+        error.GateHumanNeedsManagedSession => "--gate human needs a managed session: " ++
+            "on host the agent could answer the notification itself.",
         error.AmbiguousTarget => "Several elements share this identity. Use the pointer " ++
             "on the element's frame_point (accessibility --frame ID) instead. Nothing was sent.",
         error.ActionNotSupported => "The element offers no semantic call for this verb. " ++
@@ -800,6 +821,7 @@ fn report(init: std.process.Init, err: anyerror) void {
                 .detail = delivery.detail(),
             },
             .disposition = delivery.disposition(),
+            .confirmation = gate.reported_pending(),
         },
         .{ .emit_null_optional_fields = false },
     ) catch return;
@@ -857,6 +879,7 @@ test {
     _ = @import("accessibility/semantic.zig");
     _ = @import("cli/sequence.zig");
     _ = @import("capture/png.zig");
+    _ = @import("runtime/gate.zig");
 }
 
 test {

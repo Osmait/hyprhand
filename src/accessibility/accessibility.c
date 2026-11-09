@@ -108,6 +108,15 @@ void desk_a11y_info_free(DeskInfo *info) {
     g_free(info->accessible_id);
 }
 
+DeskNode *desk_a11y_child_at_point(DeskNode *node, int x, int y) {
+    AtspiComponent *component = atspi_accessible_get_component_iface((AtspiAccessible *)node);
+    if (!component) return NULL;
+    AtspiAccessible *child = atspi_component_get_accessible_at_point(
+        component, x, y, ATSPI_COORD_TYPE_WINDOW, NULL);
+    g_object_unref(component);
+    return (DeskNode *)child;
+}
+
 char *desk_a11y_action_name(DeskNode *node, int index) {
     AtspiAction *action = atspi_accessible_get_action_iface((AtspiAccessible *)node);
     if (!action) return NULL;

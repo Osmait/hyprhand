@@ -75,6 +75,9 @@ pub const Runtime = struct {
     nested_host: ?NestedHost = null,
     /// Set only while an input action runs; see ActionGuard.
     action: ?*ActionGuard = null,
+    /// The environment before routing to a managed session: the host desktop,
+    /// where only a person can answer a confirmation notification.
+    host_env: ?*const std.process.Environ.Map = null,
     /// When set, `emit` appends its JSON here instead of printing it: `--then`
     /// and `sequence` compose several results into one response.
     output: ?*std.ArrayList(u8) = null,

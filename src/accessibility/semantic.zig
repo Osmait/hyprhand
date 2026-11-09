@@ -14,6 +14,7 @@ const atspi = @import("atspi.zig");
 const refs = @import("refs.zig");
 const tree = @import("tree.zig");
 const auth_guard = @import("../runtime/auth_guard.zig");
+const gate = @import("../runtime/gate.zig");
 const c = atspi.c;
 
 pub const Verb = @import("../cli/args.zig").ActVerb;
@@ -71,6 +72,15 @@ pub fn run(runtime: *Runtime, arguments: Args) !void {
     // act reaches windows that are not focused: check the target itself.
     const client = try tree.find_client(runtime, snapshot.window);
     if (auth_guard.prompt_class(client.class)) return runtime.prompt_error(client.class);
+    const activates = switch (verb) {
+        .click, .select, .check, .toggle => true,
+        else => false,
+    };
+    if (activates) try gate.check(runtime, .{
+        .role = entry.identity.role,
+        .name = entry.identity.name orelse "",
+        .window = snapshot.window,
+    }, arguments.ack);
     try check_request(verb, entry, arguments);
 
     const request = Request{

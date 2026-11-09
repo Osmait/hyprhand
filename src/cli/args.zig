@@ -35,6 +35,7 @@ pub const Command = enum {
     sequence,
     _a11y,
     _a11y_act,
+    _a11y_probe,
     _cursor_probe,
     _preview_frame,
     _preview_stream,
@@ -48,6 +49,9 @@ pub const Backend = enum { auto, native, helper, clipboard };
 pub const Indicator = enum { none, outline };
 pub const SessionVerb = enum { create, inspect, destroy };
 pub const WaitCondition = enum { stable, window, focus, workspace };
+/// How the confirmation gate treats consequential actions (see gate.zig).
+pub const GateMode = enum { ask, human, off };
+
 /// What an input command or `sequence` reports after acting, with `--then`.
 pub const Then = enum { none, state, observe, accessibility };
 
@@ -133,6 +137,10 @@ pub const Args = struct {
     ref: ?[]const u8 = null,
     /// `accessibility`: report only elements that received a ref.
     interactive: bool = false,
+    /// `enable`: the confirmation gate's mode.
+    gate: ?GateMode = null,
+    /// Input commands: a confirmation ID the human agreed to.
+    ack: ?[]const u8 = null,
     /// Input commands and `sequence`: the state to report after acting.
     then: Then = .none,
     /// Input commands and `sequence`: the pause before the `--then` report.
@@ -250,7 +258,7 @@ fn edge_limited(arguments: Args) bool {
 fn windowed(arguments: Args) bool {
     return arguments.pointer() or
         arguments.is_accessibility() or
-        only(&.{ .type, .key, .wait, .observe })(arguments);
+        only(&.{ .type, .key, .wait, .observe, ._a11y_probe })(arguments);
 }
 
 /// `--frame`: the frame a pointer acts on, an observe region is drawn on, or
@@ -261,7 +269,7 @@ fn framed(arguments: Args) bool {
 
 /// `--x --y`: a pointer coordinate, or the first corner of an observe region.
 fn positioned(arguments: Args) bool {
-    return arguments.pointer() or arguments.command == .observe;
+    return arguments.pointer() or only(&.{ .observe, ._a11y_probe })(arguments);
 }
 
 fn timed(arguments: Args) bool {
@@ -344,6 +352,13 @@ const options = [_]Option{
     .{ .name = "--duration-ms", .field = "duration_ms", .allowed = only(&.{ .drag, .scroll }) },
     .{ .name = "--text", .field = "text", .allowed = only(&.{ .type, .act }) },
     .{ .name = "--ref", .field = "ref", .allowed = only(&.{.act}) },
+    .{
+        .name = "--gate",
+        .field = "gate",
+        .allowed = only(&.{.enable}),
+        .invalid = error.InvalidGateMode,
+    },
+    .{ .name = "--ack", .field = "ack", .allowed = only(&.{ .act, .click, .doubleclick, .key }) },
     .{ .name = "--interactive", .field = "interactive", .allowed = accessibility_only },
     .{
         .name = "--button",

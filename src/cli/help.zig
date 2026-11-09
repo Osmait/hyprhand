@@ -23,7 +23,9 @@ pub const text = "hyprhand " ++ version.string ++
     \\  gc [--older-than-ms 300000] [--dry-run]
     \\
     \\Input (shared human cursor/focus ONLY in host; disabled until enable):
-    \\  enable [--indicator none|outline] | stop
+    \\  enable [--indicator none|outline] [--gate ask|human|off] | stop
+    \\    Gate: pay/send/delete/sign-up/accept controls need --ack ID (ask), a host
+    \\    notification answered by the human (human, managed only), or nothing (off)
     \\  focus ADDRESS | workspace NUMBER
     \\  move --frame ID --x X --y Y
     \\  click|doubleclick --frame ID (--x X --y Y | --mark N) [--button left|right|...]
