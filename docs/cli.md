@@ -171,6 +171,11 @@ number, and aim with `--mark N` instead of `--x --y` on any pointer command:
 the mark is stored in the frame, so it goes through the same frame expiry and
 layout validation as a coordinate (`MarkNotFound` for an unknown number).
 Marks also separate twins that `act` refuses as `AmbiguousTarget`.
+Each number sits where it covers neither another number nor another control
+when the layout allows (above the box's left corner, else inside its top-right
+corner, and so on), leaving the start of the control's text visible; numbers
+are drawn smaller when most controls are under 20 pixels tall, as in a capture
+reduced with `--max-edge`.
 
 ### Coordinate contract
 
@@ -249,7 +254,7 @@ hyprhand enable --session agent --gate off
 
 | Mode | When a control is consequential |
 | --- | --- |
-| `ask` (default) | Fails with `ConfirmationRequired`, nothing sent, and `confirmation`: `id`, `category`, `role`, `name`, `window`. Ask the human; only if they agree, repeat the same command with `--ack ID` (`act`, `click`, `doubleclick`, `key`). An ID works once, for the same control and window, within 2 minutes (`ConfirmationMismatch`, `ConfirmationExpired`, `ConfirmationNotFound`) |
+| `ask` (default) | Fails with `ConfirmationRequired`, nothing sent, and `err.confirmation`: `id`, `category`, `role`, `name`, `window`. Ask the human; only if they agree, repeat the same command with `--ack ID` (`act`, `click`, `doubleclick`, `key`). An ID works once, for the same control and window, within 2 minutes (`ConfirmationMismatch`, `ConfirmationExpired`, `ConfirmationNotFound`) |
 | `human` | hyprhand shows a host desktop notification with Approve and Deny and waits up to 2 minutes; Deny or no answer is `ConfirmationDenied`. Needs `notify-send` and a notification daemon (`ConfirmationUnavailable`); refused on `host`, where the agent could answer it itself |
 | `off` | No gate |
 
